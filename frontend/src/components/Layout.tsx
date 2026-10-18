@@ -27,12 +27,15 @@ function Logo() {
 function DataModeBadge() {
   const { status } = useApp();
   if (!status) return null;
+  const builtin = status.dataset === "real" ? "подборка" : "синтетика";
   const map = {
-    demo: { text: "Демо-данные", cls: "bg-violet-50 text-violet-700 ring-violet-200",
-      tip: "Все события синтетические и помечены «Демо». Реальные новости можно загрузить через «Обновить ленту»." },
-    live: { text: "Реальные источники", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", tip: "Показаны новости из RSS" },
-    mixed: { text: "Демо + реальные", cls: "bg-amber-50 text-amber-800 ring-amber-200",
-      tip: `Демо: ${status.events.demo}, реальные: ${status.events.live}. Фильтр источника — в ленте.` },
+    curated: { text: "Реальные новости · подборка", cls: "bg-sky-50 text-sky-800 ring-sky-200",
+      tip: "Подборка реальных публикаций о компаниях из профилей: ссылки на оригиналы, текст — краткий пересказ командой." },
+    synthetic: { text: "Синтетические данные", cls: "bg-violet-50 text-violet-700 ring-violet-200",
+      tip: "Вымышленные компании и события (режим DATASET=synthetic). Помечены «Демо»." },
+    live: { text: "Свежие RSS", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", tip: "Показаны новости из RSS" },
+    mixed: { text: `RSS + ${builtin}`, cls: "bg-amber-50 text-amber-800 ring-amber-200",
+      tip: `Подборка: ${status.events.curated + status.events.demo}, RSS: ${status.events.live}. Фильтр источника — в ленте.` },
   }[status.data_mode];
   return (
     <span className={`hidden rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset md:inline-block ${map.cls}`} title={map.tip}>
@@ -54,7 +57,8 @@ function EngineBadge() {
 }
 
 function RefreshMenu() {
-  const { reloadStatus, bumpData, toast } = useApp();
+  const { status, reloadStatus, bumpData, toast } = useApp();
+  const realDataset = status?.dataset !== "synthetic";
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -67,13 +71,14 @@ function RefreshMenu() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const run = async (mode: "demo" | "live") => {
+  const run = async (mode: "dataset" | "live") => {
     setOpen(false);
     setBusy(true);
     try {
       const res = await api.refresh(mode);
-      if (mode === "demo") {
-        toast("Демо-набор перезагружен, даты пересчитаны от текущего момента");
+      if (mode === "dataset") {
+        toast(realDataset ? "Подборка реальных новостей перезагружена из файла"
+          : "Синтетический набор перезагружен, даты пересчитаны от текущего момента");
       } else {
         const ok = res.report.filter((r) => r.ok);
         const failed = res.report.filter((r) => !r.ok && !r.skipped);
@@ -101,12 +106,14 @@ function RefreshMenu() {
       {open && (
         <div className="absolute right-0 z-30 mt-2 w-72 rounded-xl border border-ink-200 bg-white p-1.5 shadow-lg">
           <button className="w-full rounded-lg px-3 py-2 text-left hover:bg-ink-50" onClick={() => run("live")}>
-            <div className="text-sm font-medium">Загрузить реальные новости</div>
-            <div className="text-xs text-ink-500">RSS: Банк России, Интерфакс, РБК, Коммерсантъ</div>
+            <div className="text-sm font-medium">Загрузить свежие новости из RSS</div>
+            <div className="text-xs text-ink-500">Банк России, Интерфакс, РБК, Коммерсантъ</div>
           </button>
-          <button className="w-full rounded-lg px-3 py-2 text-left hover:bg-ink-50" onClick={() => run("demo")}>
-            <div className="text-sm font-medium">Перезагрузить демо-набор</div>
-            <div className="text-xs text-ink-500">22 синтетических события для показа</div>
+          <button className="w-full rounded-lg px-3 py-2 text-left hover:bg-ink-50" onClick={() => run("dataset")}>
+            <div className="text-sm font-medium">{realDataset ? "Перезагрузить подборку" : "Перезагрузить синтетический набор"}</div>
+            <div className="text-xs text-ink-500">
+              {realDataset ? "Реальные публикации о 5 компаниях со ссылками на оригиналы" : "Вымышленные события для тестов и показа"}
+            </div>
           </button>
         </div>
       )}

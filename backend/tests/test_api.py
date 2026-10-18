@@ -12,7 +12,8 @@ def client():
 
 def test_status_demo_mode(client):
     s = client.get("/api/status").json()
-    assert s["data_mode"] in ("demo", "mixed")
+    assert s["data_mode"] in ("synthetic", "mixed")
+    assert s["dataset"] == "synthetic"
     assert s["llm"]["enabled"] is False
     assert s["alfa"]["configured"] is False
 

@@ -1,6 +1,7 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import { ErrorBox, Loading } from "./components/States";
 import { AppProvider, useApp } from "./context";
@@ -18,6 +19,7 @@ interface Toast {
 
 function Routed() {
   const { bootError, profileId } = useApp();
+  const location = useLocation();
   if (bootError) {
     return (
       <div className="mx-auto max-w-xl py-20">
@@ -30,14 +32,16 @@ function Routed() {
   }
   if (!profileId) return <Loading text="Подключаемся к серверу…" />;
   return (
-    <Routes>
-      <Route path="/" element={<OverviewPage />} />
-      <Route path="/feed" element={<FeedPage />} />
-      <Route path="/events/:id" element={<EventPage />} />
-      <Route path="/profile" element={<ProfilePage />} />
-      <Route path="/decisions" element={<DecisionsPage />} />
-      <Route path="*" element={<div className="py-20 text-center text-ink-500">Страница не найдена. <Link to="/" className="underline">На главную</Link></div>} />
-    </Routes>
+    <ErrorBoundary resetKey={location.pathname}>
+      <Routes>
+        <Route path="/" element={<OverviewPage />} />
+        <Route path="/feed" element={<FeedPage />} />
+        <Route path="/events/:id" element={<EventPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/decisions" element={<DecisionsPage />} />
+        <Route path="*" element={<div className="py-20 text-center text-ink-500">Страница не найдена. <Link to="/" className="underline">На главную</Link></div>} />
+      </Routes>
+    </ErrorBoundary>
   );
 }
 

@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 
 class ProfileIn(BaseModel):
     name: str = Field(min_length=2, max_length=200)
+    aliases: list[str] = []
+    kind: str = ""
+    source_note: str = ""
     description: str = ""
     industry: str = ""
     subindustries: list[str] = []
@@ -46,4 +49,5 @@ class ActionPatch(BaseModel):
 
 
 class RefreshIn(BaseModel):
-    mode: Literal["demo", "live"] = "demo"
+    # demo — старое название для dataset, оставлено для совместимости
+    mode: Literal["dataset", "demo", "live"] = "dataset"

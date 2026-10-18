@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarClock, FlaskConical, Lightbulb, ShieldAlert, Siren, Sparkles, Target } from "lucide-react";
+import { ArrowRight, CalendarClock, FlaskConical, Lightbulb, Newspaper, ShieldAlert, Siren, Sparkles, Target } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -52,7 +52,8 @@ function EventRow({ ev }: { ev: EventCard }) {
 export default function OverviewPage() {
   const { profileId, profile, dataVersion, meta, status } = useApp();
   const navigate = useNavigate();
-  const [days, setDays] = useState(7);
+  // подборка реальных новостей охватывает около месяца, поэтому по умолчанию 30 дней
+  const [days, setDays] = useState(30);
   const [category, setCategory] = useState("");
   const [level, setLevel] = useState("");
   const [impact, setImpact] = useState("");
@@ -111,18 +112,22 @@ export default function OverviewPage() {
           )}
       </div>
 
-      {status?.data_mode !== "live" && (
-        <div className="flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
-          <FlaskConical size={18} className="mt-0.5 shrink-0" />
-          {status?.data_mode === "demo" ? (
+      {status && status.data_mode !== "live" && (
+        <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+          status.dataset === "synthetic" ? "border-violet-200 bg-violet-50 text-violet-900" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
+          {status.dataset === "synthetic" ? <FlaskConical size={18} className="mt-0.5 shrink-0" /> : <Newspaper size={18} className="mt-0.5 shrink-0" />}
+          {status.dataset === "synthetic" ? (
             <p>
-              <b>Демонстрационный режим.</b> События и компании синтетические, ссылок на оригиналы у них нет.
-              Реальные новости из RSS можно загрузить кнопкой «Обновить ленту».
+              <b>Синтетические данные.</b> Компании и события вымышленные, ссылок на оригиналы нет.
+              Реальная подборка включается переменной DATASET=real.
             </p>
           ) : (
             <p>
-              <b>Смешанный режим:</b> демо-события (помечены «Демо») и реальные новости из RSS.
-              Оставить только реальные можно фильтром источника в ленте.
+              <b>Подборка реальных публикаций</b>
+              {status.curated_period && <> за {formatDate(status.curated_period.from, false)} — {formatDate(status.curated_period.to, false)}</>}
+              {" "}о компаниях из профилей: у каждой ссылка на оригинал, текст — краткий пересказ командой.
+              {status.data_mode === "mixed" ? " Также загружены свежие RSS — источник можно выбрать фильтром в ленте." :
+                " Свежие новости из RSS — кнопка «Обновить ленту»."}
             </p>
           )}
         </div>

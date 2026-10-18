@@ -11,8 +11,9 @@ import type { Profile } from "../types";
 type ProfileData = Omit<Profile, "id" | "is_demo" | "updated_at">;
 
 const EMPTY: ProfileData = {
-  name: "", description: "", industry: "", subindustries: [], regions: [], products: [], clients: [],
-  suppliers: [], competitors: [], goals: [], priorities: [], risks: [], investment_plans: [], keywords: [],
+  name: "", aliases: [], kind: "", source_note: "", description: "", industry: "", subindustries: [], regions: [],
+  products: [], clients: [], suppliers: [], competitors: [], goals: [], priorities: [], risks: [],
+  investment_plans: [], keywords: [],
 };
 
 const LIST_FIELDS: { key: keyof ProfileData; label: string; hint?: string; placeholder?: string }[] = [
@@ -87,7 +88,7 @@ export default function ProfilePage() {
       await api.resetProfile(profile.id);
       await reloadProfiles();
       bumpData();
-      toast("Демо-профиль восстановлен");
+      toast("Исходный профиль восстановлен");
     } catch (err: any) {
       toast(err.message, "error");
     }
@@ -132,8 +133,8 @@ export default function ProfilePage() {
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><Plus size={15} /> Новый профиль</button>
           {profile.is_demo ? (
-            <button type="button" className="btn-secondary" onClick={reset} title="Вернуть исходные значения демо-профиля">
-              <RotateCcw size={15} /> Сбросить демо
+            <button type="button" className="btn-secondary" onClick={reset} title="Вернуть исходные значения встроенного профиля">
+              <RotateCcw size={15} /> Сбросить
             </button>
           ) : (
             <button type="button" className="btn-secondary !text-red-700" onClick={() => setConfirmDelete(true)}>
@@ -146,9 +147,15 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {profile.is_demo && (
+      {profile.is_demo && profile.kind === "real" && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          {profile.source_note || "Профиль реальной компании, составлен командой по открытым источникам."} Профиль можно
+          менять — например, убрать конкурента или поставщика и посмотреть, как изменятся оценки. «Сбросить» вернёт исходный вариант.
+        </div>
+      )}
+      {profile.is_demo && profile.kind !== "real" && (
         <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
-          Это синтетический демо-профиль, он не описывает реальную компанию. Его можно менять: например, уберите конкурента
+          Это синтетический профиль, он не описывает реальную компанию. Его можно менять: например, уберите конкурента
           или поставщика и посмотрите, как изменятся оценки в ленте.
         </div>
       )}
@@ -162,6 +169,9 @@ export default function ProfilePage() {
               <label className="label" htmlFor="p-name">Название</label>
               <input id="p-name" className="input" value={form.name} onChange={(e) => set("name", e.target.value)} />
             </div>
+            <TagInput label="Другие названия и бренды" value={form.aliases} onChange={(v) => set("aliases", v)}
+              placeholder="Например: Сбер, Сбербанк"
+              hint="Как компанию называют в новостях. Избегайте обычных слов («Победа», «Самолёт»): они дадут ложные совпадения" />
             <div>
               <label className="label" htmlFor="p-industry">Отрасль</label>
               <input id="p-industry" className="input" value={form.industry} placeholder="Например: Металлургия"

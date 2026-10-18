@@ -7,11 +7,14 @@ import { Empty, ErrorBox, Skeleton } from "../components/States";
 import { useApp, useLoad } from "../context";
 import { plural } from "../utils";
 
-const DEFAULTS = { q: "", days: "", category: "", impact: "", level: "", mode: "", fav: "", sort: "priority" };
+const DEFAULTS = { q: "", days: "", category: "", impact: "", level: "", mode: "", fav: "", all: "", sort: "priority" };
 type FilterKey = keyof typeof DEFAULTS;
 
+// ниже этой релевантности новость почти не связана с компанией; в живых RSS таких большинство
+const MIN_RELEVANCE = 20;
+
 export default function FeedPage() {
-  const { profileId, dataVersion, meta, toast } = useApp();
+  const { profileId, dataVersion, meta, status, toast } = useApp();
   const [params, setParams] = useSearchParams();
   const get = (k: FilterKey) => params.get(k) ?? DEFAULTS[k];
   const [search, setSearch] = useState(get("q"));
@@ -41,6 +44,7 @@ export default function FeedPage() {
     mode: get("mode"),
     favorites_only: get("fav") === "1",
     sort: get("sort"),
+    min_relevance: get("all") === "1" ? 0 : MIN_RELEVANCE,
   };
 
   const { data, setData, loading, error, reload } = useLoad(
@@ -63,7 +67,7 @@ export default function FeedPage() {
     }
   };
 
-  const activeFilters = (["days", "category", "impact", "level", "mode", "fav", "q"] as FilterKey[]).filter((k) => get(k));
+  const activeFilters = (["days", "category", "impact", "level", "mode", "fav", "all", "q"] as FilterKey[]).filter((k) => get(k));
 
   return (
     <div className="space-y-5">
@@ -106,10 +110,17 @@ export default function FeedPage() {
             <option value="medium">Средняя и выше</option>
           </select>
           <select className="input !w-auto !py-1.5" value={get("mode")} onChange={(e) => set("mode", e.target.value)} aria-label="Источник данных">
-            <option value="">Демо и реальные</option>
-            <option value="live">Только реальные</option>
-            <option value="demo">Только демо</option>
+            <option value="">Все источники</option>
+            {status?.dataset !== "synthetic" && <option value="curated">Подборка реальных новостей</option>}
+            <option value="live">Свежие RSS</option>
+            {!!status?.events.demo && <option value="demo">Синтетика</option>}
           </select>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-700"
+            title={`Скрывать события с релевантностью ниже ${MIN_RELEVANCE} — они почти не связаны с компанией`}>
+            <input type="checkbox" className="h-4 w-4 accent-ink-900" checked={get("all") !== "1"}
+              onChange={(e) => set("all", e.target.checked ? "" : "1")} />
+            Только значимые для компании
+          </label>
           <button className={`btn-secondary !py-1.5 ${get("fav") ? "!border-amber-300 !bg-amber-50 !text-amber-700" : ""}`}
             onClick={() => set("fav", get("fav") ? "" : "1")}>
             <Star size={14} fill={get("fav") ? "currentColor" : "none"} /> Избранное
@@ -144,8 +155,9 @@ export default function FeedPage() {
         <Empty
           title={filters.favorites_only ? "В избранном пока пусто" : "Ничего не найдено"}
           text={filters.favorites_only ? "Отмечайте звёздочкой события, к которым хотите вернуться." :
-            filters.mode === "live" ? "Реальных новостей ещё нет — загрузите их через «Обновить ленту»." :
-              "Попробуйте изменить запрос или ослабить фильтры."}
+            filters.mode === "live" ? "Свежих новостей из RSS ещё нет — загрузите их через «Обновить ленту»." :
+              filters.min_relevance ? "Попробуйте ослабить фильтры или снимите галочку «Только значимые для компании»." :
+                "Попробуйте изменить запрос или ослабить фильтры."}
         />
       )}
       {data && data.items.length > 0 && (

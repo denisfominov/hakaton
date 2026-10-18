@@ -10,6 +10,9 @@ import pytest
 _tmp = tempfile.mkdtemp(prefix="alpha-tests-")
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 os.environ["ANTHROPIC_API_KEY"] = ""
+# логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.
+# реальная подборка проверяется отдельно в test_real_dataset.py
+os.environ["DATASET"] = "synthetic"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -18,7 +21,7 @@ from app import config, db, pipeline  # noqa: E402
 
 @pytest.fixture(scope="session")
 def profiles():
-    data = json.loads((config.DATA_DIR / "demo_profiles.json").read_text(encoding="utf-8"))
+    data = json.loads((config.DATA_DIR / "synthetic" / "profiles.json").read_text(encoding="utf-8"))
     return {p["id"]: p for p in data}
 
 
@@ -26,7 +29,7 @@ def profiles():
 def conn():
     db.init_db()
     c = db.connect()
-    pipeline.ingest_demo(c)
+    pipeline.ingest_dataset(c)
     c.commit()
     yield c
     c.close()

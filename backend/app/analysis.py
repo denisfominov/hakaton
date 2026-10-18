@@ -75,14 +75,20 @@ def detect_channels(ev, profile, pidx, m):
     products = m["products"] or m["subindustries"]
     inv = m["investment_plans"] or profile.get("investment_plans") or []
 
-    # 1. затраты на закупку выросли
-    if "price_up" in sig and m["suppliers"]:
-        sup = short(m["suppliers"])
+    # 1. затраты на закупку выросли (по поставщикам или по риску затрат из реестра компании)
+    # проверяем по началу слова: подстрокой "цен" ловится "процентный"
+    cost_risks = [r for r in m["risks"]
+                  if any(nlp.has_root(nlp.tokens(r), w) for w in ("себестоим", "затрат", "цен", "тариф"))]
+    via_register = not m["suppliers"] and bool(cost_risks)
+    if "price_up" in sig and (m["suppliers"] or cost_risks):
+        sup = short(m["suppliers"] or cost_risks)
+        if via_register:
+            m = {**m, "suppliers": cost_risks}
         pct_txt = f" на {pct_up}" if pct_up else ""
         channels.append({
             "key": "input_cost_up", "type": "risk", "area": "financial",
             "severity": "high" if pct_up else "medium",
-            "title": f"Рост затрат на закупку: {sup}",
+            "title": f"Реализуется риск из реестра: {sup}" if via_register else f"Рост затрат на закупку: {sup}",
             "description": f"Новость говорит о росте цен или тарифов{pct_txt} по позициям, которые компания закупает "
                            f"({sup}). Это прямое давление на себестоимость и маржу.",
             "chain": [f"Рост цен/тарифов{pct_txt}", f"Дороже закупки: {sup}", "Рост себестоимости и снижение маржи"],
@@ -136,16 +142,17 @@ def detect_channels(ev, profile, pidx, m):
         channels.append({
             "key": "supply_disruption", "type": "risk", "area": "operational",
             "severity": "high",
-            "title": f"Риск срыва поставок: {sup}",
+            "title": f"Риск перебоев: {sup}",
             "description": f"Ограничения и задержки в регионе ({reg}) затрагивают поставки, от которых зависит компания: {sup}.",
             "chain": ["Ограничения / задержки в цепочке поставок", f"Перебои с поставками: {sup}",
                       "Простой производства или рост стоимости альтернативных закупок"],
             "horizon": "immediate",
             "actions": [
-                action("Оценить долю закупок из затронутого региона",
-                       f"Проверить долю закупок «{nlp.clean_name(suppliers[0])}» из региона {reg} и текущие запасы в днях "
-                       "потребления; результат — на оперативное совещание.",
-                       "Директор по закупкам", 2, "high"),
+                action("Оценить зависимость от затронутых поставщиков и маршрутов",
+                       f"Проверить, какая доля закупок и отгрузок завязана на «{nlp.clean_name(suppliers[0])}» "
+                       f"({reg}), и сколько дней работы обеспечивают запасы и резервы; результат — на оперативное "
+                       "совещание.",
+                       "Директор по закупкам и логистике", 2, "high"),
                 action("Проработать альтернативные каналы поставки",
                        "Оценить стоимость и сроки альтернативных поставщиков и маршрутов в течение 5 рабочих дней, "
                        "подготовить решение о страховом запасе.",
@@ -154,10 +161,11 @@ def detect_channels(ev, profile, pidx, m):
             "indicators": ["Сроки снятия ограничений", "Ставки на альтернативные маршруты", "Остатки на складах (дни)"],
         })
 
-    # 4. сбой отгрузок на экспорт
-    if ("supply_disruption" in sig and pidx["is_exporter"] and products
-            and set(ev_regions) & nlp.FOREIGN and category != "companies"):
-        reg = ", ".join(sorted(set(ev_regions) & nlp.FOREIGN))
+    # 4. сбой отгрузок на экспорт (зарубежное направление или прямо сказано про экспорт/порты)
+    toks = ev["nlp"]["tokens"]
+    export_route = bool(set(ev_regions) & nlp.FOREIGN) or nlp.has_root(toks, "экспорт") or nlp.has_root(toks, "порт")
+    if "supply_disruption" in sig and pidx["is_exporter"] and products and export_route and category != "companies":
+        reg = ", ".join(sorted(set(ev_regions) & nlp.FOREIGN)) or "экспортных портов"
         channels.append({
             "key": "export_disruption", "type": "risk", "area": "operational",
             "severity": "medium",
@@ -180,8 +188,13 @@ def detect_channels(ev, profile, pidx, m):
             "indicators": ["Очередь и пропускная способность на маршруте", "Ставки перевозчиков", "Претензии покупателей"],
         })
 
-    # 5. спрос растёт / падает
-    if "demand_up" in sig and (products or m["clients"]):
+    # 5. спрос растёт / падает. Своя отрасль + ключевые слова или упоминание компании тоже считаются
+    # (например, «спрос на сталь» для металлурга, даже если конкретный прокат не назван)
+    primary = pidx["primary_industry"]
+    own_market = (primary in m["industries"]
+                  and nlp.count_roots(ev["nlp"]["tokens"], nlp.INDUSTRIES[primary][1]) >= 2
+                  and bool(m["keywords"] or m["company"]))
+    if "demand_up" in sig and (products or own_market):
         prod = short(products) if products else short(profile.get("products") or [])
         channels.append({
             "key": "demand_up", "type": "opportunity", "area": "market",
@@ -203,23 +216,86 @@ def detect_channels(ev, profile, pidx, m):
             ],
             "indicators": ["Объём заказов и тендеров", "Цены реализации", "Загрузка мощностей"],
         })
-    if "demand_down" in sig and (products or m["clients"]):
+    if "demand_down" in sig and (products or own_market):
+        prod = short(products) if products else short(profile.get("products") or [])
+        who = short(m["clients"]) if m["clients"] else "клиентов компании"
         channels.append({
-            "key": "demand_down", "type": "risk", "area": "market", "severity": "medium",
-            "title": "Снижение спроса у клиентов",
-            "description": "Новость говорит о снижении спроса в сегменте, где работает компания.",
-            "chain": ["Падение спроса", "Меньше заказов", "Снижение выручки"],
+            "key": "demand_down", "type": "risk", "area": "market",
+            "severity": "high" if products and m["clients"] else "medium",
+            "title": f"Снижение спроса: {prod}",
+            "description": f"Новость говорит о снижении спроса в сегменте {who}. Это давит на объёмы продаж "
+                           f"и цены по направлению «{prod}».",
+            "chain": ["Падение спроса на рынке", f"Меньше заказов: {prod}", "Снижение выручки и загрузки мощностей"],
             "horizon": "short",
-            "actions": [action("Пересмотреть план продаж", "Пересмотреть план продаж и складские запасы на квартал.",
-                               "Коммерческий директор", 7)],
-            "indicators": ["Заказы клиентов", "Складские остатки"],
+            "actions": [
+                action("Пересмотреть план продаж и загрузку",
+                       f"Коммерческой службе пересмотреть план продаж по {prod} на 2 квартала, проверить складские "
+                       "остатки и сценарий снижения загрузки мощностей.",
+                       "Коммерческий директор", 7, "high"),
+                action("Найти сегменты, где спрос держится",
+                       "Оценить сегменты и рынки, где спрос сохраняется (экспорт, импортозамещение, госзаказ), "
+                       "и предложить перераспределение объёмов.",
+                       "Директор по стратегии", 14),
+            ],
+            "indicators": ["Заказы ключевых клиентов", "Цены реализации", "Складские остатки",
+                           "Сигналы о восстановлении спроса"],
+        })
+
+    # 5b. спрос меняется не у компании, а у её клиентов (для банка — это заёмщики)
+    clients_only = m["clients"] and not products and not own_market
+    if clients_only and ("demand_down" in sig or "demand_up" in sig):
+        down = "demand_down" in sig
+        cl = short(m["clients"])
+        lender = pidx["is_bank"]
+        channels.append({
+            "key": "clients_demand", "type": "risk" if down else "opportunity", "area": "market",
+            "severity": "medium",
+            "title": (f"Ухудшение дел у клиентов: {cl}" if down else f"Рост активности клиентов: {cl}"),
+            "description": (f"У клиентов компании ({cl}) " + ("падает спрос" if down else "растут продажи") + ". "
+                            + ("Для банка это вопрос качества кредитов и спроса на новое финансирование."
+                               if lender else "Это влияет на их заказы и платёжную дисциплину.")),
+            "chain": ["Спрос у клиентов " + ("падает" if down else "растёт"),
+                      "Кредитоспособность и заказы клиентов " + ("ухудшаются" if down else "растут"),
+                      ("Риск по портфелю / дебиторке" if down else "Больше продаж и кредитов")],
+            "horizon": "short",
+            "actions": [
+                action("Проверить ключевых клиентов сегмента" if down else "Предложить клиентам сегмента новые условия",
+                       (f"Риск-менеджменту проверить крупнейших клиентов из сегмента «{cl}»: долговую нагрузку, "
+                        "просрочку, лимиты." if down else
+                        f"Коммерческой службе предложить клиентам сегмента «{cl}» продукты под растущий спрос."),
+                       "Директор по рискам" if down else "Коммерческий директор", 10),
+            ],
+            "indicators": ["Продажи и спрос у клиентов сегмента", "Просрочка / дебиторская задолженность",
+                           "Новые заявки от клиентов"],
+        })
+
+    # 5a. дешевеет то, что продаёт сама компания
+    if "price_down" in sig and products and not m["suppliers"]:
+        prod = short(products)
+        channels.append({
+            "key": "output_price_down", "type": "risk", "area": "financial", "severity": "medium",
+            "title": f"Снижение цен на продукцию: {prod}",
+            "description": f"Цены на продукцию компании ({prod}) снижаются{(' на ' + pct_down) if pct_down else ''}, "
+                           "это уменьшает выручку при тех же объёмах.",
+            "chain": ["Снижение рыночных цен", f"Дешевле продаётся: {prod}", "Давление на выручку и маржу"],
+            "horizon": "short",
+            "actions": [
+                action("Пересчитать выручку при новых ценах",
+                       f"Финансовой службе пересчитать выручку и маржу по {prod} при текущих ценах и оценить, "
+                       "какие издержки можно сократить.",
+                       "Финансовый директор", 7),
+            ],
+            "indicators": ["Цены реализации", "Цены конкурентов", "Объёмы продаж"],
         })
 
     # 6. новое регулирование
     reg_hits = sig.get("regulation", [])
-    strong_reg = any(h in reg_hits for h in ["закон", "постановлен", "требован", "обязан", "обязательн", "правил"])
+    strong_reg = any(h in reg_hits for h in ["закон", "постановлен", "требован", "обязан", "обязательн", "правил",
+                                             "приказ"])
     reg_related = m["industries"] or products or m["priorities"] or m["risks"] or m["keywords"]
-    if strong_reg and reg_related and (category == "regulation" or ev.get("official")) and "support" not in sig:
+    # категория может оказаться "экономикой" (например, ипотека и ставки), поэтому смотрим ещё на наличие срока
+    reg_context = category in ("regulation", "economy") or ev.get("official") or "deadline" in sig
+    if strong_reg and reg_related and reg_context:
         scope = short(products or m["priorities"] or m["risks"] or [nlp.INDUSTRIES[i][0] for i in m["industries"]])
         fine = "штраф" in " ".join(ev["nlp"]["tokens"])
         acts = [
@@ -251,7 +327,10 @@ def detect_channels(ev, profile, pidx, m):
         })
 
     # 7. господдержка / льготы
-    if "support" in sig and not m["competitors"] and (m["industries"] or m["investment_plans"] or m["priorities"] or products):
+    # льготная ипотека — поддержка покупателей, а не компании; её разбирает правило про регулирование
+    mortgage = nlp.has_root(ev["nlp"]["tokens"], "ипотек")
+    if ("support" in sig and not m["competitors"] and not mortgage
+            and (m["industries"] or m["investment_plans"] or m["priorities"] or products)):
         if products and ("доля отечествен" in sig["support"] or "третий лишн" in sig["support"]):
             title = f"Больше доступа к госзакупкам: {short(products, 3)}"
             acts = [
@@ -289,7 +368,8 @@ def detect_channels(ev, profile, pidx, m):
         })
 
     # 8. ключевая ставка
-    if "rate_up" in sig and (pidx["debt_sensitive"] or pidx["has_investments"]):
+    borrower = not pidx["is_bank"] and (pidx["debt_sensitive"] or pidx["has_investments"])
+    if "rate_up" in sig and borrower:
         project = nlp.clean_name(inv[0]) if inv else "инвестпрограммы"
         channels.append({
             "key": "rate_up", "type": "risk", "area": "financial",
@@ -314,7 +394,7 @@ def detect_channels(ev, profile, pidx, m):
             "indicators": ["Сигналы регулятора к следующему заседанию", "Ставки по кредитам и спреды",
                            "Ковенанты по кредитным договорам"],
         })
-    if "rate_down" in sig and (pidx["debt_sensitive"] or pidx["has_investments"]):
+    if "rate_down" in sig and borrower:
         channels.append({
             "key": "rate_down", "type": "opportunity", "area": "financial", "severity": "medium",
             "title": "Снижение стоимости заимствований",
@@ -323,6 +403,54 @@ def detect_channels(ev, profile, pidx, m):
             "horizon": "short",
             "actions": [action("Оценить рефинансирование", "Оценить рефинансирование дорогих кредитов.", "Казначейство", 10)],
             "indicators": ["Ставки по кредитам"],
+        })
+    if "rate_hold" in sig and borrower:
+        project = nlp.clean_name(inv[0]) if inv else "инвестпрограммы"
+        channels.append({
+            "key": "rate_hold", "type": "risk", "area": "financial", "severity": "medium",
+            "via_profile": "долг/кредиты в реестре рисков" if pidx["debt_sensitive"] else "есть инвестпланы",
+            "title": "Дорогие деньги сохраняются дольше",
+            "description": "Ставка остаётся на прежнем высоком уровне: снижение стоимости кредитов откладывается, "
+                           f"а финансирование «{project}» и спрос клиентов, зависящий от кредитов, остаются под давлением.",
+            "chain": ["Ключевая ставка без изменений", "Кредиты не дешевеют", "Процентные расходы и спрос — без улучшения"],
+            "horizon": "short",
+            "actions": [
+                action("Обновить бюджет под сценарий «ставка дольше высокая»",
+                       "Казначейству заложить в бюджет сохранение текущей ставки минимум до следующего заседания "
+                       "и пересчитать процентные расходы и график заимствований.",
+                       "Казначейство", 7),
+                action("Проверить сроки инвестпроектов",
+                       f"Оценить, нужно ли сдвигать или поэтапно финансировать «{project}» при сохранении ставки.",
+                       "Финансовый директор", 14),
+            ],
+            "indicators": ["Решение по ставке на следующем заседании", "Инфляция и инфляционные ожидания",
+                           "Ставки по кредитам и облигациям"],
+        })
+    rate_sig = [k for k in ("rate_up", "rate_down", "rate_hold") if k in sig]
+    if rate_sig and pidx["is_bank"]:
+        move = {"rate_up": "повышение", "rate_down": "снижение", "rate_hold": "сохранение"}[rate_sig[0]]
+        channels.append({
+            "key": "rate_bank", "type": "risk" if rate_sig[0] != "rate_down" else "opportunity",
+            "area": "financial", "severity": "medium",
+            "via_profile": "банк: процентный и кредитный риск",
+            "title": f"Ставка: {move} — маржа, спрос на кредиты и качество портфеля",
+            "description": f"Для банка {move} ключевой ставки меняет стоимость фондирования, спрос на кредиты "
+                           "(в том числе ипотеку) и нагрузку на заёмщиков — прежде всего застройщиков и компании с долгом.",
+            "chain": [f"Ключевая ставка: {move}", "Стоимость фондирования и спрос на кредиты",
+                      "Процентная маржа и качество кредитного портфеля"],
+            "horizon": "short",
+            "actions": [
+                action("Пересчитать процентную маржу",
+                       "Комитету по управлению активами и пассивами пересчитать процентную маржу и спрос на кредиты "
+                       "под новый сценарий ставки на 2 квартала.",
+                       "Финансовый директор (ALM)", 5, "high"),
+                action("Проверить заёмщиков, чувствительных к ставке",
+                       "Риск-менеджменту проверить застройщиков и корпоративных заёмщиков с плавающей ставкой "
+                       "и долей процентных расходов выше порога.",
+                       "Директор по рискам", 10),
+            ],
+            "indicators": ["Решения Банка России по ставке", "Спрос на ипотеку и кредиты бизнесу",
+                           "Просрочка по портфелю застройщиков"],
         })
 
     # 9. курс рубля
@@ -449,13 +577,67 @@ def detect_channels(ev, profile, pidx, m):
             "indicators": ["Результаты пилотов у других компаний", "Стоимость внедрения"],
         })
 
+    # 13. новость про саму компанию (отчётность, корпоративные события, инциденты),
+    # если ни одно правило выше не нашло внешнего канала влияния
+    if not channels and m["company"]:
+        channels.append(own_company_channel(ev, profile))
+
     return channels
+
+
+OWN_POSITIVE = ["выросл", "рост выручк", "рекордн", "расшир", "увелич", "запуст", "нов направлен", "дивиденд"]
+OWN_NEGATIVE = ["сократил", "снизил", "упал", "атак", "убыт", "падени", "останов", "штраф"]
+
+
+def own_company_channel(ev, profile):
+    toks = ev["nlp"]["tokens"]
+    pos = [r for r in OWN_POSITIVE if nlp.has_root(toks, r)]
+    neg = [r for r in OWN_NEGATIVE if nlp.has_root(toks, r)]
+    if pos and not neg:
+        kind, title = "opportunity", "Позитивная новость о самой компании"
+    elif neg and not pos:
+        kind, title = "risk", "Негативная новость о самой компании"
+    else:
+        kind, title = "neutral", "Новость о самой компании: важна для инвесторов и контрагентов"
+
+    acts = [
+        action("Сверить с планом и ожиданиями рынка",
+               "Финансовой службе и IR сравнить цифры из публикации с бюджетом и прогнозами аналитиков, "
+               "подготовить короткий комментарий для правления.",
+               "Финансовый директор / IR", 3),
+    ]
+    if kind == "risk":
+        acts.insert(0, action("Оценить последствия для операций и клиентов",
+                              "Проверить, затронуты ли операции, клиенты и сроки обязательств; при необходимости "
+                              "запустить план непрерывности.",
+                              "Операционный директор", 1, "high"))
+        acts.append(action("Подготовить коммуникацию",
+                           "Подготовить сообщение для клиентов, инвесторов и сотрудников, чтобы снять вопросы.",
+                           "Директор по коммуникациям", 1))
+    else:
+        acts.append(action("Использовать новость в коммуникации",
+                           "Отразить новость в материалах для инвесторов, банков-кредиторов и ключевых клиентов.",
+                           "Директор по коммуникациям", 7, "low"))
+
+    return {
+        "key": "own_company", "type": kind, "area": "strategic", "severity": "medium",
+        "title": title,
+        "description": f"Публикация прямо касается компании «{nlp.clean_name(profile.get('name', ''))}»: "
+                       "её отчётности, корпоративных решений или инцидентов. Внешнего канала влияния правила не нашли.",
+        "chain": ["Публикация о компании", "Реакция инвесторов, клиентов и контрагентов",
+                  "Репутация, стоимость капитала, отношения с партнёрами"],
+        "horizon": "immediate" if kind == "risk" else "short",
+        "actions": acts,
+        "indicators": ["Реакция котировок и аналитиков", "Вопросы клиентов и партнёров", "Следующая отчётность"],
+    }
 
 
 # при равной силе что показывать первым: идущий сбой важнее роста цен и т.д.
 CHANNEL_ORDER = ["supply_disruption", "competitor_trouble", "regulation", "input_cost_up", "export_disruption",
-                 "support", "export_niche", "input_cost_down", "rate_up", "fx_export", "competitor_growth",
-                 "demand_up", "demand_down", "fx_import", "rate_down", "tech"]
+                 "support", "export_niche", "input_cost_down", "demand_down", "clients_demand", "rate_up", "rate_bank",
+                 "rate_hold",
+                 "fx_export", "competitor_growth", "demand_up", "output_price_down", "fx_import", "rate_down", "tech",
+                 "own_company"]
 
 
 def main_channel(channels):
@@ -547,6 +729,12 @@ def build_insight(ev, profile, m, channels, score, cluster_size=1):
     horizon = min(horizons, key=HORIZON_ORDER.index)
 
     assumptions = ["Каналы влияния определены правилами по ключевым словам и профилю; денежный эффект не рассчитывался."]
+    extra = ev.get("extra") or {}
+    if extra.get("paraphrase"):
+        assumptions.append("Факты взяты из краткого пересказа публикации, подготовленного командой; "
+                           "первоисточник — по ссылке.")
+    if extra.get("time_approx"):
+        assumptions.append("Точное время публикации неизвестно, указана дата.")
     gaps = []
     if not nlp.has_money_or_percent(" ".join([ev.get("summary") or "", ev.get("body") or ""])):
         gaps.append("В тексте нет количественных оценок — масштаб события оценён качественно.")

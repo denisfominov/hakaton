@@ -60,6 +60,7 @@ export interface EventFilters {
   mode?: string;
   favorites_only?: boolean;
   sort?: string;
+  min_relevance?: number;
 }
 
 export const api = {
@@ -85,7 +86,7 @@ export const api = {
   runLlm: (profileId: string, id: string) =>
     request<{ insight: Insight }>(`/events/${id}/llm?${qs({ profile_id: profileId })}`, { method: "POST" }),
 
-  refresh: (mode: "demo" | "live") =>
+  refresh: (mode: "dataset" | "live") =>
     request<{ mode: string; report: { source: string; ok: boolean; added?: number; error?: string; skipped?: boolean }[]; message?: string | null }>(
       "/refresh",
       { method: "POST", body: JSON.stringify({ mode }) },

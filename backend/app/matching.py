@@ -5,7 +5,7 @@ from . import nlp
 GENERIC_ROOTS = {"довест", "сниз", "снизит", "увелич", "сократ", "войт", "откр", "открыт", "рост", "год",
                  "году", "доля", "дол", "развит", "нов", "основ", "компан", "выход", "запуск"}
 
-PROFILE_LIST_FIELDS = ["subindustries", "regions", "products", "clients", "suppliers", "competitors",
+PROFILE_LIST_FIELDS = ["aliases", "subindustries", "regions", "products", "clients", "suppliers", "competitors",
                        "goals", "priorities", "risks", "investment_plans", "keywords"]
 
 DEBT_ROOTS = ["долг", "кредит", "плавающ", "займ", "капекс", "облигац"]
@@ -61,10 +61,15 @@ def profile_index(p):
     is_importer = bool(set(supplier_regions) & nlp.FOREIGN) or "импорт" in nlp.normalize_text(
         " ".join((p.get("risks") or []) + [p.get("description", "")]))
 
+    # для банка ставка — это маржа и спрос на кредиты, а не стоимость собственного долга
+    is_bank = "finance" in industries and "банк" in nlp.normalize_text(p.get("industry", "") + " " + p.get("name", ""))
     risk_toks = nlp.tokens(" ".join((p.get("risks") or []) + (p.get("investment_plans") or [])))
-    debt_sensitive = any(nlp.has_root(risk_toks, r) for r in DEBT_ROOTS)
+    debt_sensitive = not is_bank and any(nlp.has_root(risk_toks, r) for r in DEBT_ROOTS)
 
+    primary = nlp.detect_industries(nlp.tokens(p.get("industry", "")))
     return {
+        "primary_industry": primary[0] if primary else (sorted(industries)[0] if industries else "other"),
+        "is_bank": is_bank,
         "industries": industries,
         "input_industries": input_industries,
         "regions": regions,
@@ -83,8 +88,8 @@ def find_matches(ev, p, pidx):
     toks = ev["nlp"]["tokens"]
     ev_regions = set(ev["nlp"]["regions"])
     m = {}
-    name = nlp.clean_name(p.get("name", ""))
-    m["company"] = [p["name"]] if name and term_match(name, toks) else []
+    names = [p.get("name", "")] + (p.get("aliases") or [])
+    m["company"] = [p["name"]] if any(nlp.clean_name(n) and term_match(n, toks) for n in names) else []
     for f in ["competitors", "suppliers", "clients", "products", "subindustries", "keywords"]:
         m[f] = [t for t in (p.get(f) or []) if term_match(t, toks, strict=True)]
     for f in ["goals", "priorities", "risks", "investment_plans"]:

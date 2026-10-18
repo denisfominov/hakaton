@@ -18,21 +18,42 @@ log = logging.getLogger("alpha")
 LEVEL_ORDER = ["low", "medium", "high", "critical"]
 
 
-def demo_profiles():
-    return json.loads((config.DATA_DIR / "demo_profiles.json").read_text(encoding="utf-8"))
+def preset_profiles():
+    """Встроенные профили + хэш версии файла.
+
+    Если пользователь сохранил профиль через форму, поля preset_hash там уже нет — такой профиль не трогаем.
+    Если не редактировал — при изменении файла обновляем профиль в базе автоматически.
+    """
+    out = []
+    for p in sources.load_profiles():
+        h = pipeline.profile_hash(p)
+        out.append({**p, "preset_hash": h})
+    return out
 
 
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
     with get_db() as conn:
-        for p in demo_profiles():
-            exists = conn.execute("SELECT 1 FROM profiles WHERE id = ?", (p["id"],)).fetchone()
-            if not exists:
+        presets = preset_profiles()
+        ids = [p["id"] for p in presets]
+        # при смене набора данных убираем встроенные профили и события другого набора;
+        # профили, созданные пользователем, и план действий не трогаем
+        conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids))})", ids)
+        other = "demo" if config.DATASET == "real" else "curated"
+        conn.execute("DELETE FROM events WHERE source_type = ?", (other,))
+        for p in presets:
+            row = conn.execute("SELECT data FROM profiles WHERE id = ?", (p["id"],)).fetchone()
+            if not row:
                 conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
                              (p["id"], dumps(p), now_iso()))
-        added = pipeline.ingest_demo(conn)
-        log.info("demo news loaded, new: %s", added)
+                continue
+            stored = loads(row["data"], {})
+            if stored.get("preset_hash") and stored["preset_hash"] != p["preset_hash"]:
+                conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?",
+                             (dumps(p), now_iso(), p["id"]))
+        added = pipeline.ingest_dataset(conn)
+        log.info("dataset %s loaded, new events: %s", config.DATASET, added)
     yield
 
 
@@ -75,6 +96,9 @@ def card(r, favs=()):
         "is_demo": ev["is_demo"],
         "category": ev["category"],
         "category_label": nlp.CATEGORIES.get(ev["category"], ev["category"]),
+        "title_original": (ev.get("extra") or {}).get("title_original"),
+        "paraphrase": bool((ev.get("extra") or {}).get("paraphrase")),
+        "time_approx": bool((ev.get("extra") or {}).get("time_approx")),
         "regions": ev["nlp"].get("regions", []),
         "priority": s["priority"],
         "priority_level": s["priority_level"],
@@ -100,12 +124,23 @@ def in_period(ev, days):
     return datetime.fromisoformat(ev["published_at"]) >= since
 
 
-def apply_filters(results, days=None, category=None, impact=None, level=None, mode=None, q=None, favs=None):
+SOURCE_MODES = {
+    "curated": {"curated"},
+    "live": {"rss", "alfa"},
+    "rss": {"rss", "alfa"},
+    "demo": {"demo"},
+}
+
+
+def apply_filters(results, days=None, category=None, impact=None, level=None, mode=None, q=None, favs=None,
+                  min_relevance=0):
     out = []
     q_toks = nlp.tokens(q) if q else []
     for r in results:
         ev = r["event"]
         if not in_period(ev, days):
+            continue
+        if min_relevance and r["score"]["relevance"] < min_relevance:
             continue
         if category and ev["category"] != category:
             continue
@@ -119,9 +154,7 @@ def apply_filters(results, days=None, category=None, impact=None, level=None, mo
                 continue
         if level and LEVEL_ORDER.index(r["score"]["priority_level"]) < LEVEL_ORDER.index(level):
             continue
-        if mode == "demo" and not ev["is_demo"]:
-            continue
-        if mode == "live" and ev["is_demo"]:
+        if mode in SOURCE_MODES and ev["source_type"] not in SOURCE_MODES[mode]:
             continue
         if favs is not None and ev["id"] not in favs:
             continue
@@ -143,19 +176,27 @@ def health():
 @app.get("/api/status")
 def status():
     with get_db() as conn:
-        counts = conn.execute(
-            "SELECT SUM(is_demo) AS demo, SUM(1 - is_demo) AS live, COUNT(*) AS total FROM events").fetchone()
+        by_type = {r["source_type"]: r["n"] for r in
+                   conn.execute("SELECT source_type, COUNT(*) AS n FROM events GROUP BY source_type")}
+        period = conn.execute("SELECT MIN(published_at) AS a, MAX(published_at) AS b FROM events "
+                              "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
-    demo, live = counts["demo"] or 0, counts["live"] or 0
-    if live and demo:
+    curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
+    live = by_type.get("rss", 0) + by_type.get("alfa", 0)
+    builtin = curated or demo
+    if live and builtin:
         mode = "mixed"
     elif live:
         mode = "live"
+    elif curated:
+        mode = "curated"
     else:
-        mode = "demo"
+        mode = "synthetic"
     return {
         "data_mode": mode,
-        "events": {"demo": demo, "live": live, "total": counts["total"]},
+        "dataset": config.DATASET,
+        "curated_period": {"from": period["a"], "to": period["b"]} if curated else None,
+        "events": {"curated": curated, "demo": demo, "live": live, "total": sum(by_type.values())},
         "llm": {
             "enabled": config.llm_enabled(),
             "model": config.LLM_MODEL if config.llm_enabled() else None,
@@ -183,16 +224,17 @@ def meta():
 @app.post("/api/refresh")
 def refresh(body: RefreshIn):
     with get_db() as conn:
-        if body.mode == "demo":
-            added = pipeline.ingest_demo(conn)
-            return {"mode": "demo", "report": [{"source": "Демо-набор", "ok": True, "added": added}]}
+        if body.mode in ("dataset", "demo"):
+            added = pipeline.ingest_dataset(conn)
+            name = "Подборка реальных новостей" if config.DATASET == "real" else "Синтетический набор"
+            return {"mode": "dataset", "report": [{"source": name, "ok": True, "added": added}]}
         report = pipeline.ingest_live(conn)
     ok = [r for r in report if r.get("ok")]
     return {
         "mode": "live",
         "report": report,
         "added": sum(r.get("added", 0) for r in ok),
-        "message": None if ok else "Ни один внешний источник не ответил. Продолжаем работать на демо-данных.",
+        "message": None if ok else "Ни один внешний источник не ответил. Продолжаем работать на встроенной подборке.",
     }
 
 
@@ -250,9 +292,9 @@ def update_profile(profile_id: str, body: ProfileIn):
 
 @app.post("/api/profiles/{profile_id}/reset")
 def reset_profile(profile_id: str):
-    original = next((p for p in demo_profiles() if p["id"] == profile_id), None)
+    original = next((p for p in preset_profiles() if p["id"] == profile_id), None)
     if not original:
-        raise HTTPException(400, "Сбросить можно только демонстрационный профиль")
+        raise HTTPException(400, "Сбросить можно только встроенный профиль")
     with get_db() as conn:
         conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?",
                      (dumps(original), now_iso(), profile_id))
@@ -293,6 +335,7 @@ def list_events(
     mode: str = "",
     favorites_only: bool = False,
     sort: str = "priority",
+    min_relevance: int = Query(0, ge=0, le=100),
     limit: int = Query(100, le=500),
 ):
     with get_db() as conn:
@@ -302,7 +345,7 @@ def list_events(
     if level and level not in LEVEL_ORDER:
         raise HTTPException(400, "Неизвестный уровень важности")
     items = apply_filters(results, days or None, category or None, impact or None, level or None, mode or None,
-                          q.strip() or None, favs if favorites_only else None)
+                          q.strip() or None, favs if favorites_only else None, min_relevance)
     key = SORTS.get(sort, SORTS["priority"])
     items = sorted(items, key=key, reverse=(sort == "date"))
     return {"total": len(items), "items": [card(r, favs) for r in items[:limit]]}
@@ -405,7 +448,7 @@ def run_llm(event_id: str, profile_id: str):
 # ---------- обзор ----------
 
 @app.get("/api/overview")
-def get_overview(profile_id: str, days: int = 7, category: str = "", impact: str = "", level: str = ""):
+def get_overview(profile_id: str, days: int = 30, category: str = "", impact: str = "", level: str = ""):
     with get_db() as conn:
         profile = get_profile(conn, profile_id)
         results = pipeline.analyze_all(conn, profile)

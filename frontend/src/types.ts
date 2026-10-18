@@ -4,6 +4,9 @@ export type ImpactType = "risk" | "opportunity" | "neutral" | "mixed";
 export interface Profile {
   id: string;
   name: string;
+  aliases: string[];
+  kind?: string;
+  source_note?: string;
   description: string;
   industry: string;
   subindustries: string[];
@@ -37,6 +40,9 @@ export interface EventCard {
   is_demo: boolean;
   category: string;
   category_label: string;
+  title_original: string | null;
+  paraphrase: boolean;
+  time_approx: boolean;
   regions: string[];
   priority: number;
   priority_level: Level;
@@ -189,8 +195,10 @@ export interface Overview {
 }
 
 export interface Status {
-  data_mode: "demo" | "live" | "mixed";
-  events: { demo: number; live: number; total: number };
+  data_mode: "curated" | "synthetic" | "live" | "mixed";
+  dataset: "real" | "synthetic";
+  curated_period: { from: string; to: string } | null;
+  events: { curated: number; demo: number; live: number; total: number };
   llm: { enabled: boolean; model: string | null; note: string | null };
   alfa: { configured: boolean; status: string };
   sources: { name: string; url: string; enabled: boolean }[];

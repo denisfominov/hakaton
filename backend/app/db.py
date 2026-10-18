@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS events (
     is_demo INTEGER DEFAULT 0,
     category TEXT,
     nlp TEXT,                  -- json: токены, регионы, отрасли, сигналы
-    content_hash TEXT
+    content_hash TEXT,
+    extra TEXT                 -- json: оригинальный заголовок, язык, признак пересказа
 );
 CREATE INDEX IF NOT EXISTS idx_events_published ON events(published_at);
 CREATE INDEX IF NOT EXISTS idx_events_cluster ON events(cluster_id);
@@ -111,6 +112,10 @@ def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
         conn.executescript(SCHEMA)
+        # база могла быть создана старой версией без колонки extra
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(events)")]
+        if "extra" not in cols:
+            conn.execute("ALTER TABLE events ADD COLUMN extra TEXT")
 
 
 def dumps(obj):

@@ -38,11 +38,23 @@ def strip_html(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-# ---------- демо ----------
+# ---------- встроенные наборы данных ----------
 
-def load_demo_news():
-    """Синтетические события. Даты считаем от текущего момента, чтобы фильтры по периоду работали."""
-    raw = json.loads((config.DATA_DIR / "demo_news.json").read_text(encoding="utf-8"))
+def load_profiles(dataset=None):
+    path = config.DATA_DIR / (dataset or config.DATASET) / "profiles.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_dataset_news(dataset=None):
+    dataset = dataset or config.DATASET
+    raw = json.loads((config.DATA_DIR / dataset / "news.json").read_text(encoding="utf-8"))
+    if dataset == "synthetic":
+        return _synthetic(raw)
+    return _curated(raw)
+
+
+def _synthetic(raw):
+    """Вымышленные события. Даты считаем от текущего момента, чтобы фильтры по периоду работали."""
     now = datetime.now(timezone.utc)
     items = []
     for it in raw:
@@ -59,6 +71,32 @@ def load_demo_news():
             "reliability": it.get("reliability", 0.6),
             "official": bool(it.get("official")),
             "is_demo": True,
+        })
+    return items
+
+
+def _curated(raw):
+    """Подборка реальных публикаций. Даты настоящие, текст — короткий пересказ командой, оригинал по ссылке."""
+    items = []
+    for it in raw:
+        items.append({
+            "id": it["id"],
+            "title": it["title"],
+            "summary": it.get("summary", ""),
+            "body": it.get("body", ""),
+            "source": it["source"],
+            "source_type": "curated",
+            "url": it["url"],
+            "published_at": it["published_at"],
+            "reliability": it.get("reliability", 0.7),
+            "official": bool(it.get("official")),
+            "is_demo": False,
+            "extra": {
+                "title_original": it.get("title_original"),
+                "lang": it.get("lang", "ru"),
+                "time_approx": bool(it.get("time_approx")),
+                "paraphrase": True,
+            },
         })
     return items
 

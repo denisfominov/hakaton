@@ -13,6 +13,13 @@ load_dotenv(BACKEND_DIR / ".env")
 DATA_DIR = BACKEND_DIR / "data"
 DB_PATH = Path(os.getenv("DB_PATH", str(BACKEND_DIR / "alpha.db")))
 
+# real — реальные компании и подборка реальных новостей со ссылками (по умолчанию)
+# synthetic — вымышленные компании и события (на них построены тесты бизнес-логики)
+DATASET = os.getenv("DATASET", "real")
+if DATASET not in ("real", "synthetic"):
+    DATASET = "real"
+DATASET_DIR = DATA_DIR / DATASET
+
 # LLM (Anthropic Claude). Без ключа работаем только на правилах
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-opus-5-5")

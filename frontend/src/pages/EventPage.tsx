@@ -158,7 +158,8 @@ function ActionsBlock({ actions, added, onAdd }: { actions: SuggestedAction[]; a
 function Analysis({ ins, ev, added, onAdd }: { ins: Insight; ev: EventDetail; added: Set<string>; onAdd: (a: SuggestedAction) => void }) {
   return (
     <>
-      <Block n={1} title="Суть события" hint="Что фактически произошло — по тексту источника">
+      <Block n={1} title="Суть события"
+        hint={ev.paraphrase ? "Что фактически произошло — по пересказу публикации (оригинал по ссылке)" : "Что фактически произошло — по тексту источника"}>
         <p className="text-sm text-ink-900">{ins.what_happened}</p>
         {ins.facts.length > 0 && (
           <ul className="mt-3 space-y-1.5">
@@ -247,7 +248,7 @@ function Analysis({ ins, ev, added, onAdd }: { ins: Insight; ev: EventDetail; ad
             <ul className="space-y-1.5 text-sm">
               <li>
                 {ev.url ? <a href={ev.url} target="_blank" rel="noreferrer" className="text-ink-900 underline decoration-ink-300 hover:decoration-ink-900">{ev.source}</a>
-                  : <span>{ev.source} <span className="text-xs text-ink-400">(демо, без ссылки)</span></span>}
+                  : <span>{ev.source} <span className="text-xs text-ink-400">(синтетика, без ссылки)</span></span>}
                 <span className="text-xs text-ink-400"> · {formatDate(ev.published_at)}</span>
               </li>
               {ev.related.map((r) => (
@@ -407,15 +408,20 @@ export default function EventPage() {
           <FactBadge status={ev.fact_status} />
         </div>
         <h1 className="mt-3 text-xl font-semibold leading-snug sm:text-2xl">{ev.title}</h1>
+        {ev.title_original && ev.title_original !== ev.title && (
+          <p className="mt-1 text-sm text-ink-500">Заголовок оригинала: «{ev.title_original}»</p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
           <span>{ev.source}</span>
-          <span>{formatDate(ev.published_at)}</span>
+          <span title={ev.time_approx ? "Точное время публикации неизвестно" : undefined}>
+            {ev.time_approx ? formatDate(ev.published_at, false) : formatDate(ev.published_at)}
+          </span>
           {ev.url ? (
             <a href={ev.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-ink-700 hover:underline">
               <ExternalLink size={14} /> Оригинал публикации
             </a>
           ) : (
-            <span className="text-ink-400">Демо-событие: оригинала нет</span>
+            <span className="text-ink-400">Синтетическое событие: оригинала нет</span>
           )}
           {ev.related.length > 0 && <span>Объединено публикаций: {ev.related.length + 1}</span>}
         </div>
@@ -432,11 +438,16 @@ export default function EventPage() {
             <Link to="/decisions" className="btn-ghost">Связанных действий: {ev.linked_actions}</Link>
           )}
           <button className="btn-ghost" onClick={() => setShowText((s) => !s)}>
-            <FileText size={15} /> {showText ? "Скрыть текст" : "Текст публикации"}
+            <FileText size={15} /> {showText ? "Скрыть текст" : ev.paraphrase ? "Пересказ публикации" : "Текст публикации"}
           </button>
         </div>
         {showText && (
           <div className="mt-4 whitespace-pre-line rounded-lg border border-ink-100 p-4 text-sm leading-relaxed text-ink-700">
+            {ev.paraphrase && (
+              <p className="mb-2 text-xs text-ink-500">
+                Краткий пересказ фактов, подготовленный командой. Полный текст — по ссылке на оригинал.
+              </p>
+            )}
             {ev.summary && <p className="mb-2 font-medium">{ev.summary}</p>}
             {ev.body || "Полного текста нет — доступен только анонс."}
           </div>

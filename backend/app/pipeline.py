@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import analysis, dedup, matching, nlp, scoring, sources
+from . import analysis, config, dedup, matching, nlp, scoring, sources
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
@@ -82,20 +82,33 @@ def save_items(conn, items):
             (it["id"], it["content_hash"], it["source"]),
         ).fetchone()
         if exists:
-            if it.get("is_demo"):
-                # у демо пересчитываем дату относительно "сейчас", иначе через неделю всё станет старым
-                conn.execute("UPDATE events SET published_at = ? WHERE id = ?", (it["published_at"], exists["id"]))
+            if it["source_type"] in ("demo", "curated"):
+                # встроенные наборы синхронизируем с файлом (правки текста, у синтетики — даты от "сейчас")
+                conn.execute(
+                    """UPDATE events SET title = ?, summary = ?, body = ?, source = ?, url = ?, published_at = ?,
+                       reliability = ?, official = ?, category = ?, nlp = ?, extra = ? WHERE id = ?""",
+                    (it["title"], it["summary"], it["body"], it["source"], it.get("url"), it["published_at"],
+                     it.get("reliability", 0.6), int(bool(it.get("official"))), category, dumps(info),
+                     dumps(it.get("extra") or {}), exists["id"]),
+                )
             continue
         conn.execute(
             """INSERT INTO events (id, cluster_id, title, summary, body, source, source_type, url, published_at,
-                                   fetched_at, reliability, official, is_demo, category, nlp, content_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                   fetched_at, reliability, official, is_demo, category, nlp, content_hash, extra)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (it["id"], it["id"], it["title"], it["summary"], it["body"], it["source"], it["source_type"], it.get("url"),
              it["published_at"], now_iso(), it.get("reliability", 0.6), int(bool(it.get("official"))),
-             int(bool(it.get("is_demo"))), category, dumps(info), it["content_hash"]),
+             int(bool(it.get("is_demo"))), category, dumps(info), it["content_hash"], dumps(it.get("extra") or {})),
         )
         added += 1
     return added
+
+
+def refresh_nlp(conn):
+    """Пересчитать признаки для всех событий — словари меняются, а RSS-новости лежат в базе со старой разметкой."""
+    for r in conn.execute("SELECT id, title, summary, body FROM events").fetchall():
+        info, category = extract(dict(r))
+        conn.execute("UPDATE events SET nlp = ?, category = ? WHERE id = ?", (dumps(info), category, r["id"]))
 
 
 def recluster(conn):
@@ -110,10 +123,12 @@ def log_fetch(conn, source, ok, items=0, error=None):
                  (now_iso(), source, int(ok), items, error))
 
 
-def ingest_demo(conn):
-    added = save_items(conn, sources.load_demo_news())
+def ingest_dataset(conn):
+    """Встроенный набор: подборка реальных новостей или синтетика (см. DATASET)."""
+    added = save_items(conn, sources.load_dataset_news())
+    refresh_nlp(conn)
     recluster(conn)
-    log_fetch(conn, "demo", True, added)
+    log_fetch(conn, f"dataset:{config.DATASET}", True, added)
     bump_version()
     return added
 
@@ -159,9 +174,25 @@ def load_events(conn):
     for r in conn.execute("SELECT * FROM events ORDER BY published_at DESC"):
         ev = dict(r)
         ev["nlp"] = loads(ev["nlp"], {})
+        ev["extra"] = loads(ev.get("extra"), {}) or {}
         ev["official"] = bool(ev["official"])
         ev["is_demo"] = bool(ev["is_demo"])
         events.append(ev)
+    return events
+
+
+def prepare_events(items):
+    """То же, что загрузка в БД + recluster, но в памяти. Нужно для тестов на встроенных наборах."""
+    events = []
+    for raw in items:
+        it = normalize(raw)
+        if not it:
+            continue
+        info, category = extract(it)
+        events.append({**it, "nlp": info, "category": category, "extra": it.get("extra") or {}})
+    mapping = dedup.cluster_events(events)
+    for ev in events:
+        ev["cluster_id"] = mapping.get(ev["id"], ev["id"])
     return events
 
 
@@ -192,12 +223,16 @@ def fact_status(ev, cluster):
 
 
 def analyze_all(conn, profile):
-    """Для каждого кластера считаем матчинг, каналы, баллы и аналитику по правилам."""
     key = (profile["id"], profile_hash(profile), _events_version, datetime.now().strftime("%Y%m%d%H"))
     if key in _cache:
         return _cache[key]
+    results = analyze_events(load_events(conn), profile)
+    _cache[key] = results
+    return results
 
-    events = load_events(conn)
+
+def analyze_events(events, profile):
+    """Для каждого кластера считаем матчинг, каналы, баллы и аналитику по правилам."""
     pidx = matching.profile_index(profile)
     sem = semantic_scores(events, profile)
 
@@ -226,7 +261,6 @@ def analyze_all(conn, profile):
         })
 
     results.sort(key=lambda r: -r["score"]["priority"])
-    _cache[key] = results
     return results
 
 
