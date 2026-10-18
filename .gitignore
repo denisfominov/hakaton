@@ -1,0 +1,30 @@
+
+# Python virtual environment
+backend/.venv/
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and build
+node_modules/
+dist/
+.vite/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local database (создаётся при запуске backend)
+*.db
+
+# IDE and OS
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db

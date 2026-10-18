@@ -1,0 +1,7 @@
+[
+  {"id": "cbr", "name": "Банк России — события", "url": "https://www.cbr.ru/rss/eventrss", "reliability": 0.95, "official": true, "enabled": true},
+  {"id": "interfax", "name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "reliability": 0.85, "enabled": true},
+  {"id": "rbc", "name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "reliability": 0.8, "enabled": true},
+  {"id": "kommersant", "name": "Коммерсантъ", "url": "https://www.kommersant.ru/RSS/news.xml", "reliability": 0.8, "enabled": true},
+  {"id": "tass", "name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "reliability": 0.8, "enabled": false}
+]
