@@ -17,6 +17,9 @@ interface Props {
 type Item = { kind: "custom" | "option"; value: string; group?: string };
 
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+// все списки профиля — по алфавиту, как в русском словаре (кириллица перед латиницей)
+const collator = new Intl.Collator("ru", { sensitivity: "base", numeric: true });
+export const alpha = (values: string[]) => [...values].sort((a, b) => collator.compare(a, b));
 
 // поле со списком значений: выбор из вариантов или своё значение.
 // Enter добавляет элемент, через ";" можно вставить несколько сразу
@@ -64,7 +67,7 @@ export default function TagInput({ label, value, onChange, placeholder, hint, op
     parts.forEach((p) => {
       if (!next.some((x) => norm(x) === norm(p))) next.push(p);
     });
-    onChange(next);
+    onChange(alpha(next));
     setDraft("");
   };
 
@@ -102,7 +105,7 @@ export default function TagInput({ label, value, onChange, placeholder, hint, op
         className="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2 py-1.5 focus-within:border-ink-500 focus-within:ring-2 focus-within:ring-ink-200"
         onClick={() => inputRef.current?.focus()}
       >
-        {value.map((v) => {
+        {alpha(value).map((v) => {
           const custom = options && !known.has(norm(v));
           return (
             <span key={v} title={custom ? "Своё значение" : undefined}

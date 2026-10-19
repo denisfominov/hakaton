@@ -7,7 +7,7 @@ import { Empty, ErrorBox, Skeleton } from "../components/States";
 import { useApp, useLoad } from "../context";
 import { plural } from "../utils";
 
-const DEFAULTS = { q: "", days: "", category: "", impact: "", level: "", mode: "", fav: "", all: "", sort: "priority" };
+const DEFAULTS = { q: "", days: "", category: "", impact: "", level: "", mode: "", ver: "", fav: "", all: "", sort: "priority" };
 type FilterKey = keyof typeof DEFAULTS;
 
 // ниже этой релевантности новость почти не связана с компанией; в живых RSS таких большинство
@@ -38,6 +38,7 @@ export default function FeedPage() {
   const filters = {
     q: get("q"),
     days: Number(get("days")) || undefined,
+    min_verification: Number(get("ver")) || undefined,
     category: get("category"),
     impact: get("impact"),
     level: get("level"),
@@ -67,7 +68,7 @@ export default function FeedPage() {
     }
   };
 
-  const activeFilters = (["days", "category", "impact", "level", "mode", "fav", "all", "q"] as FilterKey[]).filter((k) => get(k));
+  const activeFilters = (["days", "category", "impact", "level", "mode", "ver", "fav", "all", "q"] as FilterKey[]).filter((k) => get(k));
 
   return (
     <div className="space-y-5">
@@ -116,6 +117,11 @@ export default function FeedPage() {
             <option value="live">Свежие RSS</option>
             {!!status?.events.demo && <option value="demo">Синтетика</option>}
           </select>
+          <select className="input !w-auto !py-1.5" value={get("ver")} onChange={(e) => set("ver", e.target.value)} aria-label="Достоверность">
+            <option value="">Любая достоверность</option>
+            <option value="60">Средняя и выше</option>
+            <option value="80">Только высокая</option>
+          </select>
           <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-700"
             title={`Скрывать события с релевантностью ниже ${MIN_RELEVANCE} — они почти не связаны с компанией`}>
             <input type="checkbox" className="h-4 w-4 accent-ink-900" checked={get("all") !== "1"}
@@ -133,6 +139,7 @@ export default function FeedPage() {
               <option value="urgency">По срочности</option>
               <option value="relevance">По релевантности</option>
               <option value="confidence">По уверенности</option>
+              <option value="verification">По достоверности</option>
               <option value="date">Сначала новые</option>
             </select>
           </div>

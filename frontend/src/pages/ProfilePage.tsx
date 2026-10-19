@@ -212,6 +212,18 @@ export default function ProfilePage() {
           {info.template ? <> по типичному профилю отрасли «{info.template}»</> : null}
           {info.sources?.length ? <> с данными из {info.sources.join(" и ")}</> : null}
           {fromDesc.length ? <> (нашлось: {fromDesc.slice(0, 6).join(", ")}{fromDesc.length > 6 ? "…" : ""})</> : null}.
+          {info.sources_log && info.sources_log.length > 0 && (
+            <span className="mt-1.5 flex flex-wrap gap-1.5">
+              {info.sources_log.map((x) => (
+                <span key={x.source} title={x.detail}
+                  className={`rounded px-1.5 py-0.5 text-xs ${x.status === "ok" ? "bg-emerald-100 text-emerald-800"
+                    : x.status === "empty" ? "bg-ink-100 text-ink-500" : "bg-red-100 text-red-800"}`}>
+                  {x.status === "ok" ? "✓" : x.status === "empty" ? "—" : "!"} {x.source}
+                  {x.status === "empty" ? ": не найдено" : x.status === "error" ? `: ${x.detail}` : ""}
+                </span>
+              ))}
+            </span>
+          )}
           {" "}Это предложение сервиса: уберите лишнее, добавьте своё из списков или вручную и нажмите «Подтвердить».
           Дальше оценки новостей считаются по вашей версии профиля.
         </div>

@@ -5,6 +5,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import { ErrorBox, Loading } from "./components/States";
 import { AppProvider, useApp } from "./context";
+import AboutPage from "./pages/AboutPage";
 import CompaniesPage from "./pages/CompaniesPage";
 import DecisionsPage from "./pages/DecisionsPage";
 import EventPage from "./pages/EventPage";
@@ -37,6 +38,7 @@ function Routed() {
       <Routes>
         <Route path="/" element={<OverviewPage />} />
         <Route path="/companies" element={<CompaniesPage />} />
+        <Route path="/about" element={<AboutPage />} />
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/events/:id" element={<EventPage />} />
         <Route path="/profile" element={<ProfilePage />} />

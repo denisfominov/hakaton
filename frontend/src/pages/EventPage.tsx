@@ -9,11 +9,11 @@ import { api } from "../api";
 import ActionForm from "../components/ActionForm";
 import FeedbackPanel from "../components/FeedbackPanel";
 import type { ActionDraft } from "../components/ActionForm";
-import { DemoBadge, FactBadge, ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge } from "../components/Badges";
+import { DemoBadge, ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge, VerificationBadge } from "../components/Badges";
 import Modal from "../components/Modal";
 import { ErrorBox, Loading } from "../components/States";
 import { useApp, useLoad } from "../context";
-import type { EventDetail, Factor, Insight, InsightItem, Score, SuggestedAction } from "../types";
+import type { EventDetail, Factor, Insight, InsightItem, Score, SuggestedAction, VerificationDetail } from "../types";
 import { AREA_LABEL, LEVEL_LABEL, PRIORITY_LABEL, URGENCY_LABEL, formatDate, levelText } from "../utils";
 
 function Block({ n, title, children, hint }: { n: number; title: string; children: ReactNode; hint?: string }) {
@@ -64,6 +64,34 @@ function FactorList({ factors }: { factors: Factor[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function VerificationPanel({ v }: { v: VerificationDetail }) {
+  const tone = { high: "text-emerald-700", medium: "text-amber-700", low: "text-ink-500" }[v.level];
+  return (
+    <div className="card p-5">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="section-title">Достоверность</h2>
+        <span className={`text-lg font-semibold tabular-nums ${tone}`}>{v.score}<span className="text-xs text-ink-400"> / 100 · {v.label.toLowerCase()}</span></span>
+      </div>
+      <p className="mt-1 text-xs text-ink-500">
+        {v.independent > 1 ? `Событие подтверждают ${v.independent} независимых изд.` : "Событие описано одним изданием — стоит перепроверить."}
+      </p>
+      <ul className="mt-3 space-y-1.5 text-sm">
+        {v.outlets.map((o) => (
+          <li key={o.name} className="flex items-start justify-between gap-2">
+            <span className="min-w-0">
+              {o.url ? <a href={o.url} target="_blank" rel="noreferrer" className="font-medium hover:underline">{o.name}</a>
+                : <span className="font-medium">{o.name}</span>}
+              <span className="block text-xs text-ink-500">{o.tier_label}{o.holding !== o.name ? ` · ${o.holding}` : ""}</span>
+            </span>
+            <span className="shrink-0 tabular-nums text-xs text-ink-700" title="Репутация издания">{o.reputation.toFixed(2)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 border-t border-ink-100 pt-2"><FactorList factors={v.factors} /></div>
+    </div>
   );
 }
 
@@ -442,7 +470,7 @@ export default function EventPage() {
           <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-700">{ev.category_label}</span>
           <ImpactBadge type={ev.impact_type} />
           <UrgencyBadge level={ev.urgency_level} />
-          <FactBadge status={ev.fact_status} />
+          <VerificationBadge v={ev.verification} status={ev.fact_status} />
         </div>
         <h1 className="mt-3 text-xl font-semibold leading-snug sm:text-2xl">{ev.title}</h1>
         {ev.title_original && ev.title_original !== ev.title && (
@@ -530,6 +558,7 @@ export default function EventPage() {
         </div>
         <aside className="space-y-5 lg:self-start">
           <ScorePanel score={ev.score} profileName={profile?.name} />
+          {ev.verification_detail && <VerificationPanel v={ev.verification_detail} />}
           <FeedbackPanel ev={ev} />
         </aside>
       </div>

@@ -2,7 +2,6 @@ import { ArrowRight, CalendarClock, FlaskConical, Lightbulb, Newspaper, ShieldAl
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import AboutService from "../components/AboutService";
 import { ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge } from "../components/Badges";
 import { Empty, ErrorBox, Skeleton } from "../components/States";
 import TrendChart from "../components/TrendChart";
@@ -75,7 +74,6 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <AboutService />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Обзор для руководителя</h1>

@@ -9,6 +9,7 @@ import type {
   Insight,
   Meta,
   ModelStatus,
+  Outlet,
   Overview,
   Profile,
   ProfileOptions,
@@ -66,11 +67,13 @@ export interface EventFilters {
   favorites_only?: boolean;
   sort?: string;
   min_relevance?: number;
+  min_verification?: number;
 }
 
 export const api = {
   status: () => request<Status>("/status"),
   meta: () => request<Meta>("/meta"),
+  outlets: () => request<Outlet[]>("/outlets"),
 
   profiles: () => request<Profile[]>("/profiles"),
   createProfile: (p: Omit<Profile, "id">) => request<Profile>("/profiles", { method: "POST", body: JSON.stringify(p) }),
@@ -110,7 +113,8 @@ export const api = {
     request<{ insight: Insight }>(`/events/${id}/llm?${qs({ profile_id: profileId })}`, { method: "POST" }),
 
   refresh: (mode: "dataset" | "live") =>
-    request<{ mode: string; report: { source: string; ok: boolean; added?: number; error?: string; skipped?: boolean }[]; message?: string | null }>(
+    request<{ mode: string; report: { source: string; ok: boolean; added?: number; error?: string; skipped?: boolean;
+      country?: string }[]; message?: string | null }>(
       "/refresh",
       { method: "POST", body: JSON.stringify({ mode }) },
     ),

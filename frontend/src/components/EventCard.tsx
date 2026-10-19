@@ -2,7 +2,7 @@ import { ExternalLink, Layers, ShieldAlert, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { EventCard as EventCardT } from "../types";
 import { timeAgo } from "../utils";
-import { DemoBadge, FactBadge, ImpactBadge, Meter, PriorityScore, UrgencyBadge } from "./Badges";
+import { DemoBadge, ImpactBadge, Meter, PriorityScore, UrgencyBadge, VerificationBadge } from "./Badges";
 
 interface Props {
   ev: EventCardT;
@@ -47,7 +47,7 @@ export default function EventCard({ ev, onToggleFavorite }: Props) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <ImpactBadge type={ev.impact_type} />
             <UrgencyBadge level={ev.urgency_level} />
-            <FactBadge status={ev.fact_status} />
+            <VerificationBadge v={ev.verification} status={ev.fact_status} />
             {ev.suspicious && (
               <span className="inline-flex items-center gap-1 text-xs text-red-700" title="В тексте найдены инструкции для ИИ — проигнорированы">
                 <ShieldAlert size={12} /> текст с инструкциями

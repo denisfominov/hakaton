@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, FlaskConical, Landmark, ShieldAlert, TrendingDown, TrendingUp, Minus, Shuffle } from "lucide-react";
-import type { FactStatus, ImpactType, Level } from "../types";
+import type { FactStatus, ImpactType, Level, Verification } from "../types";
 import { IMPACT_LABEL, LEVEL_LABEL, URGENCY_LABEL, levelColor, levelText } from "../utils";
 
 export function PriorityScore({ value, level, size = "md" }: { value: number; level: Level; size?: "md" | "lg" }) {
@@ -95,5 +95,20 @@ export function Meter({ value, label, tone = "ink" }: { value: number; label: st
         <div className={`h-1.5 rounded-full ${tone === "brand" ? "bg-brand" : "bg-ink-700"}`} style={{ width: `${value}%` }} />
       </div>
     </div>
+  );
+}
+
+
+// достоверность: репутация издания + независимые подтверждения (backend/app/outlets.py)
+export function VerificationBadge({ v, status }: { v: Verification; status: FactStatus }) {
+  if (status.code === "demo" || status.code === "suspicious") return <FactBadge status={status} />;
+  const cls = { high: "text-emerald-700 bg-emerald-50", medium: "text-amber-800 bg-amber-50", low: "text-ink-500 bg-ink-100" }[v.level];
+  const Icon = v.level === "low" ? AlertTriangle : CheckCircle2;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${cls}`}
+      title={`Достоверность ${v.score} из 100: репутация издания и подтверждения в других изданиях`}>
+      <Icon size={12} />
+      Достоверность {v.score}{v.independent > 1 ? ` · ${v.independent} изд.` : " · 1 источник"}
+    </span>
   );
 }

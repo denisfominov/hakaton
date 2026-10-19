@@ -26,9 +26,16 @@ export interface Profile {
   website?: string;
   // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
-  autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[] };
+  autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[];
+    sources_log?: SourceLogItem[] };
   is_demo?: boolean;
   updated_at?: string;
+}
+
+export interface SourceLogItem {
+  source: string;
+  status: "ok" | "empty" | "error";
+  detail: string;
 }
 
 export type ProfileListField =
@@ -68,6 +75,7 @@ export interface CompanyLookup {
   registry: null | { source: string; inn: string; ogrn: string; name: string; region: string; registered: string | null };
   site: null | { source: string; url: string; title: string; description: string };
   errors: string[];
+  sources_log: SourceLogItem[];
 }
 
 export interface Feedback {
@@ -115,6 +123,29 @@ export interface ModelStatus {
   };
 }
 
+export interface Verification {
+  score: number;
+  level: "high" | "medium" | "low";
+  label: string;
+  independent: number;
+}
+
+export interface VerificationDetail extends Verification {
+  outlets: { name: string; source: string; country: string | null; tier: string | null; tier_label: string;
+    reputation: number; holding: string; official: boolean; url: string | null }[];
+  factors: Factor[];
+}
+
+export interface Outlet {
+  name: string;
+  country: string;
+  tier: string;
+  tier_label: string;
+  reputation: number;
+  holding: string;
+  rss: boolean;
+}
+
 export interface FactStatus {
   code: "demo" | "confirmed" | "official" | "single" | "suspicious";
   label: string;
@@ -146,6 +177,7 @@ export interface EventCard {
   summary_line: string;
   horizon_label: string;
   fact_status: FactStatus;
+  verification: Verification;
   suspicious: boolean;
   related_count: number;
   favorite: boolean;
@@ -220,6 +252,7 @@ export interface Insight {
 export interface EventDetail extends EventCard {
   body: string;
   rules_relevance: number;
+  verification_detail: VerificationDetail;
   feedback: Feedback | null;
   market: MarketReaction | null;
   ml: { p_relevant?: number; weight?: number; impact_hint?: { type: string; p: number } };
@@ -316,7 +349,14 @@ export interface Status {
   model: { active: boolean; trained: boolean; enabled: boolean; weight: number; labels: number; min_labels: number };
   deleted_presets: { id: string; name: string }[];
   alfa: { configured: boolean; status: string };
-  sources: { name: string; url: string; enabled: boolean }[];
+  sources: { name: string; url: string; enabled: boolean; country: string; reputation: number; tier: string }[];
+  companies: number;
+  live: {
+    last: null | { ts: string; ru_added: number; foreign_added: number; foreign_share: number; sources_ok: number;
+      sources_failed: number };
+    by_country: Record<string, number>;
+    outlets: number;
+  };
   fetch_log: { id: number; ts: string; source: string; ok: number; items: number; error: string | null }[];
 }
 
