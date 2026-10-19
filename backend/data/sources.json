@@ -1,0 +1,20 @@
+[
+  {"id": "cbr", "name": "Банк России — события", "url": "https://www.cbr.ru/rss/eventrss", "country": "RU", "official": true, "max_items": 30, "enabled": true},
+  {"id": "interfax", "name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "tass", "name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "prime", "name": "ПРАЙМ", "url": "https://1prime.ru/export/rss2/index.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "kommersant", "name": "Коммерсантъ", "url": "https://www.kommersant.ru/RSS/news.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "vedomosti", "name": "Ведомости", "url": "https://www.vedomosti.ru/rss/news", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "rbc", "name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "rg", "name": "Российская газета", "url": "https://rg.ru/xml/index.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "izvestia", "name": "Известия", "url": "https://iz.ru/xml/rss/all.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "forbes", "name": "Forbes Russia", "url": "https://www.forbes.ru/newrss.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "finam", "name": "Финам", "url": "https://www.finam.ru/analysis/conews/rsspoint/", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "banki", "name": "Банки.ру", "url": "https://www.banki.ru/xml/news.rss", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "retail", "name": "Retail.ru", "url": "https://www.retail.ru/rss/news/", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "lenta", "name": "Lenta.ru — экономика", "url": "https://lenta.ru/rss/news/economics", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "gazeta", "name": "Газета.ru — бизнес", "url": "https://www.gazeta.ru/export/rss/business.xml", "country": "RU", "max_items": 30, "enabled": true},
+  {"id": "kursiv", "name": "Курсив (Казахстан)", "url": "https://kz.kursiv.media/feed/", "country": "KZ", "max_items": 20, "enabled": true},
+  {"id": "belta", "name": "БелТА (Беларусь)", "url": "https://www.belta.by/rss/all", "country": "BY", "max_items": 20, "enabled": true},
+  {"id": "gazetauz", "name": "Газета.uz (Узбекистан)", "url": "https://www.gazeta.uz/ru/rss/", "country": "UZ", "max_items": 20, "enabled": true}
+]
