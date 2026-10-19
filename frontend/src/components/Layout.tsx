@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { api } from "../api";
 import { useApp } from "../context";
+import AnalyticsPanel from "./AnalyticsPanel";
 
 const NAV = [
   { to: "/", label: "Обзор", icon: LayoutDashboard, end: true },
@@ -46,13 +47,26 @@ function DataModeBadge() {
 
 function EngineBadge() {
   const { status } = useApp();
+  const [open, setOpen] = useState(false);
   if (!status) return null;
+  const parts = ["Правила"];
+  if (status.model?.active) parts.push("своя модель");
+  if (status.llm.enabled) parts.push("LLM");
+  const text = parts.length > 1 ? `Аналитика: ${parts.join(" + ")}` : "Аналитика: правила";
+  const tip = status.model?.active
+    ? `Своя модель обучена на ${status.model.labels} оценках. Нажмите, чтобы посмотреть подробности`
+    : `Своя модель копит оценки (${status.model?.labels ?? 0} из ${status.model?.min_labels ?? 6}). Нажмите, чтобы узнать, как устроена аналитика`;
   return (
-    <span className="hidden items-center gap-1 rounded-md bg-ink-100 px-2 py-1 text-xs text-ink-500 lg:inline-flex"
-      title={status.llm.note || `Модель: ${status.llm.model}`}>
-      <Cpu size={12} />
-      {status.llm.enabled ? `Правила + LLM (${status.llm.model})` : "Аналитика: правила"}
-    </span>
+    <>
+      <button type="button" onClick={() => setOpen(true)} title={tip}
+        aria-label={text}
+        className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1.5 text-xs text-ink-700 transition hover:bg-ink-200 lg:py-1">
+        <Cpu size={12} />
+        <span className="hidden lg:inline">{text}</span>
+        {status.model?.active && <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+      </button>
+      {open && <AnalyticsPanel onClose={() => setOpen(false)} />}
+    </>
   );
 }
 

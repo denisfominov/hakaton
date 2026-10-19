@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import ActionForm from "../components/ActionForm";
+import FeedbackPanel from "../components/FeedbackPanel";
 import type { ActionDraft } from "../components/ActionForm";
 import { DemoBadge, FactBadge, ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge } from "../components/Badges";
 import Modal from "../components/Modal";
@@ -94,7 +95,7 @@ function ScorePanel({ score, profileName }: { score: Score; profileName?: string
             </li>
           ))}
           {score.adjustments.map((a) => (
-            <li key={a.label} className="flex justify-between text-rose-700">
+            <li key={a.label} className={`flex justify-between ${a.points >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
               <span>{a.label}</span><span className="tabular-nums">{a.points}</span>
             </li>
           ))}
@@ -491,8 +492,9 @@ export default function EventPage() {
           </div>
           <ComparePanel eventId={ev.id} />
         </div>
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside className="space-y-5 lg:self-start">
           <ScorePanel score={ev.score} profileName={profile?.name} />
+          <FeedbackPanel ev={ev} />
         </aside>
       </div>
 

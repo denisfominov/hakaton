@@ -13,6 +13,7 @@ const PERIODS = [
   { days: 1, label: "24 часа" },
   { days: 7, label: "7 дней" },
   { days: 30, label: "30 дней" },
+  { days: 90, label: "90 дней" },
 ];
 
 function Kpi({ label, value, hint, icon: Icon, tone, onClick }: {
@@ -83,7 +84,7 @@ export default function OverviewPage() {
         <div className="inline-flex self-start rounded-lg border border-ink-200 bg-white p-0.5 sm:self-auto">
           {PERIODS.map((p) => (
             <button key={p.days} onClick={() => setDays(p.days)}
-              className={`rounded-md px-3 py-1.5 text-sm ${days === p.days ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-100"}`}>
+              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${days === p.days ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-100"}`}>
               {p.label}
             </button>
           ))}
@@ -214,13 +215,16 @@ export default function OverviewPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             <section className="card p-4 lg:col-span-2">
               <h2 className="section-title">Динамика повестки</h2>
-              <p className="text-xs text-ink-500">События, связанные с компанией (релевантность от 25), по дням публикации</p>
+              <p className="text-xs text-ink-500">
+                События, связанные с компанией (релевантность от 25), {data.trend_step === "week" ? "по неделям" : "по дням"} публикации
+              </p>
               {data.trend.every((d) => !d.risk && !d.opportunity && !d.neutral) ? (
                 <div className="py-12 text-center text-sm text-ink-500">Нет значимых событий за период</div>
               ) : (
                 <div className="mt-4 h-60">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.trend.map((d) => ({ ...d, label: formatDate(d.day, false) }))} barCategoryGap="25%">
+                    <BarChart data={data.trend.map((d) => ({
+                      ...d, label: (data.trend_step === "week" ? "с " : "") + formatDate(d.day, false) }))} barCategoryGap="25%">
                       <CartesianGrid vertical={false} stroke="#eef1f4" />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" width={28} />
@@ -273,7 +277,7 @@ export default function OverviewPage() {
           </div>
 
           {data.kpi.total === 0 && (
-            <Empty title="За этот период событий нет" text="Попробуйте выбрать 30 дней или обновить ленту." />
+            <Empty title="За этот период событий нет" text="Попробуйте выбрать 90 дней или обновить ленту." />
           )}
         </>
       )}

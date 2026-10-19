@@ -92,6 +92,7 @@ export default function FeedPage() {
             <option value="1">24 часа</option>
             <option value="7">7 дней</option>
             <option value="30">30 дней</option>
+            <option value="90">90 дней</option>
           </select>
           <select className="input !w-auto !py-1.5" value={get("category")} onChange={(e) => set("category", e.target.value)} aria-label="Категория">
             <option value="">Все категории</option>

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export default function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
@@ -9,7 +10,8 @@ export default function Modal({ title, onClose, children, wide }: { title: strin
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // портал в body: у шапки есть backdrop-blur, и fixed-окно внутри неё обрезалось бы её границами
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/50 p-0 sm:items-center sm:p-4" onMouseDown={onClose}>
       <div
         className={`max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:rounded-2xl ${wide ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
@@ -25,6 +27,7 @@ export default function Modal({ title, onClose, children, wide }: { title: strin
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

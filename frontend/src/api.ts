@@ -3,11 +3,15 @@ import type {
   CompareRow,
   EventCard,
   EventDetail,
+  Feedback,
   HistoryItem,
   Insight,
   Meta,
+  ModelStatus,
   Overview,
   Profile,
+  ProfileOptions,
+  ProfileSuggestion,
   Status,
 } from "./types";
 
@@ -73,6 +77,18 @@ export const api = {
     request<Profile>(`/profiles/${id}`, { method: "PUT", body: JSON.stringify(p) }),
   resetProfile: (id: string) => request<Profile>(`/profiles/${id}/reset`, { method: "POST" }),
   deleteProfile: (id: string) => request<{ ok: boolean }>(`/profiles/${id}`, { method: "DELETE" }),
+  profileOptions: (industry: string) => request<ProfileOptions>(`/profile-options?${qs({ industry })}`),
+  suggestProfile: (b: { name: string; industry: string; description: string }) =>
+    request<ProfileSuggestion>("/profiles/suggest", { method: "POST", body: JSON.stringify(b) }),
+
+  sendFeedback: (profileId: string, id: string, f: Omit<Feedback, "updated_at">) =>
+    request<{ feedback: Feedback | null; model: ModelStatus }>(`/events/${id}/feedback`, {
+      method: "POST", body: JSON.stringify({ profile_id: profileId, ...f }),
+    }),
+  model: () => request<ModelStatus>("/model"),
+  trainModel: () => request<ModelStatus>("/model/train", { method: "POST" }),
+  setModelEnabled: (enabled: boolean) =>
+    request<ModelStatus>("/model/settings", { method: "PUT", body: JSON.stringify({ enabled }) }),
 
   overview: (profileId: string, f: { days: number; category?: string; impact?: string; level?: string }) =>
     request<Overview>(`/overview?${qs({ profile_id: profileId, ...f })}`),

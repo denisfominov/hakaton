@@ -20,8 +20,69 @@ export interface Profile {
   risks: string[];
   investment_plans: string[];
   keywords: string[];
+  // заполнен сервисом и ещё не проверен пользователем
+  autofilled?: boolean;
+  autofill_info?: { template?: string | null; from_description?: Record<string, string[]> };
   is_demo?: boolean;
   updated_at?: string;
+}
+
+export type ProfileListField =
+  | "subindustries" | "regions" | "products" | "clients" | "suppliers" | "competitors"
+  | "goals" | "priorities" | "risks" | "investment_plans" | "keywords";
+
+export interface FieldOptions {
+  suggested: string[];
+  other: string[];
+}
+
+export interface ProfileOptions {
+  industries: string[];
+  template: string | null;
+  fields: Record<ProfileListField, FieldOptions>;
+}
+
+export interface ProfileSuggestion {
+  profile: Omit<Profile, "id">;
+  template: string | null;
+  from_description: Record<string, string[]>;
+}
+
+export interface Feedback {
+  relevant: boolean | null;
+  impact_type: "risk" | "opportunity" | "neutral" | null;
+  priority: "higher" | "ok" | "lower" | null;
+  updated_at?: string;
+}
+
+export interface ModelFeature {
+  name: string;
+  label: string;
+  weight: number;
+}
+
+export interface ModelCv {
+  folds: number;
+  model_accuracy: number;
+  rules_accuracy: number;
+}
+
+export interface ModelStatus {
+  enabled: boolean;
+  trained: boolean;
+  active: boolean;
+  impact_trained: boolean;
+  weight: number;
+  max_weight: number;
+  min_labels: number;
+  full_weight_at: number;
+  labels: { total: number; relevance: number; relevant: number; not_relevant: number; impact: number; priority: number };
+  by_profile: { profile_id: string; name: string; count: number }[];
+  relevance: null | {
+    n: number; positive: number; negative: number; cv: ModelCv | null; trained_at: string;
+    top: { positive: ModelFeature[]; negative: ModelFeature[] };
+  };
+  impact: null | { n: number; classes: Record<string, number>; cv: ModelCv | null; trained_at: string };
 }
 
 export interface FactStatus {
@@ -124,6 +185,9 @@ export interface Insight {
 
 export interface EventDetail extends EventCard {
   body: string;
+  rules_relevance: number;
+  feedback: Feedback | null;
+  ml: { p_relevant?: number; weight?: number; impact_hint?: { type: string; p: number } };
   score: Score;
   insight: Insight;
   rules_insight: Insight;
@@ -186,6 +250,7 @@ export interface Overview {
     attention: number;
   };
   trend: { day: string; risk: number; opportunity: number; neutral: number }[];
+  trend_step: "day" | "week";
   categories: { key: string; label: string; count: number; avg_priority: number }[];
   entities: { name: string; count: number }[];
   top_events: EventCard[];
@@ -200,6 +265,7 @@ export interface Status {
   curated_period: { from: string; to: string } | null;
   events: { curated: number; demo: number; live: number; total: number };
   llm: { enabled: boolean; model: string | null; note: string | null };
+  model: { active: boolean; trained: boolean; enabled: boolean; weight: number; labels: number; min_labels: number };
   alfa: { configured: boolean; status: string };
   sources: { name: string; url: string; enabled: boolean }[];
   fetch_log: { id: number; ts: string; source: string; ok: number; items: number; error: string | null }[];
