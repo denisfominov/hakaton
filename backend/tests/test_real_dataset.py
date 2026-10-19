@@ -46,9 +46,9 @@ def keys(r):
 
 # --- данные ---
 
-def test_five_real_companies_from_different_industries(real_profiles):
-    assert len(real_profiles) == 5
-    assert len({p["industry"] for p in real_profiles.values()}) == 5
+def test_six_real_companies_from_different_industries(real_profiles):
+    assert len(real_profiles) == 6
+    assert len({p["industry"] for p in real_profiles.values()}) == 6
     for p in real_profiles.values():
         assert p["kind"] == "real"
         assert "не официальная позиция" in p["source_note"]
@@ -152,3 +152,28 @@ def test_company_mentioned_by_alias(res):
     # в новости «Сбер», а в профиле «ПАО Сбербанк»
     assert res["sber"]["r08"]["matches"]["company"]
     assert res["sber"]["r08"]["score"]["relevance"] >= 70
+
+
+# --- К2 Тул: поставщик оборудования, новости про инвестиции и станкостроение ---
+
+def test_k2tool_reads_investment_news_as_its_demand(res):
+    k2 = res["k2tool"]
+    assert "clients_capex" in keys(k2["k03"]) and k2["k03"]["insight"]["impact_type"] == "risk"
+    # рост инвестиций в Казахстане — возможность: компания туда поставляет
+    assert "clients_capex" in keys(k2["k02"]) and k2["k02"]["insight"]["impact_type"] == "opportunity"
+    # субсидия покупателям роботов — спрос для поставщика, а не его собственное финансирование
+    sup = [c for c in k2["k05"]["channels"] if c["key"] == "support"]
+    assert sup and "Клиентам" in sup[0]["title"]
+
+
+def test_k2tool_sees_localization_pressure_as_importer(res):
+    k2 = res["k2tool"]
+    for eid in ("k04", "k06"):
+        assert "localization" in keys(k2[eid]), eid
+        assert k2[eid]["insight"]["impact_type"] == "risk"
+
+
+def test_machine_tool_news_matter_for_k2_not_for_airline(res):
+    for eid in ("k04", "k05", "k06"):
+        assert res["k2tool"][eid]["score"]["relevance"] >= 50, eid
+        assert res["aeroflot"][eid]["score"]["relevance"] < 15, eid
