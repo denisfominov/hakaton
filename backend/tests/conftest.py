@@ -45,3 +45,18 @@ def results(conn, profiles):
             for member in r["cluster"]:
                 out[pid][member["id"]] = r
     return out
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Тесты работают без сети: внешние источники о компании по умолчанию «недоступны».
+    Тест, которому нужен ответ источника, подменяет его своей фикстурой поверх этой."""
+    from app import lookup, portals
+
+    def offline(*_a, **_k):
+        raise portals.PortalError("сеть в тестах отключена")
+
+    for name in ("checko", "zchb", "wikipedia"):
+        monkeypatch.setattr(portals, name, offline)
+    monkeypatch.setattr(lookup, "company_by_inn", lambda inn: offline())
+    monkeypatch.setattr(lookup, "fetch_site", lambda url: offline())

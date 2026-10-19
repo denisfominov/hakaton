@@ -202,12 +202,15 @@ class _TextParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.title, self.meta, self.headings, self.text = "", {}, [], []
-        self._skip, self._tag = 0, None
+        self.links = []  # (href, текст ссылки) — чтобы найти «О компании» и «Продукцию»
+        self._skip, self._tag, self._href = 0, None, None
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag in ("script", "style", "noscript", "svg"):
             self._skip += 1
+        elif tag == "a":
+            self._href = a.get("href")
         elif tag == "meta":
             key = (a.get("name") or a.get("property") or "").lower()
             if key in ("description", "og:description", "og:site_name", "og:title", "keywords"):
@@ -217,6 +220,8 @@ class _TextParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript", "svg") and self._skip:
             self._skip -= 1
+        if tag == "a":
+            self._href = None
 
     def handle_data(self, data):
         if self._skip:
@@ -224,6 +229,8 @@ class _TextParser(HTMLParser):
         t = " ".join(data.split())
         if not t:
             return
+        if self._href and len(self.links) < 300:
+            self.links.append((self._href, t))
         if self._tag == "title" and not self.title:
             self.title = t
         elif self._tag in ("h1", "h2", "h3") and len(self.headings) < 30:
@@ -232,33 +239,60 @@ class _TextParser(HTMLParser):
             self.text.append(t)
 
 
+ABOUT_LINK = re.compile(r"о компании|о нас|about|компания|продукци|каталог|услуги|направлени", re.IGNORECASE)
+EXTRA_PAGES = 2
+
+
+def _get_page(c, url):
+    """Одна страница с проверкой адреса на каждом редиректе и robots.txt."""
+    from . import portals
+
+    for _ in range(MAX_REDIRECTS + 1):
+        _check_public_host(urlparse(url).hostname)
+        if not portals.allowed(url):
+            raise LookupError_("Сайт закрыт для роботов (robots.txt)")
+        with c.stream("GET", url) as r:
+            if r.is_redirect and r.headers.get("location"):
+                url = urljoin(url, r.headers["location"])
+                continue
+            if r.status_code != 200:
+                raise LookupError_(f"Сайт ответил HTTP {r.status_code}")
+            if "html" not in r.headers.get("content-type", "html"):
+                raise LookupError_("По адресу не HTML-страница")
+            body = b""
+            for chunk in r.iter_bytes():
+                body += chunk
+                if len(body) > MAX_BYTES:
+                    break
+            return body.decode(r.encoding or "utf-8", errors="ignore"), url
+    raise LookupError_("Слишком много перенаправлений")
+
+
 def fetch_site(url):
+    """Главная страница + до двух внутренних («О компании», «Продукция»), если они есть в меню."""
     url = normalize_url(url)
     with httpx.Client(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=False) as c:
-        for _ in range(MAX_REDIRECTS + 1):
-            _check_public_host(urlparse(url).hostname)
-            with c.stream("GET", url) as r:
-                if r.is_redirect and r.headers.get("location"):
-                    url = urljoin(url, r.headers["location"])
-                    continue
-                if r.status_code != 200:
-                    raise LookupError_(f"Сайт ответил HTTP {r.status_code}")
-                if "html" not in r.headers.get("content-type", "html"):
-                    raise LookupError_("По адресу не HTML-страница")
-                body = b""
-                for chunk in r.iter_bytes():
-                    body += chunk
-                    if len(body) > MAX_BYTES:
-                        break
-                html = body.decode(r.encoding or "utf-8", errors="ignore")
-                break
-        else:
-            raise LookupError_("Слишком много перенаправлений")
-    p = _TextParser()
-    p.feed(html)
+        page, url = _get_page(c, url)
+        p = _TextParser()
+        p.feed(page)
+        host = urlparse(url).hostname or ""
+        extra_text, seen = [], {url.rstrip("/")}
+        for href, label in p.links:
+            if len(seen) > EXTRA_PAGES or not ABOUT_LINK.search(label):
+                continue
+            target = urljoin(url, href).split("#")[0]
+            if urlparse(target).hostname != host or target.rstrip("/") in seen:
+                continue
+            seen.add(target.rstrip("/"))
+            try:
+                sub_page, _ = _get_page(c, target)
+            except (LookupError_, httpx.HTTPError):
+                continue
+            sp = _TextParser()
+            sp.feed(sub_page)
+            extra_text.append(" ".join(sp.headings[:10] + sp.text)[:8000])
     text = " ".join(p.text)
     desc = p.meta.get("description") or p.meta.get("og:description") or ""
-    host = urlparse(url).hostname or ""
     return {
         "source": f"сайт {host.removeprefix('www.')}",
         "url": url,
@@ -266,7 +300,8 @@ def fetch_site(url):
         "site_name": p.meta.get("og:site_name", "")[:120],
         "description": desc[:600],
         "headings": p.headings[:20],
-        "text": text[:20000],
+        "pages": len(seen),
+        "text": (text[:20000] + " " + " ".join(extra_text))[:36000],
     }
 
 
@@ -289,3 +324,69 @@ def clean_description(text):
     """Описание с сайта без телефонов и призывов позвонить."""
     text = PHONE_RE.sub("", text or "")
     return re.sub(r"\s+", " ", text).strip(" .,:;") + ("." if text.strip() else "")
+
+
+# ---------- все источники сразу ----------
+
+def collect(inn="", url="", name=""):
+    """ИНН -> ЕГРЮЛ (ОГРН) -> параллельно Checko, «За честный бизнес», сайт, Википедия.
+    Сайт, найденный на портале, догружается, если пользователь его не указал.
+    Возвращает найденное и журнал по каждому источнику (что нашли, что не получилось и почему)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import catalog, portals
+
+    found, log = {}, []
+
+    def note(source, status, detail=""):
+        log.append({"source": source, "status": status, "detail": detail})
+
+    if inn:
+        try:
+            found["registry"] = company_by_inn(inn)
+            if found["registry"]:
+                note(found["registry"]["source"], "ok", found["registry"]["name"])
+            else:
+                note("ЕГРЮЛ", "empty", "по ИНН компания не найдена")
+        except Exception as e:  # noqa: BLE001 — недоступный реестр не должен ронять остальные источники
+            note("ЕГРЮЛ", "error", str(e) if isinstance(e, LookupError_) else e.__class__.__name__)
+    reg = found.get("registry") or {}
+    ogrn = reg.get("ogrn") or ""
+    short = catalog.clean_company_name(name or reg.get("name") or "")
+
+    tasks = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        if ogrn:
+            tasks["checko"] = pool.submit(portals.checko, ogrn)
+            tasks["zchb"] = pool.submit(portals.zchb, ogrn, inn)
+        if url:
+            tasks["site"] = pool.submit(fetch_site, url)
+        if short:
+            tasks["wiki"] = pool.submit(portals.wikipedia, short)
+        labels = {"checko": "Checko", "zchb": "За честный бизнес", "site": "сайт компании", "wiki": "Википедия"}
+        for key, fut in tasks.items():
+            try:
+                res = fut.result(timeout=40)
+            except (httpx.HTTPError, ValueError, KeyError, LookupError_, portals.PortalError) as e:
+                note(labels[key], "error", str(e) if isinstance(e, (LookupError_, portals.PortalError))
+                     else e.__class__.__name__)
+                continue
+            except Exception as e:  # noqa: BLE001 — один источник не должен ронять остальные
+                note(labels[key], "error", e.__class__.__name__)
+                continue
+            if res:
+                found[key] = res
+                note(res.get("source", labels[key]), "ok", res.get("url", ""))
+            else:
+                note(labels[key], "empty", "не найдено")
+
+    # сайт узнали из карточки на портале — догружаем
+    site_url = (found.get("zchb") or {}).get("website")
+    if not url and site_url and "site" not in found:
+        try:
+            found["site"] = fetch_site(site_url)
+            note(found["site"]["source"], "ok", f"адрес взят из «За честный бизнес»: {site_url}")
+        except (httpx.HTTPError, LookupError_) as e:
+            note("сайт компании", "error", str(e) if isinstance(e, LookupError_) else e.__class__.__name__)
+    return found, log
+

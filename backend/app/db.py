@@ -124,9 +124,10 @@ def init_db():
         for col in ("why", "if_done", "if_ignored"):
             if col not in action_cols:
                 conn.execute(f"ALTER TABLE actions ADD COLUMN {col} TEXT")
-        from . import market, model  # таблицы оценок, своей модели и рыночной разметки
+        from . import catalog, market, model  # таблицы оценок, модели, рыночной разметки, своих вариантов
         model.init(conn)
         market.init(conn)
+        catalog.init(conn)
 
 
 def dumps(obj):

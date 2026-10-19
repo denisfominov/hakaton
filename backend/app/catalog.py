@@ -269,6 +269,65 @@ CONTEXT_FIELDS = {"subindustries", "regions", "products", "clients", "keywords"}
 LEGAL_FORM_RE = re.compile(r"^\s*(ооо|пао|оао|зао|ао|ип|нао|гк|группа компаний)\s+", re.IGNORECASE)
 
 
+def sort_key(value):
+    """Алфавитный порядок как в русском словаре: сначала кириллица (ё = е), потом латиница и цифры."""
+    v = nlp.normalize_text(value)
+    return (0 if re.match(r"[а-я]", v) else 1, v)
+
+
+def sort_values(values):
+    return sorted(values, key=sort_key)
+
+
+def all_known(field):
+    """Все варианты справочника для поля (шаблоны, общие, регионы) — чтобы отличить «своё» значение."""
+    if field == "regions":
+        return {nlp.normalize_text(v) for group in REGION_OPTIONS.values() for v in group}
+    known = {nlp.normalize_text(v) for v in COMMON.get(field, [])}
+    for t in TEMPLATES:
+        known.update(nlp.normalize_text(v) for v in t.get(field, []))
+    return known
+
+
+# ---------- свои значения пользователей ----------
+# Добавили в профиль вариант, которого нет в справочнике, — запоминаем: он появится в списках у других компаний,
+# даже если исходный профиль потом удалят.
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS custom_options (
+    field TEXT,
+    value TEXT,
+    norm TEXT,
+    created_at TEXT,
+    PRIMARY KEY (field, norm)
+);
+"""
+
+
+def init(conn):
+    conn.executescript(SCHEMA)
+
+
+def remember_custom(conn, profile, ts):
+    added = 0
+    for f in LIST_FIELDS:
+        known = all_known(f)
+        for v in profile.get(f) or []:
+            n = nlp.normalize_text(v)
+            if n and n not in known:
+                added += conn.execute("INSERT OR IGNORE INTO custom_options (field, value, norm, created_at) "
+                                      "VALUES (?, ?, ?, ?)", (f, v, n, ts)).rowcount
+    return added
+
+
+def custom_values(conn):
+    out = {f: [] for f in LIST_FIELDS}
+    for r in conn.execute("SELECT field, value FROM custom_options"):
+        if r["field"] in out:
+            out[r["field"]].append(r["value"])
+    return out
+
+
 def _dedup(values, exclude=()):
     seen = {nlp.normalize_text(v) for v in exclude}
     out = []
@@ -324,29 +383,30 @@ def _template_by_name(name):
 
 
 def field_options(field, template=None, extra=()):
-    """Варианты для поля: сначала типичные для отрасли, затем общие и уже встречавшиеся в профилях."""
+    """Варианты для поля: сначала типичные для отрасли, затем общие и уже встречавшиеся в профилях.
+    Внутри каждой группы — по алфавиту."""
     if field == "regions":
         suggested = REGION_OPTIONS["main"]
         other = REGION_OPTIONS["subjects"] + REGION_OPTIONS["foreign"]
-        return {"suggested": suggested, "other": _dedup(list(other) + list(extra), suggested)}
+        return {"suggested": sort_values(suggested), "other": sort_values(_dedup(list(other) + list(extra), suggested))}
     suggested = list(template.get(field, [])) if template else []
     pool = list(COMMON.get(field, [])) + list(extra)
     for t in TEMPLATES:
         if t is not template:
             pool.extend(t.get(field, []))
-    return {"suggested": _dedup(suggested), "other": _dedup(pool, suggested)}
+    return {"suggested": sort_values(_dedup(suggested)), "other": sort_values(_dedup(pool, suggested))}
 
 
-def options(industry="", profiles=()):
-    """Всё для выпадающих списков профиля. profiles — сохранённые профили: свои значения пользователя
-    тоже становятся вариантами (добавили «Порт Усть-Луга» в одном профиле — он есть в списке у другого)."""
+def options(industry="", profiles=(), custom=None):
+    """Всё для выпадающих списков профиля. profiles — сохранённые профили, custom — запомненные свои значения:
+    добавили «Порт Усть-Луга» в одном профиле — он есть в списке у другого."""
     template = template_for(industry)
-    used = {f: [] for f in LIST_FIELDS}
+    used = {f: list((custom or {}).get(f, [])) for f in LIST_FIELDS}
     for p in profiles:
         for f in LIST_FIELDS:
             used[f].extend(p.get(f) or [])
     return {
-        "industries": industry_labels() + _dedup([p.get("industry", "") for p in profiles], industry_labels()),
+        "industries": sort_values(industry_labels() + _dedup([p.get("industry", "") for p in profiles], industry_labels())),
         "template": template["label"] if template else None,
         "fields": {f: field_options(f, template, used[f]) for f in LIST_FIELDS},
     }
@@ -368,16 +428,29 @@ def _only_after_iz(region, text):
     return bool(seen) and all(i > 0 and words[i - 1] == "из" for i in seen)
 
 
-def suggest(name, industry="", description="", context=""):
-    """Черновик профиля новой компании: шаблон отрасли + то, что нашлось в описании.
+def _occurrences(term, toks):
+    """Сколько раз термин встречается в тексте (по самому редкому из его слов)."""
+    roots = nlp.term_roots(nlp.clean_name(term))
+    if not roots:
+        return 0
+    return min(sum(1 for t in toks if t.startswith(r)) for r in roots)
 
-    context — дополнительный текст только для поиска (например, текст сайта компании); в профиль он не попадает.
+
+def suggest(name, industry="", description="", context="", strong_context=""):
+    """Черновик профиля новой компании: шаблон отрасли + то, что нашлось в текстах о компании.
+
+    description — описание от пользователя (самое надёжное: ищем по всем разделам);
+    strong_context — короткие надёжные тексты (заголовки и описание сайта, Википедия, ОКВЭД, направления выручки):
+      варианты любой отрасли, но только для разделов рынка (продукты, клиенты, регионы, подотрасли, темы);
+    context — длинный текст сайта (меню, футер, маркетинг): только варианты своей отрасли и общие,
+      и только если встречаются хотя бы дважды.
     Это предложение, а не факт: пользователь проверяет и правит его в форме, дальше анализ идёт
     по сохранённому (отредактированному) профилю.
     """
-    search_text = " ".join(filter(None, [description, context]))
+    search_text = " ".join(filter(None, [description, strong_context, context]))
     # название тоже подсказывает отрасль («Сбербанк», «Металлинвест»), если больше ничего нет
-    template = template_for(industry, search_text) or _template_by_name(name)
+    template = (template_for(industry, " ".join(filter(None, [description, strong_context])))
+                or template_for("", search_text) or _template_by_name(name))
     data = {"name": name.strip(), "aliases": [], "kind": "", "source_note": "", "description": description.strip(),
             "industry": industry.strip() or (template["label"] if template else "")}
     for f in LIST_FIELDS:
@@ -388,34 +461,47 @@ def suggest(name, industry="", description="", context=""):
         data["aliases"].append(short_name)
 
     found = {}
-    toks = nlp.tokens(search_text)
     desc_toks = nlp.tokens(description)
-    if toks:
-        # всё, что есть в справочниках, ищем в описании теми же правилами, что и в новостях.
-        # Текст сайта — маркетинг и меню: по нему ищем только рынок (что продаёт, кому, где),
-        # а конкурентов, поставщиков, цели и риски — только в описании от пользователя
-        for f in LIST_FIELDS:
-            f_toks = toks if f in CONTEXT_FIELDS else desc_toks
-            if not f_toks:
+    strong_toks = nlp.tokens(" ".join(filter(None, [description, strong_context])))
+    weak_toks = nlp.tokens(context)
+    for f in LIST_FIELDS:
+        if f == "regions":
+            full_pool = REGION_OPTIONS["main"] + REGION_OPTIONS["subjects"] + REGION_OPTIONS["foreign"]
+            own_pool = full_pool
+        else:
+            full_pool = list(COMMON.get(f, []))
+            for t in TEMPLATES:
+                full_pool.extend(t.get(f, []))
+            own_pool = list(COMMON.get(f, [])) + (list(template.get(f, [])) if template else [])
+        market = f in CONTEXT_FIELDS
+        hits = []
+        for v in _dedup(full_pool, data[f]):
+            # в тексте требуем все слова варианта: «сварочное оборудование» не должно тянуть «термическую резку»
+            if not market:
+                if desc_toks and term_match(v, desc_toks) and nlp.term_in_text(v, desc_toks):
+                    hits.append(v)
                 continue
-            if f == "regions":
-                pool = REGION_OPTIONS["main"] + REGION_OPTIONS["subjects"] + REGION_OPTIONS["foreign"]
-            else:
-                pool = list(COMMON.get(f, []))
-                for t in TEMPLATES:
-                    pool.extend(t.get(f, []))
-            # в описании требуем все слова варианта: «сварочное оборудование» не должно тянуть «термическую резку»
-            hits = [v for v in _dedup(pool, data[f]) if term_match(v, f_toks) and nlp.term_in_text(v, f_toks)]
-            if f == "regions":
-                # «закупаем из Китая» — это география поставщиков, а не присутствия
-                hits = [h for h in hits if not _only_after_iz(h, search_text)]
-                # «Санкт-Петербург» и «Северо-Запад» в одном профиле — лишнее, оставляем самое точное
-                hits = [h for h in hits if h not in REGION_OPTIONS["main"] or h == "Россия"] or hits
-            # длинный текст сайта цепляет много вариантов — берём первые, остальное пользователь добавит из списка
-            hits = hits[:6]
-            if hits:
-                data[f].extend(hits)
-                found[f] = hits
+            n_words = len(nlp.term_roots(nlp.clean_name(v)))
+            strong_hit = bool(strong_toks) and term_match(v, strong_toks) and nlp.term_in_text(v, strong_toks)
+            # однословный вариант чужой отрасли («Газ», «Руда») слишком легко совпадает случайно
+            if strong_hit and v not in own_pool and n_words < 2:
+                strong_hit = False
+            # регион достаточно упомянуть один раз («доставка по Казахстану»), остальное — хотя бы дважды
+            need = 1 if f == "regions" else 2
+            weak_hit = (bool(weak_toks) and v in own_pool and term_match(v, weak_toks)
+                        and _occurrences(v, weak_toks) >= need)
+            if strong_hit or weak_hit:
+                hits.append(v)
+        if f == "regions":
+            # «закупаем из Китая» — это география поставщиков, а не присутствия
+            hits = [h for h in hits if not _only_after_iz(h, search_text)]
+            # «Санкт-Петербург» и «Северо-Запад» в одном профиле — лишнее, оставляем самое точное
+            hits = [h for h in hits if h not in REGION_OPTIONS["main"] or h == "Россия"] or hits
+        # длинные тексты цепляют много вариантов — берём первые, остальное пользователь добавит из списка
+        hits = hits[:6]
+        if hits:
+            data[f].extend(hits)
+            found[f] = hits
     if not data["regions"]:
         data["regions"] = ["Россия"]
     if not data["description"] and template:

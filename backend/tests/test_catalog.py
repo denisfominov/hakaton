@@ -35,7 +35,10 @@ def test_options_put_industry_values_first_and_keep_custom():
     o = catalog.options("Металлургия", [{"products": ["Мой особый продукт"]}])
     assert o["template"] == "Металлургия"
     prods = o["fields"]["products"]
-    assert prods["suggested"][0] == "Металлопрокат"
+    # внутри группы — по алфавиту, кириллица перед латиницей
+    assert prods["suggested"] == sorted(prods["suggested"], key=catalog.sort_key)
+    assert "Металлопрокат" in prods["suggested"]
+    assert prods["other"] == sorted(prods["other"], key=catalog.sort_key)
     assert "Мой особый продукт" in prods["other"]
     assert not set(prods["suggested"]) & set(prods["other"])
     assert "Казахстан" in o["fields"]["regions"]["other"]
@@ -89,3 +92,23 @@ def test_autofilled_profile_drives_analysis_and_user_edits_win(client):
     after = client.get(f"/api/events/{top['id']}", params={"profile_id": pid}).json()
     assert after["relevance"] < top["relevance"]
     client.delete(f"/api/profiles/{pid}")
+
+
+def test_sort_is_russian_dictionary_order():
+    assert catalog.sort_values(["Яндекс", "ёлки", "Arm", "абрикос", "Ель"]) == ["абрикос", "ёлки", "Ель", "Яндекс", "Arm"]
+
+
+def test_custom_values_are_remembered_for_other_companies(client):
+    body = {"name": "Тест Свои Варианты", "industry": "Металлургия", "products": ["Сверхредкий прокат Z"]}
+    pid = client.post("/api/profiles", json=body).json()["id"]
+    client.delete(f"/api/profiles/{pid}")  # профиль удалили, а вариант остался
+    o = client.get("/api/profile-options", params={"industry": "Розничная торговля"}).json()
+    assert "Сверхредкий прокат Z" in o["fields"]["products"]["other"]
+
+
+def test_saved_profile_lists_are_alphabetical(client):
+    body = {"name": "Тест Алфавит", "products": ["Трубы", "Арматура", "Металлопрокат"], "regions": ["Урал", "Казахстан"]}
+    p = client.post("/api/profiles", json=body).json()
+    assert p["products"] == ["Арматура", "Металлопрокат", "Трубы"]
+    assert p["regions"] == ["Казахстан", "Урал"]
+    client.delete(f"/api/profiles/{p['id']}")
