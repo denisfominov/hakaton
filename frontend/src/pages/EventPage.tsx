@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api";
+import AgentPanel from "../components/AgentPanel";
 import ActionForm from "../components/ActionForm";
 import FeedbackPanel from "../components/FeedbackPanel";
 import type { ActionDraft } from "../components/ActionForm";
@@ -557,6 +558,7 @@ export default function EventPage() {
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          <AgentPanel profileId={profileId} eventId={ev.id} llmEnabled={ev.llm.enabled} />
           <div className="card overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-ink-100 bg-ink-50/60 px-5 py-3">
               <Bot size={16} className="text-ink-500" />
@@ -573,7 +575,7 @@ export default function EventPage() {
                 </button>
               )}
               <button className="btn-secondary !py-1.5 text-xs" onClick={runLlm} disabled={!ev.llm.enabled || llmBusy}
-                title={ev.llm.enabled ? "Запросить разбор у языковой модели" : "LLM не подключён: нужен ANTHROPIC_API_KEY в .env"}>
+                title={ev.llm.enabled ? "Запросить разбор у языковой модели" : "LLM не подключена: укажите LLM_PROVIDER и LLM_BASE_URL в .env (только разрешённые модели)"}>
                 {llmBusy ? "Анализируем…" : ev.llm.cached ? "Обновить анализ LLM" : "Углублённый анализ LLM"}
               </button>
             </div>

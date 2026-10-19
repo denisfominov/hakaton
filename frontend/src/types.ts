@@ -26,6 +26,8 @@ export interface Profile {
   website?: string;
   // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
+  client_id?: string;
+  bank_products?: string[];
   autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[];
     sources_log?: SourceLogItem[] };
   is_demo?: boolean;
@@ -419,4 +421,91 @@ export interface Portfolio {
   formula: string;
   rows: PortfolioRow[];
   categories: { key: string; label: string }[];
+}
+
+// ---------- агент для ЛПР ----------
+
+export type ClaimKind = "fact" | "bank" | "client" | "ai";
+
+export interface Claim {
+  text: string;
+  kind: ClaimKind;
+  sources: string[];
+}
+
+export interface AgentSource {
+  id: string;
+  type: "news" | "bank" | "client" | "rules" | "market";
+  title: string;
+  detail?: string;
+  url?: string | null;
+}
+
+export interface AgentAction {
+  title: string;
+  description: string;
+  why?: string;
+  if_done?: string;
+  if_ignored?: string;
+  owner?: string;
+  due_days?: number;
+  kind: ClaimKind;
+  sources: string[];
+}
+
+export interface AgentStep {
+  n: number;
+  kind: "plan" | "tool" | "check" | "synthesis";
+  title: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  why?: string;
+  result?: string;
+  ok?: boolean;
+  ms?: number;
+  model?: string;
+  gaps?: string[];
+  extra?: string[];
+  plan?: { tool: string; why: string }[];
+}
+
+export interface AgentResult {
+  summary: string;
+  answers: {
+    what_happened: Claim[];
+    why_important: Claim[];
+    consequences: { risks: Claim[]; opportunities: Claim[]; horizon?: string };
+    actions: AgentAction[];
+    bank_view: { found: boolean; items: Claim[]; note: string | null };
+    basis: { sources: AgentSource[]; client_features: string[]; market: { ticker: string; ar: number; horizon: number } | null };
+  };
+  data_gaps: string[];
+  confidence: number;
+  priority: number;
+  mode: "rules" | "llm";
+  model: string | null;
+  question: string | null;
+}
+
+export interface AgentRun {
+  run_id: string;
+  ms: number;
+  cached?: boolean;
+  result: AgentResult;
+  trace: AgentStep[];
+}
+
+export interface CaseClient {
+  id: string;
+  okved_code: string;
+  okved_name: string;
+  revenue_bn: number;
+  segment: boolean;
+  city: string;
+  region: string;
+  client_type: string;
+  products: string[];
+  fts_countries: string[];
+  workers: string;
+  group_id: string;
 }

@@ -1,5 +1,7 @@
 import type {
   Action,
+  AgentRun,
+  CaseClient,
   CompanyLookup,
   CompareRow,
   EventCard,
@@ -113,6 +115,14 @@ export const api = {
   compare: (id: string) => request<CompareRow[]>(`/events/${id}/compare`),
   toggleFavorite: (profileId: string, id: string) =>
     request<{ favorite: boolean }>(`/events/${id}/favorite?${qs({ profile_id: profileId })}`, { method: "POST" }),
+  agentInsight: (profileId: string, eventId: string, question = "", refresh = false) =>
+    request<AgentRun>("/agent/insight", {
+      method: "POST",
+      body: JSON.stringify({ profile_id: profileId, event_id: eventId, question, refresh }),
+    }),
+  clients: (q = "") =>
+    request<{ source: "case" | "sample" | null; segment_revenue: number; items: CaseClient[] }>(`/clients?${qs({ q, limit: 200 })}`),
+  clientProfile: (uid: string) => request<Profile>(`/clients/${uid}/profile`, { method: "POST" }),
   runLlm: (profileId: string, id: string) =>
     request<{ insight: Insight }>(`/events/${id}/llm?${qs({ profile_id: profileId })}`, { method: "POST" }),
 

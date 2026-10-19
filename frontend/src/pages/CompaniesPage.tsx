@@ -1,11 +1,11 @@
-import { Check, Globe, Hash, LineChart, Plus, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
+import { Building2, Check, Globe, Hash, LineChart, Plus, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import { useApp } from "../context";
-import type { Profile } from "../types";
+import type { CaseClient, Profile } from "../types";
 
 const EMPTY_FORM = { url: "", inn: "", name: "", industry: "", description: "" };
 
@@ -121,6 +121,92 @@ function filled(p: Profile) {
   return keys.filter((k) => p[k]?.length).length;
 }
 
+// клиенты банка из данных кейса: крупный бизнес с выручкой от 15 млрд ₽ — целевая аудитория агента
+function CaseClients({ onOpen }: { onOpen: (id: string) => void }) {
+  const { profiles, reloadProfiles, toast } = useApp();
+  const [items, setItems] = useState<CaseClient[] | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api.clients(q.trim()).then((r) => { setItems(r.items); setSource(r.source); }).catch(() => setItems([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const added = new Map(profiles.filter((p) => p.client_id).map((p) => [p.client_id!, p.id]));
+
+  const analyze = async (c: CaseClient) => {
+    const existing = added.get(c.id);
+    if (existing) return onOpen(existing);
+    setBusy(c.id);
+    try {
+      const p = await api.clientProfile(c.id);
+      await reloadProfiles();
+      toast(`Профиль клиента ${c.id} собран из данных банка`);
+      onOpen(p.id);
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (items !== null && source === null) return null;
+  return (
+    <section className="card p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="section-title flex items-center gap-2"><Building2 size={16} /> Клиенты банка: крупный бизнес</h2>
+          <p className="text-xs text-ink-500">
+            Обезличенные данные кейса{source === "sample" ? " (синтетический пример — положите CSV кейса в CLIENT_DATA_DIR)" : ""}:
+            ОКВЭД, выручка от 15 млрд ₽, продукты банка, ВЭД, контрагенты по платежам. Профиль для анализа собирается автоматически.
+          </p>
+        </div>
+        <div className="relative w-full sm:max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input className="input !pl-9" placeholder="ОКВЭД, город, продукт или ID" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+      </div>
+      <div className="mt-3 max-h-[420px] overflow-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="sticky top-0 bg-white">
+            <tr className="border-b border-ink-200 text-left text-xs text-ink-500">
+              <th className="py-2 pr-3 font-medium">Клиент</th>
+              <th className="py-2 pr-3 font-medium">Вид деятельности</th>
+              <th className="py-2 pr-3 text-right font-medium">Выручка, млрд ₽</th>
+              <th className="py-2 pr-3 font-medium">Продукты банка</th>
+              <th className="py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {(items || []).map((c) => (
+              <tr key={c.id} className="align-top">
+                <td className="py-2 pr-3">
+                  <div className="font-medium">{c.id}</div>
+                  <div className="text-xs text-ink-500">{c.city || c.region}{c.fts_countries.length ? ` · ВЭД: ${c.fts_countries.slice(0, 3).join(", ")}` : ""}</div>
+                </td>
+                <td className="max-w-[260px] py-2 pr-3 text-xs text-ink-700">{c.okved_code} {c.okved_name}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{c.revenue_bn}</td>
+                <td className="max-w-[220px] py-2 pr-3 text-xs text-ink-600">{c.products.join(", ") || "—"}</td>
+                <td className="py-2 text-right">
+                  <button className={added.has(c.id) ? "btn-secondary !py-1 text-xs" : "btn-primary !py-1 text-xs"}
+                    disabled={busy === c.id} onClick={() => analyze(c)}>
+                    {busy === c.id ? "Собираем…" : added.has(c.id) ? "Открыть" : "Анализировать"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {items && !items.length && <p className="py-4 text-center text-sm text-ink-400">Ничего не найдено</p>}
+      </div>
+    </section>
+  );
+}
+
 export default function CompaniesPage() {
   const { profiles, profileId, setProfileId, reloadProfiles, reloadStatus, status, bumpData, toast } = useApp();
   const navigate = useNavigate();
@@ -232,6 +318,8 @@ export default function CompaniesPage() {
           );
         })}
       </div>
+
+      <CaseClients onOpen={(id) => open(id, "/")} />
 
       {adding && (
         <Modal title="Добавить компанию" onClose={closeAdd} wide>
