@@ -7,19 +7,25 @@ from datetime import datetime, timezone
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import analysis, config, dedup, matching, model, nlp, outlets, scoring, sources
+import threading
+import time
+
+from . import analysis, config, dedup, jobs, matching, model, ner, nlp, outlets, scoring, sources, store, threads
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
 
-_events_version = 0
+# готовые результаты в памяти поверх снимков в базе (store.py): {profile_id: {key, computed_at, results}}
 _cache = {}
+_profile_locks = {}
+_locks_guard = threading.Lock()
 
 
 def bump_version():
-    global _events_version
-    _events_version += 1
+    """Новости изменились: сбросить отпечаток данных и кэш, попросить фоновый поток пересчитать все компании."""
+    store.invalidate_data()
     _cache.clear()
+    jobs.request(None)
 
 
 def profile_hash(profile):
@@ -65,6 +71,10 @@ def extract(item):
         "signals": nlp.detect_signals(toks, text),
         "suspicious": nlp.looks_like_injection(text),
     }
+    if ner.available():
+        # леммы и организации/места — чтобы названия компаний искать как названия (см. ner.py)
+        info["lemmas"] = ner.lemmas(text)
+        info["entities"] = ner.entities(text)
     return info, nlp.detect_category(toks)
 
 
@@ -112,10 +122,12 @@ def refresh_nlp(conn):
 
 
 def recluster(conn):
+    """Склейка дублей, затем сюжеты (threads.py) поверх склеенных групп."""
     rows = [dict(r) for r in conn.execute("SELECT id, title, summary, body, published_at, is_demo FROM events")]
     mapping = dedup.cluster_events(rows)
     for event_id, cluster_id in mapping.items():
         conn.execute("UPDATE events SET cluster_id = ? WHERE id = ?", (cluster_id, event_id))
+    threads.assign(conn, load_events(conn))
 
 
 def log_fetch(conn, source, ok, items=0, error=None):
@@ -259,18 +271,58 @@ def fact_status(ev, cluster, verification=None):
     return {"code": "single", "label": "Один источник — требует проверки"}
 
 
-def analyze_all(conn, profile):
-    key = (profile["id"], profile_hash(profile), _events_version, model.version(),
-           datetime.now().strftime("%Y%m%d%H"))
-    if key in _cache:
-        return _cache[key]
-    # после переобучения модели старые результаты не нужны.
-    # Запросы идут параллельно (событие + сравнение компаний), поэтому без del: ключ мог удалить соседний поток
-    for k in list(_cache):
-        if k[3] != key[3]:
-            _cache.pop(k, None)
-    results = analyze_events(load_events(conn), profile, model.context(conn, profile["id"]))
-    _cache[key] = results
+def _save_snapshot(pid, key, results, seconds):
+    """Снимок пишем своим коротким соединением: чтение анализа не должно оставлять открытую транзакцию
+    на соединении запроса. База занята — не страшно, результат останется в памяти."""
+    import sqlite3
+
+    from .db import DB_PATH
+
+    try:
+        # короткий таймаут: если базу держит долгая запись, не ждём — снимок сохранит следующий расчёт
+        wconn = sqlite3.connect(DB_PATH, timeout=2)
+        try:
+            store.save(wconn, pid, key, results, seconds)
+            wconn.commit()
+        finally:
+            wconn.close()
+    except sqlite3.OperationalError as e:
+        log.warning("snapshot for %s not saved: %s", pid, e)
+
+
+def _profile_lock(pid):
+    with _locks_guard:
+        return _profile_locks.setdefault(pid, threading.Lock())
+
+
+def analyze_all(conn, profile, force=False):
+    """Результаты анализа компании: память -> снимок в базе -> расчёт (и сохранение снимка).
+
+    Снимок старше часа отдаём сразу, а пересчёт просим у фонового потока (свежесть новостей меняется со временем).
+    force — посчитать заново (так работает фоновый поток)."""
+    pid = profile["id"]
+    key = store.key_for(conn, profile)
+    if not force:
+        mem = _cache.get(pid)
+        if mem and mem["key"] == key:
+            if store.age_seconds(mem["computed_at"]) > store.STALE_SECONDS:
+                jobs.request(pid)
+            return mem["results"]
+        snap = store.load(conn, pid, key)
+        if snap:
+            results, computed_at = snap
+            _cache[pid] = {"key": key, "computed_at": computed_at, "results": results}
+            if store.age_seconds(computed_at) > store.STALE_SECONDS:
+                jobs.request(pid)
+            return results
+    with _profile_lock(pid):
+        mem = _cache.get(pid)
+        if not force and mem and mem["key"] == key:
+            return mem["results"]  # пока ждали замок, посчитал соседний запрос
+        started = time.time()
+        results = analyze_events(store.events_for(conn), profile, model.context(conn, pid))
+        _save_snapshot(pid, key, results, time.time() - started)
+        _cache[pid] = {"key": key, "computed_at": now_iso(), "results": results}
     return results
 
 

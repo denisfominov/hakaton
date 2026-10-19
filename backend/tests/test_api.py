@@ -146,3 +146,16 @@ def test_trend_buckets_list_their_events(client):
             assert len(point["events"][kind]) == point[kind]
     filled = [p for p in o["trend"] if p["risk"]]
     assert filled and filled[0]["events"]["risk"][0]["id"]
+
+
+def test_portfolio_ranks_companies_by_attention(client):
+    p = client.get("/api/portfolio", params={"days": 90}).json()
+    ids = {r["profile_id"] for r in p["rows"]}
+    assert {"uralmet", "nordfarma", "sfera"} <= ids
+    idx = [r["attention_index"] for r in p["rows"]]
+    assert idx == sorted(idx, reverse=True)
+    top = p["rows"][0]
+    assert top["top_event"] and top["top_event"]["priority"] <= top["attention_index"] <= 100
+    for r in p["rows"]:
+        assert r["critical_risks"] <= r["risks"] <= r["relevant"]
+        assert all(k in [c["key"] for c in p["categories"]] for k in r["heat"])

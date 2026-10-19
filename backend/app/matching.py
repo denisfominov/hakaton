@@ -1,5 +1,5 @@
 """Сопоставление новости с профилем компании: что именно из профиля упоминается."""
-from . import nlp
+from . import ner, nlp
 
 # слова, которые есть почти в любой цели и только шумят
 GENERIC_ROOTS = {"довест", "сниз", "снизит", "увелич", "сократ", "войт", "откр", "открыт", "рост", "год",
@@ -88,15 +88,41 @@ def profile_index(p):
     }
 
 
+def is_name_term(term, field):
+    """Название организации, а не тема: конкуренты — всегда, клиенты и поставщики — если это имя или аббревиатура
+    («РЖД (перевозки)», «НЛМК»), а не сегмент («Строительные компании»)."""
+    if field == "company":
+        return True
+    kind = ner.term_kind(term)
+    n_words = len(ner.name_words(term))
+    if kind == "abbr":
+        return True
+    if kind == "name":
+        return n_words <= 3  # «Участники программы лояльности X5 Клуб» — описание сегмента, не название
+    # одно обычное слово у конкурента — это название («Магнит», «Лента», «Победа»);
+    # несколько обычных слов — описание группы («Российские станкостроители»)
+    return kind == "ambiguous" and field == "competitors" and n_words == 1
+
+
+def name_match(term, ev, toks):
+    """Поиск названия по леммам и NER (ner.name_in); у старой разметки без лемм — по корням, как раньше."""
+    raw = " ".join([ev.get("title") or "", ev.get("summary") or "", ev.get("body") or ""])
+    found = ner.name_in(term, ev["nlp"], raw)
+    if found is None:
+        return term_match(term, toks)
+    return found
+
+
 def find_matches(ev, p, pidx):
-    """ev — словарь с ключом nlp (tokens, regions, industries, signals)."""
+    """ev — словарь с ключом nlp (tokens, regions, industries, signals, lemmas, entities)."""
     toks = ev["nlp"]["tokens"]
     ev_regions = set(ev["nlp"]["regions"])
     m = {}
     names = [p.get("name", "")] + (p.get("aliases") or [])
-    m["company"] = [p["name"]] if any(nlp.clean_name(n) and term_match(n, toks) for n in names) else []
+    m["company"] = [p["name"]] if any(nlp.clean_name(n) and name_match(n, ev, toks) for n in names) else []
     for f in ["competitors", "suppliers", "clients", "products", "subindustries", "keywords"]:
-        m[f] = [t for t in (p.get(f) or []) if term_match(t, toks, strict=True)]
+        m[f] = [t for t in (p.get(f) or [])
+                if (name_match(t, ev, toks) if is_name_term(t, f) else term_match(t, toks, strict=True))]
     for f in ["goals", "priorities", "risks", "investment_plans"]:
         m[f] = [t for t in (p.get(f) or []) if term_match(t, toks, strict=False)]
 

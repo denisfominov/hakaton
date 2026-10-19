@@ -13,6 +13,8 @@ os.environ["ANTHROPIC_API_KEY"] = ""
 # логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.
 # реальная подборка проверяется отдельно в test_real_dataset.py
 os.environ["DATASET"] = "synthetic"
+# фоновый пересчёт в тестах не нужен: всё считается синхронно и детерминированно
+os.environ["ALPHA_BACKGROUND"] = "0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

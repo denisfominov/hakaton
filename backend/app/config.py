@@ -35,6 +35,9 @@ RSS_RETRIES = int(os.getenv("RSS_RETRIES", "1"))
 ALFA_NEWS_API_URL = os.getenv("ALFA_NEWS_API_URL", "")
 ALFA_NEWS_API_TOKEN = os.getenv("ALFA_NEWS_API_TOKEN", "")
 
+# фоновый пересчёт анализа (app/jobs.py); в тестах выключен
+BACKGROUND_JOBS = os.getenv("ALPHA_BACKGROUND", "1") != "0"
+
 # DaData: необязательный ключ для поиска компании по ИНН с ОКВЭД (без него — публичный поиск ЕГРЮЛ)
 DADATA_API_KEY = os.getenv("DADATA_API_KEY", "")
 

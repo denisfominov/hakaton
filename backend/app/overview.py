@@ -96,3 +96,24 @@ def build(results, days):
     entities = [{"name": k, "count": v} for k, v in counter.most_common(12)]
 
     return {"kpi": kpi, "trend": trend, "trend_step": step, "categories": categories, "entities": entities}
+
+
+def active_threads(results, thread_map, limit=5, min_relevance=20):
+    """Сюжеты, в которых за период есть события, важные для компании: самые приоритетные первыми."""
+    by = {}
+    for r in results:
+        tid = r["event"].get("thread_id")
+        if not tid or tid not in thread_map or r["score"]["relevance"] < min_relevance:
+            continue
+        b = by.setdefault(tid, {"id": tid, "label": thread_map[tid]["label"], "total": thread_map[tid]["n_clusters"],
+                                "first_at": thread_map[tid]["first_at"], "last_at": thread_map[tid]["last_at"],
+                                "in_period": 0, "max_priority": 0, "latest_event_id": None, "latest_at": "",
+                                "risks": 0, "opportunities": 0})
+        b["in_period"] += 1
+        b["max_priority"] = max(b["max_priority"], r["score"]["priority"])
+        if r["event"]["published_at"] > b["latest_at"]:
+            b["latest_at"], b["latest_event_id"] = r["event"]["published_at"], r["event"]["id"]
+        t = r["insight"]["impact_type"]
+        b["risks"] += t in ("risk", "mixed")
+        b["opportunities"] += t in ("opportunity", "mixed")
+    return sorted(by.values(), key=lambda b: (-b["max_priority"], -b["in_period"]))[:limit]

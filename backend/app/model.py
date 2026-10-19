@@ -107,6 +107,8 @@ FEATURE_LABELS = {
 
 _version = 0
 _loaded = {"version": None, "state": None}
+# отпечаток меток и включённости модели — часть ключа готового анализа (store.py): не меняется при перезапуске
+_fingerprint = {"base": "untrained", "enabled": True}
 
 
 def init(conn):
@@ -116,10 +118,16 @@ def init(conn):
 def bump():
     global _version
     _version += 1
+    from . import jobs
+    jobs.request(None)  # модель или метки изменились — пересчитать анализ всех компаний в фоне
 
 
 def version():
     return _version
+
+
+def fingerprint():
+    return f"{_fingerprint['base']}:{int(_fingerprint['enabled'])}"
 
 
 # ---------- признаки ----------
@@ -295,6 +303,12 @@ def train(conn):
     rows = training_rows(conn)
     trained_at = now_iso()
     result = {}
+    import hashlib
+    import json as _json
+    _fingerprint["base"] = hashlib.md5(_json.dumps(sorted(
+        [r["event_id"], r["profile_id"], r["relevant"], r["impact_type"], r.get("priority"), round(r["weight"], 4)]
+        for r in rows), default=str).encode()).hexdigest()[:12]
+    _fingerprint["enabled"] = is_enabled(conn)
 
     rel = [r for r in rows if r["relevant"] is not None and r["snapshot"].get("dense")]
     y_rel = [1 if r["relevant"] else 0 for r in rel]
@@ -365,6 +379,7 @@ def is_enabled(conn):
 
 def set_enabled(conn, enabled):
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('model_enabled', ?)", ("1" if enabled else "0",))
+    _fingerprint["enabled"] = bool(enabled)
     bump()
 
 

@@ -96,7 +96,8 @@ def now_iso():
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # timeout: фоновый пересчёт и запросы пишут в одну базу, пусть ждут друг друга, а не падают
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -124,10 +125,16 @@ def init_db():
         for col in ("why", "if_done", "if_ignored"):
             if col not in action_cols:
                 conn.execute(f"ALTER TABLE actions ADD COLUMN {col} TEXT")
-        from . import catalog, market, model  # таблицы оценок, модели, рыночной разметки, своих вариантов
+        if "thread_id" not in cols:
+            conn.execute("ALTER TABLE events ADD COLUMN thread_id TEXT")
+        # WAL: чтение не блокируется записью фонового пересчёта
+        conn.execute("PRAGMA journal_mode=WAL")
+        from . import catalog, market, model, store, threads  # оценки, модель, разметка, варианты, снимки, сюжеты
         model.init(conn)
         market.init(conn)
         catalog.init(conn)
+        store.init(conn)
+        threads.init(conn)
 
 
 def dumps(obj):

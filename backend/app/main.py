@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import httpx
 
-from . import catalog, company, config, llm, lookup, market, model, nlp, outlets, overview, pipeline, sources
+from . import catalog, company, config, jobs, llm, lookup, market, model, nlp, outlets, overview, pipeline, sources, store
 from .db import dumps, get_db, init_db, loads, now_iso
 from .schemas import (ActionIn, ActionPatch, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
@@ -75,7 +75,11 @@ async def lifespan(_app):
         stats = market.label_all(conn)
         model.train(conn)
         log.info("market labels: %s", stats)
+    # анализ всех компаний считается в фоне и сохраняется в базе — запросы читают готовое
+    jobs.start()
+    jobs.request(None)
     yield
+    jobs.stop()
 
 
 app = FastAPI(title="Alpha Intelligence API", version="0.1.0", lifespan=lifespan)
@@ -104,7 +108,12 @@ def favorites(conn, profile_id):
     return {r["event_id"] for r in conn.execute("SELECT event_id FROM favorites WHERE profile_id = ?", (profile_id,))}
 
 
-def card(r, favs=()):
+def thread_brief(ev, thread_map):
+    t = thread_map.get(ev.get("thread_id") or "")
+    return {"id": t["id"], "label": t["label"], "n": t["n_clusters"]} if t else None
+
+
+def card(r, favs=(), thread_map=None):
     ev, s, ins = r["event"], r["score"], r["insight"]
     return {
         "id": ev["id"],
@@ -136,6 +145,7 @@ def card(r, favs=()):
         "suspicious": ev["nlp"].get("suspicious", False),
         "related_count": len(r["cluster"]) - 1,
         "favorite": ev["id"] in favs,
+        "thread": thread_brief(ev, thread_map or {}),
     }
 
 
@@ -213,6 +223,8 @@ def status():
         by_country = {r["c"] or "RU": r["n"] for r in conn.execute(
             "SELECT json_extract(extra, '$.country') AS c, COUNT(*) AS n FROM events "
             "WHERE source_type IN ('rss', 'alfa') GROUP BY c")}
+        snapshots = [dict(r) for r in conn.execute(
+            "SELECT profile_id, computed_at, n, seconds FROM analysis_snapshots ORDER BY profile_id")]
         live_outlets = conn.execute("SELECT COUNT(DISTINCT source) AS n FROM events "
                                     "WHERE source_type IN ('rss', 'alfa')").fetchone()["n"]
     model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
@@ -243,6 +255,7 @@ def status():
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
         "companies": n_profiles,
         "live": {"last": last_live, "by_country": by_country, "outlets": live_outlets},
+        "precompute": {**jobs.status(), "snapshots": snapshots},
         "alfa": {"configured": sources.AlfaBankSource().is_configured(), "status": sources.AlfaBankSource().status()},
         "sources": [{"name": s["name"], "url": s["url"], "enabled": s.get("enabled", True),
                      "country": s.get("country", "RU"), "reputation": outlets.reputation(s["name"], 0.6),
@@ -350,6 +363,7 @@ def create_profile(body: ProfileIn):
         conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
                      (pid, dumps(data), now_iso()))
         catalog.remember_custom(conn, data, now_iso())
+        jobs.request(pid)
         return get_profile(conn, pid)
 
 
@@ -364,6 +378,7 @@ def update_profile(profile_id: str, body: ProfileIn):
         data["autofill_info"] = {}
         conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?", (dumps(data), now_iso(), profile_id))
         catalog.remember_custom(conn, data, now_iso())
+        jobs.request(profile_id)
         return get_profile(conn, profile_id)
 
 
@@ -390,6 +405,8 @@ def delete_profile(profile_id: str):
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
         conn.execute("DELETE FROM favorites WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM analyses WHERE profile_id = ?", (profile_id,))
+        store.delete(conn, profile_id)
+        pipeline._cache.pop(profile_id, None)
         retrain = conn.execute("DELETE FROM feedback WHERE profile_id = ?", (profile_id,)).rowcount
         retrain += conn.execute("DELETE FROM auto_labels WHERE profile_id = ?", (profile_id,)).rowcount
         if retrain:
@@ -464,19 +481,22 @@ def list_events(
     sort: str = "priority",
     min_relevance: int = Query(0, ge=0, le=100),
     min_verification: int = Query(0, ge=0, le=100),
-    limit: int = Query(100, le=500),
+    limit: int = Query(30, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     with get_db() as conn:
         profile = get_profile(conn, profile_id)
         results = pipeline.analyze_all(conn, profile)
         favs = favorites(conn, profile_id)
+        tmap = store.threads_for(conn)
     if level and level not in LEVEL_ORDER:
         raise HTTPException(400, "Неизвестный уровень важности")
     items = apply_filters(results, days or None, category or None, impact or None, level or None, mode or None,
                           q.strip() or None, favs if favorites_only else None, min_relevance, min_verification)
     key = SORTS.get(sort, SORTS["priority"])
     items = sorted(items, key=key, reverse=(sort == "date"))
-    return {"total": len(items), "items": [card(r, favs) for r in items[:limit]]}
+    page = items[offset:offset + limit]
+    return {"total": len(items), "offset": offset, "limit": limit, "items": [card(r, favs, tmap) for r in page]}
 
 
 @app.get("/api/events/{event_id}")
@@ -490,6 +510,17 @@ def event_detail(event_id: str, profile_id: str):
         llm_cached = pipeline.cached_llm(conn, r["event"]["id"], profile)
         linked = [row["title"] for row in conn.execute(
             "SELECT title FROM actions WHERE event_id = ? AND profile_id = ?", (r["event"]["id"], profile_id))]
+        tmap = store.threads_for(conn)
+        thread = None
+        tid = r["event"].get("thread_id")
+        if tid and tid in tmap:
+            members = [x for x in pipeline.analyze_all(conn, profile) if x["event"].get("thread_id") == tid]
+            thread = {**tmap[tid], "events": [
+                {"id": x["event"]["id"], "title": x["event"]["title"], "published_at": x["event"]["published_at"],
+                 "source": x["event"]["source"], "priority": x["score"]["priority"],
+                 "priority_level": x["score"]["priority_level"], "impact_type": x["insight"]["impact_type"],
+                 "current": x["event"]["id"] == r["event"]["id"]}
+                for x in sorted(members, key=lambda x: x["event"]["published_at"])]}
         reaction = market.event_reaction(conn, [c["id"] for c in r["cluster"]], profile_id)
 
     ev = r["event"]
@@ -501,7 +532,8 @@ def event_detail(event_id: str, profile_id: str):
             insight = llm_cached["insight"]
 
     return {
-        **card(r, favs),
+        **card(r, favs, tmap),
+        "thread_detail": thread,
         "body": ev["body"],
         "score": r["score"],
         "insight": insight,
@@ -579,6 +611,48 @@ def run_llm(event_id: str, profile_id: str):
     return {"insight": insight}
 
 
+# ---------- портфель: все компании сразу ----------
+
+PORTFOLIO_FORMULA = ("индекс внимания = максимальный приоритет события за период + 4 за каждый критический риск "
+                     "+ 2 за каждое событие, требующее реакции (не больше 100)")
+
+
+@app.get("/api/portfolio")
+def portfolio(days: int = Query(7, ge=1, le=365)):
+    """Компании × риски за период: кому из клиентов звонить первым. Анализ берётся из готовых снимков (store.py)."""
+    rows = []
+    with get_db() as conn:
+        ids = [r["id"] for r in conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid")]
+        tmap = store.threads_for(conn)
+        for pid in ids:
+            p = get_profile(conn, pid)
+            res = apply_filters(pipeline.analyze_all(conn, p), days)
+            rel = [r for r in res if r["score"]["relevance"] >= overview.RELEVANT]
+            risk = [r for r in rel if r["insight"]["impact_type"] in ("risk", "mixed")]
+            crit = [r for r in risk if r["score"]["priority_level"] == "critical"]
+            opp = [r for r in rel if r["insight"]["impact_type"] in ("opportunity", "mixed")]
+            att = [r for r in rel if r["score"]["urgency_level"] in ("critical", "high")]
+            top = max(rel, key=lambda r: r["score"]["priority"], default=None)
+            heat = {}
+            for r in rel:
+                c = heat.setdefault(r["event"]["category"], {"max": 0, "n": 0})
+                c["max"] = max(c["max"], r["score"]["priority"])
+                c["n"] += 1
+            index = min(100, (top["score"]["priority"] if top else 0) + 4 * len(crit) + 2 * len(att))
+            rows.append({
+                "profile_id": pid, "name": p["name"], "industry": p.get("industry", ""), "ticker": p.get("ticker", ""),
+                "attention_index": index, "relevant": len(rel), "critical_risks": len(crit), "risks": len(risk),
+                "opportunities": len(opp), "attention": len(att),
+                "top_event": card(top, (), tmap) if top else None,
+                "threads": overview.active_threads(res, tmap, limit=2),
+                "heat": heat,
+            })
+    rows.sort(key=lambda r: (-r["attention_index"], -r["critical_risks"]))
+    used = sorted({k for r in rows for k in r["heat"]}, key=lambda k: list(nlp.CATEGORIES).index(k))
+    return {"days": days, "formula": PORTFOLIO_FORMULA, "rows": rows,
+            "categories": [{"key": k, "label": nlp.CATEGORIES[k]} for k in used]}
+
+
 # ---------- оценки пользователя и своя модель ----------
 
 @app.post("/api/events/{event_id}/feedback")
@@ -644,8 +718,11 @@ def get_overview(profile_id: str, days: int = 30, category: str = "", impact: st
                ORDER BY CASE a.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, a.due_date
                LIMIT 6""", (profile_id,))]
 
+    with get_db() as conn:
+        tmap = store.threads_for(conn)
     filtered = apply_filters(results, days, category or None, impact or None, level or None)
     stats = overview.build(filtered, days)
+    stats["threads"] = overview.active_threads(filtered, tmap)
     attention = [r for r in filtered if r["score"]["urgency_level"] in ("critical", "high") and r["score"]["relevance"] >= 25]
     top = sorted(filtered, key=lambda r: -r["score"]["priority"])[:6]
     opportunities = [r for r in top if r["insight"]["impact_type"] in ("opportunity", "mixed")]
@@ -657,9 +734,9 @@ def get_overview(profile_id: str, days: int = 30, category: str = "", impact: st
         "profile": {"id": profile["id"], "name": profile["name"]},
         "days": days,
         **stats,
-        "top_events": [card(r, favs) for r in top],
-        "attention": [card(r, favs) for r in attention[:5]],
-        "opportunities": [card(r, favs) for r in opportunities[:3]],
+        "top_events": [card(r, favs, tmap) for r in top],
+        "attention": [card(r, favs, tmap) for r in attention[:5]],
+        "opportunities": [card(r, favs, tmap) for r in opportunities[:3]],
         "pending_actions": actions,
     }
 
