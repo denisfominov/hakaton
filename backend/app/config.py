@@ -35,6 +35,9 @@ RSS_RETRIES = int(os.getenv("RSS_RETRIES", "1"))
 ALFA_NEWS_API_URL = os.getenv("ALFA_NEWS_API_URL", "")
 ALFA_NEWS_API_TOKEN = os.getenv("ALFA_NEWS_API_TOKEN", "")
 
+# DaData: необязательный ключ для поиска компании по ИНН с ОКВЭД (без него — публичный поиск ЕГРЮЛ)
+DADATA_API_KEY = os.getenv("DADATA_API_KEY", "")
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 

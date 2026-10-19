@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS actions (
     comment TEXT,
     owner TEXT,
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    why TEXT,                  -- почему важно
+    if_done TEXT,              -- к чему приведёт в лучшем случае
+    if_ignored TEXT            -- что будет, если оставить без внимания
 );
 
 CREATE TABLE IF NOT EXISTS action_history (
@@ -116,8 +119,14 @@ def init_db():
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(events)")]
         if "extra" not in cols:
             conn.execute("ALTER TABLE events ADD COLUMN extra TEXT")
-        from . import model  # таблицы оценок и своей модели
+        # обоснование действий появилось в версии 5
+        action_cols = [r["name"] for r in conn.execute("PRAGMA table_info(actions)")]
+        for col in ("why", "if_done", "if_ignored"):
+            if col not in action_cols:
+                conn.execute(f"ALTER TABLE actions ADD COLUMN {col} TEXT")
+        from . import market, model  # таблицы оценок, своей модели и рыночной разметки
         model.init(conn)
+        market.init(conn)
 
 
 def dumps(obj):

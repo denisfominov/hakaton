@@ -15,6 +15,7 @@ def build(results, days):
         ev, s = r["event"], r["score"]
         rows.append({
             "id": ev["id"],
+            "title": ev["title"],
             "day": ev["published_at"][:10],
             "category": ev["category"],
             "priority": s["priority"],
@@ -58,9 +59,15 @@ def build(results, days):
         span = max(1, days) + 1
         all_days = [(end - timedelta(days=i)).isoformat() for i in range(span - 1, -1, -1)]
     pivot = rel.pivot_table(index="day", columns="kind", values="id", aggfunc="count", fill_value=0)
+    # какие новости лежат в каждом столбце: по наведению показываем заголовки, по клику — переход к событию
+    by_bucket = {}
+    for row in rel.sort_values("priority", ascending=False).itertuples():
+        by_bucket.setdefault(row.day, {"risk": [], "opportunity": [], "neutral": []})[row.kind].append(
+            {"id": row.id, "title": row.title, "priority": int(row.priority)})
     trend = []
     for d in all_days:
-        point = {"day": d, "risk": 0, "opportunity": 0, "neutral": 0}
+        point = {"day": d, "risk": 0, "opportunity": 0, "neutral": 0,
+                 "events": by_bucket.get(d, {"risk": [], "opportunity": [], "neutral": []})}
         if d in pivot.index:
             for kind in ("risk", "opportunity", "neutral"):
                 point[kind] = int(pivot.loc[d].get(kind, 0))

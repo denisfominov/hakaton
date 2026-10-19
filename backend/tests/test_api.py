@@ -69,7 +69,16 @@ def test_create_and_delete_custom_profile(client):
     pid = r.json()["id"]
     assert client.get("/api/events", params={"profile_id": pid}).status_code == 200
     assert client.delete(f"/api/profiles/{pid}").status_code == 200
-    assert client.delete("/api/profiles/uralmet").status_code == 400
+
+
+def test_delete_and_restore_builtin_company(client):
+    assert client.delete("/api/profiles/sfera").status_code == 200
+    assert "sfera" not in [p["id"] for p in client.get("/api/profiles").json()]
+    assert [d["id"] for d in client.get("/api/status").json()["deleted_presets"]] == ["sfera"]
+    r = client.post("/api/profiles/restore-presets").json()
+    assert len(r["restored"]) == 1
+    assert "sfera" in [p["id"] for p in client.get("/api/profiles").json()]
+    assert client.get("/api/status").json()["deleted_presets"] == []
 
 
 def test_favorites_toggle(client):
@@ -128,3 +137,12 @@ def test_compare(client):
     rows = client.get("/api/events/demo-06/compare").json()
     by = {r["profile_id"]: r for r in rows}
     assert by["nordfarma"]["priority"] > by["sfera"]["priority"]
+
+
+def test_trend_buckets_list_their_events(client):
+    o = client.get("/api/overview", params={"profile_id": "uralmet", "days": 30}).json()
+    for point in o["trend"]:
+        for kind in ("risk", "opportunity", "neutral"):
+            assert len(point["events"][kind]) == point[kind]
+    filled = [p for p in o["trend"] if p["risk"]]
+    assert filled and filled[0]["events"]["risk"][0]["id"]

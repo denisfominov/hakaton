@@ -30,8 +30,11 @@ log = logging.getLogger("alpha.model")
 
 MIN_LABELS = 6          # меньше — не обучаем: модель на 3 примерах только навредит
 MIN_PER_CLASS = 2
-FULL_WEIGHT_AT = 20     # с этого числа оценок вес модели максимальный
+FULL_WEIGHT_AT = 20     # с этого числа оценок пользователя вес модели максимальный
 MAX_WEIGHT = 0.5        # модель не перевешивает правила целиком
+# рыночная разметка (market.py) шумнее оценок людей: одна она даёт модели не больше 25% голоса
+AUTO_MAX_WEIGHT = 0.25
+AUTO_FULL_AT = 60
 RULES_RELEVANT = 25     # порог «значимо» у правил (как в обзоре)
 IMPACT_MIN_PROB = 0.6
 
@@ -147,7 +150,7 @@ def features(ev, m, channels, score, pidx):
     for c in channels:
         dense["channel=" + c["key"]] = 1.0
     dense["category=" + ev.get("category", "other")] = 1.0
-    dense["source=" + ev.get("source_type", "")] = 1.0
+    # тип источника (подборка / RSS / история) в признаки не берём: модель выучила бы, откуда метка, а не смысл
     for s in ev["nlp"].get("signals", {}):
         dense["signal=" + s] = 1.0
 
@@ -202,8 +205,8 @@ class TextDenseModel:
             return hstack([a, self.tf.transform(texts)]).tocsr()
         return csr_matrix(a)
 
-    def fit(self, snaps, y):
-        self.clf.fit(self._matrix(snaps, fit=True), y)
+    def fit(self, snaps, y, weights=None):
+        self.clf.fit(self._matrix(snaps, fit=True), y, sample_weight=weights)
         return self
 
     def predict_proba(self, snaps):
@@ -236,7 +239,7 @@ def _enough(y):
     return len(counts) >= 2 and min(counts.values()) >= MIN_PER_CLASS
 
 
-def _cv_accuracy(snaps, y, baseline):
+def _cv_accuracy(snaps, y, baseline, weights=None):
     """Точность модели на отложенных фолдах против точности правил на тех же оценках."""
     counts = [y.count(c) for c in set(y)]
     k = min(5, min(counts))
@@ -249,7 +252,8 @@ def _cv_accuracy(snaps, y, baseline):
         ytr = [y[i] for i in train_idx]
         if len(set(ytr)) < 2:
             continue
-        mdl = TextDenseModel().fit(tr, ytr)
+        wtr = [weights[i] for i in train_idx] if weights else None
+        mdl = TextDenseModel().fit(tr, ytr, wtr)
         proba = mdl.predict_proba([snaps[i] for i in test_idx])
         pred = [mdl.classes[int(np.argmax(p))] for p in proba]
         correct += sum(1 for i, p in zip(test_idx, pred) if p == y[i])
@@ -272,10 +276,23 @@ def load_feedback(conn, profile_id=None):
     return out
 
 
+def training_rows(conn):
+    """Оценки пользователя (вес 1) + рыночная разметка (вес ниже). Если пользователь оценил то же событие,
+    рыночная метка не нужна — человек знает свой бизнес лучше рынка."""
+    from . import market  # здесь, чтобы не было циклического импорта при старте
+
+    rows = [{**r, "weight": 1.0, "source": "user"} for r in load_feedback(conn)]
+    user_keys = {(r["event_id"], r["profile_id"]) for r in rows}
+    for r in market.load_labels(conn):
+        if (r["event_id"], r["profile_id"]) not in user_keys:
+            rows.append({**r, "priority": None, "source": "market"})
+    return rows
+
+
 def train(conn):
-    """Переобучить обе модели на всех оценках. Быстро (миллисекунды на сотнях оценок), поэтому
-    вызываем после каждой оценки."""
-    rows = load_feedback(conn)
+    """Переобучить обе модели на всех метках. Быстро (миллисекунды на сотнях меток), поэтому
+    вызываем после каждой оценки пользователя."""
+    rows = training_rows(conn)
     trained_at = now_iso()
     result = {}
 
@@ -283,23 +300,31 @@ def train(conn):
     y_rel = [1 if r["relevant"] else 0 for r in rel]
     if _enough(y_rel):
         snaps = [r["snapshot"] for r in rel]
-        mdl = TextDenseModel().fit(snaps, y_rel)
+        w = [r["weight"] for r in rel]
+        mdl = TextDenseModel().fit(snaps, y_rel, w)
         baseline = [1 if r["snapshot"].get("rule_relevance", 0) >= RULES_RELEVANT else 0 for r in rel]
         meta = {"n": len(y_rel), "positive": sum(y_rel), "negative": len(y_rel) - sum(y_rel),
-                "cv": _cv_accuracy(snaps, y_rel, baseline), "top": mdl.top_features()}
+                "n_user": sum(1 for r in rel if r["source"] == "user"),
+                "n_market": sum(1 for r in rel if r["source"] == "market"),
+                "cv": _cv_accuracy(snaps, y_rel, baseline, w), "top": mdl.top_features()}
         _save(conn, "relevance", mdl, meta, trained_at)
         result["relevance"] = meta
     else:
         conn.execute("DELETE FROM models WHERE name = 'relevance'")
 
-    imp = [r for r in rows if r["impact_type"] and r["snapshot"].get("dense")]
+    # тип влияния — только по оценкам людей: направление реакции акций слишком шумное
+    # (на повышение ставки бумага может вырасти просто вместе с отскоком рынка)
+    imp = [r for r in rows if r["impact_type"] and r["source"] == "user" and r["snapshot"].get("dense")]
     y_imp = [r["impact_type"] for r in imp]
     if _enough(y_imp):
         snaps = [r["snapshot"] for r in imp]
-        mdl = TextDenseModel().fit(snaps, y_imp)
+        w = [r["weight"] for r in imp]
+        mdl = TextDenseModel().fit(snaps, y_imp, w)
         baseline = [_simple_impact(r["snapshot"].get("rule_impact_type")) for r in imp]
         meta = {"n": len(y_imp), "classes": {c: y_imp.count(c) for c in sorted(set(y_imp))},
-                "cv": _cv_accuracy(snaps, y_imp, baseline)}
+                "n_user": sum(1 for r in imp if r["source"] == "user"),
+                "n_market": sum(1 for r in imp if r["source"] == "market"),
+                "cv": _cv_accuracy(snaps, y_imp, baseline, w)}
         _save(conn, "impact", mdl, meta, trained_at)
         result["impact"] = meta
     else:
@@ -307,6 +332,19 @@ def train(conn):
 
     bump()
     return result
+
+
+def model_weight(meta):
+    """Голос модели растёт с числом меток: оценки пользователя — до 50%, рыночная разметка — до 25%.
+    Если на отложенных метках модель хуже правил, голос уменьшается вдвое."""
+    if not meta:
+        return 0.0
+    w = (MAX_WEIGHT * min(1.0, meta.get("n_user", meta.get("n", 0)) / FULL_WEIGHT_AT)
+         + AUTO_MAX_WEIGHT * min(1.0, meta.get("n_market", 0) / AUTO_FULL_AT))
+    cv = meta.get("cv")
+    if cv and cv["model_accuracy"] < cv["rules_accuracy"]:
+        w /= 2
+    return round(min(MAX_WEIGHT, w), 2)
 
 
 def _simple_impact(t):
@@ -342,8 +380,7 @@ def load_state(conn):
             log.warning("model %s not loaded: %s", r["name"], e)
             continue
         state["meta"][r["name"]] = {**loads(r["meta"], {}), "trained_at": r["trained_at"]}
-    n = state["meta"].get("relevance", {}).get("n", 0)
-    state["weight"] = round(min(MAX_WEIGHT, MAX_WEIGHT * n / FULL_WEIGHT_AT), 2) if n else 0.0
+    state["weight"] = model_weight(state["meta"].get("relevance"))
     _loaded.update(version=_version, state=state)
     return state
 
@@ -356,6 +393,8 @@ def context(conn, profile_id):
 
 
 def status(conn):
+    from . import market
+
     state = load_state(conn)
     rows = load_feedback(conn)
     by_profile = {}
@@ -386,6 +425,8 @@ def status(conn):
                        for k, v in sorted(by_profile.items(), key=lambda kv: -kv[1])],
         "relevance": state["meta"].get("relevance"),
         "impact": state["meta"].get("impact"),
+        "market": market.summary(conn),
+        "auto_max_weight": AUTO_MAX_WEIGHT,
     }
 
 
@@ -435,9 +476,10 @@ def adjust_score(ml, feats, member_ids, rules_score):
         info["p_relevant"] = round(p, 3)
         info["weight"] = w
         if pts:
-            n = ml["meta"].get("relevance", {}).get("n", 0)
+            meta = ml["meta"].get("relevance", {})
+            src = f"{meta.get('n_user', 0)} оценок пользователя и {meta.get('n_market', 0)} рыночных меток"
             extra.append({"key": "model", "label": "Своя модель", "points": int(pts),
-                          "detail": f"вероятность значимости {p:.0%}; обучена на {n} оценках, вес {w:.0%}"})
+                          "detail": f"вероятность значимости {p:.0%}; обучена на {src}, вес {w:.0%}"})
             rel += pts
 
     fb = next((ml["feedback"][i] for i in member_ids if i in ml["feedback"]), None)

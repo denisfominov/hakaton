@@ -263,6 +263,9 @@ REGION_OPTIONS = {
                 "Азербайджан", "Вьетнам", "Египет", "ЕАЭС", "ЕС"],
 }
 
+# поля, которые можно искать в тексте сайта (см. suggest)
+CONTEXT_FIELDS = {"subindustries", "regions", "products", "clients", "keywords"}
+
 LEGAL_FORM_RE = re.compile(r"^\s*(ооо|пао|оао|зао|ао|ип|нао|гк|группа компаний)\s+", re.IGNORECASE)
 
 
@@ -289,7 +292,9 @@ def template_for(industry="", description=""):
             return t
     for text in (industry, description):
         toks = nlp.tokens(text)
-        found = nlp.detect_industries(toks)
+        # в длинном тексте (сайт компании) встречаются слова многих отраслей — берём самую частую
+        counts = {k: nlp.count_roots(toks, roots) for k, (_, roots) in nlp.INDUSTRIES.items()}
+        found = sorted((k for k, n in counts.items() if n), key=lambda k: -counts[k])
         if not found:
             continue
         # для станков и инструмента два шаблона: производитель и поставщик
@@ -301,6 +306,21 @@ def template_for(industry="", description=""):
             pick = [t for t in cands if bool(t.get("distribution")) == dealer] or cands
             return pick[0]
     return None
+
+
+def _template_by_name(name):
+    """Отрасль по названию: корни ищем внутри слов — названия часто слитные («Сбербанк», «Металлинвест»)."""
+    norm = nlp.normalize_text(clean_company_name(name)).replace(" ", "")
+    best, best_n = None, 0
+    for key, (_, roots) in nlp.INDUSTRIES.items():
+        # короткие корни внутри слов дают ложные совпадения («спорт» -> «порт»)
+        n = sum(1 for r in roots if " " not in r and len(r) >= 4 and r not in ("порт",) and r.strip("=") in norm)
+        if n > best_n:
+            best, best_n = key, n
+    if not best:
+        return None
+    return next((t for t in TEMPLATES if t["nlp"] == best and not t.get("distribution")), None) or \
+        next((t for t in TEMPLATES if t["nlp"] == best), None)
 
 
 def field_options(field, template=None, extra=()):
@@ -348,13 +368,16 @@ def _only_after_iz(region, text):
     return bool(seen) and all(i > 0 and words[i - 1] == "из" for i in seen)
 
 
-def suggest(name, industry="", description=""):
+def suggest(name, industry="", description="", context=""):
     """Черновик профиля новой компании: шаблон отрасли + то, что нашлось в описании.
 
+    context — дополнительный текст только для поиска (например, текст сайта компании); в профиль он не попадает.
     Это предложение, а не факт: пользователь проверяет и правит его в форме, дальше анализ идёт
     по сохранённому (отредактированному) профилю.
     """
-    template = template_for(industry, description)
+    search_text = " ".join(filter(None, [description, context]))
+    # название тоже подсказывает отрасль («Сбербанк», «Металлинвест»), если больше ничего нет
+    template = template_for(industry, search_text) or _template_by_name(name)
     data = {"name": name.strip(), "aliases": [], "kind": "", "source_note": "", "description": description.strip(),
             "industry": industry.strip() or (template["label"] if template else "")}
     for f in LIST_FIELDS:
@@ -365,10 +388,16 @@ def suggest(name, industry="", description=""):
         data["aliases"].append(short_name)
 
     found = {}
-    toks = nlp.tokens(description)
+    toks = nlp.tokens(search_text)
+    desc_toks = nlp.tokens(description)
     if toks:
-        # всё, что есть в справочниках, ищем в описании теми же правилами, что и в новостях
+        # всё, что есть в справочниках, ищем в описании теми же правилами, что и в новостях.
+        # Текст сайта — маркетинг и меню: по нему ищем только рынок (что продаёт, кому, где),
+        # а конкурентов, поставщиков, цели и риски — только в описании от пользователя
         for f in LIST_FIELDS:
+            f_toks = toks if f in CONTEXT_FIELDS else desc_toks
+            if not f_toks:
+                continue
             if f == "regions":
                 pool = REGION_OPTIONS["main"] + REGION_OPTIONS["subjects"] + REGION_OPTIONS["foreign"]
             else:
@@ -376,12 +405,14 @@ def suggest(name, industry="", description=""):
                 for t in TEMPLATES:
                     pool.extend(t.get(f, []))
             # в описании требуем все слова варианта: «сварочное оборудование» не должно тянуть «термическую резку»
-            hits = [v for v in _dedup(pool, data[f]) if term_match(v, toks) and nlp.term_in_text(v, toks)]
+            hits = [v for v in _dedup(pool, data[f]) if term_match(v, f_toks) and nlp.term_in_text(v, f_toks)]
             if f == "regions":
                 # «закупаем из Китая» — это география поставщиков, а не присутствия
-                hits = [h for h in hits if not _only_after_iz(h, description)]
+                hits = [h for h in hits if not _only_after_iz(h, search_text)]
                 # «Санкт-Петербург» и «Северо-Запад» в одном профиле — лишнее, оставляем самое точное
                 hits = [h for h in hits if h not in REGION_OPTIONS["main"] or h == "Россия"] or hits
+            # длинный текст сайта цепляет много вариантов — берём первые, остальное пользователь добавит из списка
+            hits = hits[:6]
             if hits:
                 data[f].extend(hits)
                 found[f] = hits

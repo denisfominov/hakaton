@@ -8,9 +8,12 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import catalog, config, llm, model, nlp, overview, pipeline, sources
+import httpx
+
+from . import catalog, config, llm, lookup, market, model, nlp, overview, pipeline, sources
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import ActionIn, ActionPatch, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn, SuggestIn
+from .schemas import (ActionIn, ActionPatch, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
+                      SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("alpha")
@@ -31,18 +34,31 @@ def preset_profiles():
     return out
 
 
+def deleted_presets(conn):
+    """Встроенные компании, которые пользователь удалил: при перезапуске их не возвращаем."""
+    row = conn.execute("SELECT value FROM settings WHERE key = 'deleted_presets'").fetchone()
+    return set(loads(row["value"], [])) if row else set()
+
+
+def _set_deleted_presets(conn, ids):
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('deleted_presets', ?)", (dumps(sorted(ids)),))
+
+
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
     with get_db() as conn:
         presets = preset_profiles()
         ids = [p["id"] for p in presets]
+        deleted = deleted_presets(conn)
         # при смене набора данных убираем встроенные профили и события другого набора;
         # профили, созданные пользователем, и план действий не трогаем
         conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids))})", ids)
         other = "demo" if config.DATASET == "real" else "curated"
         conn.execute("DELETE FROM events WHERE source_type = ?", (other,))
         for p in presets:
+            if p["id"] in deleted:
+                continue
             row = conn.execute("SELECT data FROM profiles WHERE id = ?", (p["id"],)).fetchone()
             if not row:
                 conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
@@ -54,6 +70,11 @@ async def lifespan(_app):
                              (dumps(p), now_iso(), p["id"]))
         added = pipeline.ingest_dataset(conn)
         log.info("dataset %s loaded, new events: %s", config.DATASET, added)
+        # разметка по реакции рынка (котировки из снимка) и обучение своей модели
+        market.load_snapshot(conn)
+        stats = market.label_all(conn)
+        model.train(conn)
+        log.info("market labels: %s", stats)
     yield
 
 
@@ -182,6 +203,7 @@ def status():
                               "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
         ms = model.status(conn)
+        deleted = deleted_presets(conn)
     model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
                    "labels": ms["labels"]["relevance"], "min_labels": ms["min_labels"]}
     curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
@@ -207,6 +229,7 @@ def status():
             "LLM не подключён: аналитика строится правилами. Добавьте ANTHROPIC_API_KEY в .env, чтобы включить.",
         },
         "model": model_short,
+        "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
         "alfa": {"configured": sources.AlfaBankSource().is_configured(), "status": sources.AlfaBankSource().status()},
         "sources": [{"name": s["name"], "url": s["url"], "enabled": s.get("enabled", True)}
                     for s in sources.load_sources()],
@@ -326,14 +349,102 @@ def reset_profile(profile_id: str):
 def delete_profile(profile_id: str):
     with get_db() as conn:
         p = get_profile(conn, profile_id)
+        if conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"] <= 1:
+            raise HTTPException(400, "Нельзя удалить последнюю компанию")
         if p["is_demo"]:
-            raise HTTPException(400, "Демонстрационные профили не удаляются — их можно сбросить")
+            # встроенную компанию можно вернуть кнопкой «Восстановить встроенные»
+            _set_deleted_presets(conn, deleted_presets(conn) | {profile_id})
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
         conn.execute("DELETE FROM favorites WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM analyses WHERE profile_id = ?", (profile_id,))
-        if conn.execute("DELETE FROM feedback WHERE profile_id = ?", (profile_id,)).rowcount:
+        retrain = conn.execute("DELETE FROM feedback WHERE profile_id = ?", (profile_id,)).rowcount
+        retrain += conn.execute("DELETE FROM auto_labels WHERE profile_id = ?", (profile_id,)).rowcount
+        if retrain:
             model.train(conn)
     return {"ok": True}
+
+
+@app.post("/api/profiles/restore-presets")
+def restore_presets():
+    """Вернуть удалённые встроенные компании (в исходном виде)."""
+    with get_db() as conn:
+        deleted = deleted_presets(conn)
+        restored = []
+        for p in preset_profiles():
+            if p["id"] in deleted and not conn.execute("SELECT 1 FROM profiles WHERE id = ?", (p["id"],)).fetchone():
+                conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
+                             (p["id"], dumps(p), now_iso()))
+                restored.append(p["name"])
+        _set_deleted_presets(conn, set())
+        if restored:
+            market.label_all(conn)
+            model.train(conn)
+    return {"restored": restored}
+
+
+@app.post("/api/companies/lookup")
+def company_lookup(body: CompanyLookupIn):
+    """Найти компанию по ИНН (ЕГРЮЛ) и/или сайту и предложить заполненный профиль. Ничего не сохраняет."""
+    errors, registry, site = [], None, None
+    inn = re.sub(r"\D", "", body.inn or "")
+    if inn:
+        if not lookup.valid_inn(inn):
+            errors.append("ИНН не проходит проверку контрольной суммы — проверьте цифры")
+            inn = ""
+        else:
+            try:
+                registry = lookup.company_by_inn(inn)
+                if not registry:
+                    errors.append("По этому ИНН компания в ЕГРЮЛ не найдена")
+                elif registry.get("liquidated"):
+                    errors.append(f"По данным ЕГРЮЛ компания ликвидирована ({registry['liquidated']})")
+            except (httpx.HTTPError, ValueError, lookup.LookupError_) as e:
+                errors.append(f"ЕГРЮЛ сейчас недоступен ({e.__class__.__name__}) — профиль заполнен без него")
+    if body.url.strip():
+        try:
+            site = lookup.fetch_site(body.url)
+        except lookup.LookupError_ as e:
+            errors.append(str(e))
+        except httpx.HTTPError as e:
+            errors.append(f"Сайт не открылся ({e.__class__.__name__})")
+
+    guess = lookup.site_name_guess(site) if site else ""
+    name = body.name.strip() or (registry or {}).get("name") or guess
+    # в ЕГРЮЛ названия заглавными («ООО «К2 ТУЛ»»); если сайт пишет так же, но нормально — берём написание с сайта
+    if not body.name.strip() and registry and guess:
+        short = catalog.clean_company_name(registry["name"])
+        if short and short.lower() == catalog.clean_company_name(guess).lower():
+            name = name.replace(short, catalog.clean_company_name(guess))
+    if len(name) < 2:
+        raise HTTPException(400, "; ".join(errors) or "Укажите сайт, ИНН или название компании")
+    industry = body.industry.strip() or lookup.template_by_okved((registry or {}).get("okved")) or ""
+    description = body.description.strip() or lookup.clean_description((site or {}).get("description"))
+    context = " ".join(filter(None, [(site or {}).get("title"), " ".join((site or {}).get("headings") or []),
+                                     ((site or {}).get("text") or "")[:8000]]))
+    s = catalog.suggest(name, industry, description, context=context)
+    p = s["profile"]
+    if registry:
+        if registry.get("region") and registry["region"] not in p["regions"]:
+            p["regions"].insert(0, registry["region"])
+        short_name = catalog.clean_company_name(name)
+        if short_name and short_name.lower() not in [a.lower() for a in p["aliases"]]:
+            p["aliases"].append(short_name)
+        reg_note = (f"ИНН {registry['inn']}, ОГРН {registry['ogrn']}"
+                    + (f", зарегистрирована {registry['registered']}" if registry.get("registered") else "")
+                    + (f", регион регистрации: {registry['region']}" if registry.get("region") else "") + ".")
+        p["description"] = f"{description} {reg_note}".strip()
+    if guess and catalog.clean_company_name(guess).lower() not in [a.lower() for a in p["aliases"]]:
+        p["aliases"].append(catalog.clean_company_name(guess))
+    p["inn"] = inn
+    p["website"] = (site or {}).get("url") or body.url.strip()
+    used = [x["source"] for x in (registry, site) if x]
+    p["autofill_info"] = {"template": s["template"], "from_description": s["from_description"], "sources": used}
+    return {
+        "suggestion": s,
+        "registry": registry,
+        "site": {k: v for k, v in site.items() if k != "text"} if site else None,
+        "errors": errors,
+    }
 
 
 # ---------- события ----------
@@ -385,6 +496,7 @@ def event_detail(event_id: str, profile_id: str):
         llm_cached = pipeline.cached_llm(conn, r["event"]["id"], profile)
         linked = [row["title"] for row in conn.execute(
             "SELECT title FROM actions WHERE event_id = ? AND profile_id = ?", (r["event"]["id"], profile_id))]
+        reaction = market.event_reaction(conn, [c["id"] for c in r["cluster"]], profile_id)
 
     ev = r["event"]
     insight = r["insight"]
@@ -402,6 +514,7 @@ def event_detail(event_id: str, profile_id: str):
         "rules_insight": r["insight"],
         "llm": llm_state,
         "rules_relevance": r["rules_relevance"],
+        "market": reaction,
         "feedback": r["feedback"],
         "ml": r["ml"],
         "linked_actions": len(linked),
@@ -501,6 +614,20 @@ def model_train():
         return model.status(conn)
 
 
+@app.post("/api/model/market")
+def model_market(refresh_prices: bool = False):
+    """Разметить новости по реакции рынка и переобучить модель. refresh_prices — сначала докачать котировки."""
+    report = []
+    with get_db() as conn:
+        if refresh_prices:
+            tickers = [p["ticker"].strip().upper() for p in market.public_profiles(conn)]
+            report = market.refresh_prices(conn, tickers)
+        stats = market.label_all(conn)
+        model.train(conn)
+        st = model.status(conn)
+    return {"prices": report, "labels": stats, "model": st}
+
+
 @app.put("/api/model/settings")
 def model_settings(body: ModelSettingsIn):
     with get_db() as conn:
@@ -578,17 +705,18 @@ def create_action(body: ActionIn):
         ts = now_iso()
         cur = conn.execute(
             """INSERT INTO actions (profile_id, event_id, title, description, priority, due_date, status, comment,
-                                    owner, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)""",
+                                    owner, created_at, updated_at, why, if_done, if_ignored)
+               VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)""",
             (body.profile_id, body.event_id, body.title.strip(), body.description, body.priority, body.due_date,
-             body.comment, body.owner, ts, ts),
+             body.comment, body.owner, ts, ts, body.why, body.if_done, body.if_ignored),
         )
         _history(conn, cur.lastrowid, "created", None, "Действие создано")
         return _action(conn, cur.lastrowid)
 
 
 FIELD_NAMES = {"title": "Название", "description": "Описание", "priority": "Приоритет", "due_date": "Срок",
-               "status": "Статус", "owner": "Ответственный", "comment": "Комментарий"}
+               "status": "Статус", "owner": "Ответственный", "comment": "Комментарий", "why": "Почему важно",
+               "if_done": "Если сделать", "if_ignored": "Если не сделать"}
 
 
 @app.patch("/api/actions/{action_id}")

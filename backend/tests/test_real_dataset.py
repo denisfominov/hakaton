@@ -177,3 +177,13 @@ def test_machine_tool_news_matter_for_k2_not_for_airline(res):
     for eid in ("k04", "k05", "k06"):
         assert res["k2tool"][eid]["score"]["relevance"] >= 50, eid
         assert res["aeroflot"][eid]["score"]["relevance"] < 15, eid
+
+
+def test_every_action_explains_why_and_consequences(res):
+    seen = 0
+    for by_event in res.values():
+        for r in by_event.values():
+            for a in r["insight"]["actions"]:
+                seen += 1
+                assert a["why"] and a["if_done"] and a["if_ignored"], a["title"]
+    assert seen > 50
