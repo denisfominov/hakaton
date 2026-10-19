@@ -24,6 +24,10 @@ class ProfileIn(BaseModel):
     # тикер на Мосбирже: для публичных компаний новости размечаются по реакции акций (market.py)
     ticker: str = Field("", max_length=12)
     inn: str = Field("", max_length=12)
+    # клиент из данных кейса (clients.py): обезличенный SYNTHETIC_U, продукты банка и сигналы для анализа
+    client_id: str = Field("", max_length=40)
+    bank_products: list[str] = []
+    client_signals: list[str] = []
     website: str = Field("", max_length=300)
     # профиль заполнен сервисом и ещё не проверен пользователем (сбрасывается при сохранении формы)
     autofilled: bool = False
@@ -85,6 +89,13 @@ class ActionPatch(BaseModel):
     why: Optional[str] = None
     if_done: Optional[str] = None
     if_ignored: Optional[str] = None
+
+
+class AgentIn(BaseModel):
+    profile_id: str = Field(..., max_length=40)
+    event_id: str = Field(..., max_length=80)
+    question: str = Field("", max_length=500)
+    refresh: bool = False
 
 
 class RefreshIn(BaseModel):

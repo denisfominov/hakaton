@@ -9,12 +9,17 @@ import pytest
 # отдельная временная БД, чтобы тесты не трогали рабочую alpha.db
 _tmp = tempfile.mkdtemp(prefix="alpha-tests-")
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
-os.environ["ANTHROPIC_API_KEY"] = ""
+# без LLM по умолчанию: тесты, которым нужна модель, подменяют HTTP-вызов
+os.environ["LLM_PROVIDER"] = "off"
+# аналитика банка — пустая временная папка; тесты RAG кладут туда свои документы
+os.environ["BANK_DOCS_DIR"] = os.path.join(_tmp, "bank")
 # логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.
 # реальная подборка проверяется отдельно в test_real_dataset.py
 os.environ["DATASET"] = "synthetic"
 # фоновый пересчёт в тестах не нужен: всё считается синхронно и детерминированно
 os.environ["ALPHA_BACKGROUND"] = "0"
+# данные клиентов — синтетический пример (а не файлы кейса, если они лежат в корне репозитория)
+os.environ["CLIENT_DATA_DIR"] = str(Path(__file__).resolve().parent.parent / "data" / "clients" / "sample")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

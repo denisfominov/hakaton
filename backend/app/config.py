@@ -20,11 +20,23 @@ if DATASET not in ("real", "synthetic"):
     DATASET = "real"
 DATASET_DIR = DATA_DIR / DATASET
 
-# LLM (Anthropic Claude). Без ключа работаем только на правилах
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "claude-opus-5-5")
-LLM_MODE = os.getenv("LLM_MODE", "auto")  # auto | off
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "90"))
+# LLM — только разрешённые кейсом модели (app/llm_client.py). Без LLM всё работает на правилах.
+# LLM_PROVIDER: gateway — шлюз организаторов; local — своя модель (Ollama/vLLM); off — без LLM
+# пустая строка в .env (LLM_BASE_URL=) = значение по умолчанию, поэтому `or`, а не второй аргумент getenv
+LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "off").lower()
+LLM_BASE_URL = os.getenv("LLM_BASE_URL") or ("http://localhost:11434/v1" if LLM_PROVIDER == "local" else "")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT") or "Qwen3.6 35B A3B"
+LLM_MODEL_FAST = os.getenv("LLM_MODEL_FAST") or "Gemma 4 26B A4B"
+LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "GLM-5.3-Flash"
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "90")
+LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")
+LLM_MODEL = LLM_MODEL_DEFAULT  # для совместимости со старым кодом
+
+# данные кейса о клиентах (df_Uid_data_hack.csv и др.); по умолчанию — корень репозитория, затем синтетический пример
+CLIENT_DATA_DIR = os.getenv("CLIENT_DATA_DIR", "")
+# аналитические материалы Альфа-Банка (PDF/текст) для RAG
+BANK_DOCS_DIR = Path(os.getenv("BANK_DOCS_DIR") or DATA_DIR / "bank")
 
 # RSS
 RSS_TIMEOUT = float(os.getenv("RSS_TIMEOUT", "8"))
@@ -49,4 +61,4 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1
 
 
 def llm_enabled():
-    return LLM_MODE != "off" and bool(ANTHROPIC_API_KEY)
+    return LLM_PROVIDER in ("gateway", "local") and bool(LLM_BASE_URL)

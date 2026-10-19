@@ -1,4 +1,4 @@
-"""Необязательный LLM-слой (Anthropic Claude).
+"""Необязательный LLM-слой: только разрешённые кейсом модели через app/llm_client.py.
 
 LLM получает новость + профиль + результат правил и переписывает аналитику человеческим языком.
 Приоритет и баллы LLM не меняет — их считает scoring.py.
@@ -9,21 +9,17 @@ import re
 from datetime import date, timedelta
 from typing import Literal
 
-import anthropic
 from pydantic import BaseModel, ValidationError
 
-from . import config, nlp
+from . import config, llm_client, nlp
 from .analysis import HORIZONS
 
 log = logging.getLogger("alpha.llm")
 
-# модели, для которых работает серверный fallback при отказе
-FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"}
 MAX_NEWS_CHARS = 6000
 
 
-class LLMError(Exception):
-    pass
+LLMError = llm_client.LLMError
 
 
 class LinkOut(BaseModel):
@@ -189,44 +185,25 @@ def _impact_type(risks, opps):
     return "neutral"
 
 
-def analyze(ev, profile, rules_insight, score):
+SCHEMA_HINT = """Ответ — один JSON-объект с полями:
+summary_line (str), what_happened (str), facts (list[str]), company_link (list[{element, value}]),
+causal_chain (list[list[str]]), risks и opportunities (list[{title, description, area: financial|operational|
+regulatory|strategic|market, severity: high|medium|low}]), horizon (immediate|short|medium|long),
+actions (list[{title, description, why, if_done, if_ignored, owner, due_days, priority: high|medium|low}]),
+indicators (list[str]), assumptions (list[str]), data_gaps (list[str]), confidence (0-100)."""
+
+
+def analyze(ev, profile, rules_insight, score, conn=None):
     if not config.llm_enabled():
-        raise LLMError("LLM не настроен (нет ANTHROPIC_API_KEY или LLM_MODE=off)")
-
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, timeout=config.LLM_TIMEOUT, max_retries=1)
-    kwargs = dict(
-        model=config.LLM_MODEL,
-        max_tokens=8000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_prompt(ev, profile, rules_insight, score)}],
-        output_format=InsightOut,
-        output_config={"effort": "medium"},
-    )
-    if config.LLM_MODEL in FALLBACK_MODELS:
-        kwargs["betas"] = ["server-side-fallback-2026-07-01"]
-        kwargs["fallbacks"] = "default"
-
+        raise LLMError("LLM не подключена (LLM_PROVIDER=off или не задан LLM_BASE_URL)")
+    data, _usage = llm_client.chat_json(
+        [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + SCHEMA_HINT},
+         {"role": "user", "content": build_prompt(ev, profile, rules_insight, score)}],
+        role="reasoning", purpose="event_rewrite", max_tokens=3000, conn=conn)
     try:
-        resp = client.beta.messages.parse(**kwargs)
-    except anthropic.AuthenticationError:
-        raise LLMError("неверный ANTHROPIC_API_KEY")
-    except anthropic.RateLimitError:
-        raise LLMError("превышен лимит запросов к API, попробуйте позже")
-    except anthropic.APIStatusError as e:
-        raise LLMError(f"ошибка API {e.status_code}: {e.message}")
-    except anthropic.APIConnectionError:
-        raise LLMError("нет соединения с API")
+        out = InsightOut.model_validate(data)
     except ValidationError as e:
         raise LLMError(f"ответ не прошёл проверку схемы: {e.error_count()} ошибок")
-
-    if resp.stop_reason == "refusal":
-        raise LLMError("модель отказалась отвечать на этот запрос")
-    if resp.stop_reason == "max_tokens":
-        raise LLMError("ответ модели обрезан по лимиту токенов")
-    out = resp.parsed_output
-    if out is None:
-        raise LLMError("модель вернула пустой или невалидный ответ")
-
     result = verify(out, ev, rules_insight)
     result["impact_type"] = _impact_type(result["risks"], result["opportunities"])
     return result

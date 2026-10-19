@@ -11,9 +11,10 @@ from fastapi.responses import FileResponse
 
 import httpx
 
-from . import catalog, company, config, jobs, llm, lookup, market, model, nlp, outlets, overview, pipeline, sources, store
+from . import (agent, bank_rag, catalog, clients, company, config, jobs, llm, llm_client, lookup, market, model, nlp,
+               outlets, overview, pipeline, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -250,9 +251,12 @@ def status():
             "enabled": config.llm_enabled(),
             "model": config.LLM_MODEL if config.llm_enabled() else None,
             "note": None if config.llm_enabled() else
-            "LLM не подключён: аналитика строится правилами. Добавьте ANTHROPIC_API_KEY в .env, чтобы включить.",
+            "LLM не подключена: аналитика строится правилами. Задайте LLM_PROVIDER и LLM_BASE_URL (разрешённые модели).",
         },
         "model": model_short,
+        "clients": {"source": clients.source_kind()},
+        "bank_docs": {k: v for k, v in bank_rag.status().items() if k != "folder"},
+        "llm_provider": llm_client.status(),
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
         "companies": n_profiles,
         "live": {"last": last_live, "by_country": by_country, "outlets": live_outlets},
@@ -596,20 +600,85 @@ def toggle_favorite(event_id: str, profile_id: str):
 @app.post("/api/events/{event_id}/llm")
 def run_llm(event_id: str, profile_id: str):
     if not config.llm_enabled():
-        raise HTTPException(400, "LLM не подключён. Укажите ANTHROPIC_API_KEY в .env и перезапустите backend.")
+        raise HTTPException(400, "LLM не подключена. Укажите LLM_PROVIDER и LLM_BASE_URL в .env и перезапустите backend.")
     with get_db() as conn:
         profile = get_profile(conn, profile_id)
         r = pipeline.find_result(conn, profile, event_id)
         if not r:
             raise HTTPException(404, "Событие не найдено")
     try:
-        insight = llm.analyze(r["event"], profile, r["insight"], r["score"])
+        with get_db() as lconn:
+            insight = llm.analyze(r["event"], profile, r["insight"], r["score"], conn=lconn)
     except llm.LLMError as e:
         log.warning("llm failed for %s: %s", event_id, e)
         raise HTTPException(502, f"Не удалось получить анализ LLM: {e}. Показан анализ на правилах.")
     with get_db() as conn:
         pipeline.save_llm(conn, r["event"]["id"], profile, insight)
     return {"insight": insight}
+
+
+# ---------- агент для ЛПР ----------
+
+@app.post("/api/agent/insight")
+def agent_insight(body: AgentIn):
+    """Инсайт на 6 вопросов кейса: план -> инструменты -> самопроверка -> ответ с трассировкой.
+    Повторный запрос с тем же вопросом отдаёт сохранённый запуск, refresh=true — запускает агента заново."""
+    with get_db() as conn:
+        profile = get_profile(conn, body.profile_id)
+        if not body.refresh:
+            prev = agent.latest_run(conn, profile["id"], body.event_id, body.question.strip())
+            if prev:
+                return {**prev, "cached": True}
+        out = agent.run(conn, profile, body.event_id, body.question)
+    if out is None:
+        raise HTTPException(404, "Событие не найдено")
+    return {**out, "cached": False}
+
+
+@app.get("/api/agent/runs/{run_id}")
+def agent_run(run_id: str):
+    with get_db() as conn:
+        out = agent.get_run(conn, run_id)
+    if not out:
+        raise HTTPException(404, "Запуск агента не найден")
+    return out
+
+
+@app.get("/api/bank-docs")
+def bank_docs():
+    """Какие аналитические материалы банка проиндексированы для RAG."""
+    s = bank_rag.status()
+    return {"documents": s["documents"], "chunks": s["chunks"]}
+
+
+# ---------- клиенты банка (данные кейса) ----------
+
+@app.get("/api/clients")
+def list_clients(segment: bool = True, q: str = "", limit: int = Query(60, ge=1, le=500)):
+    """Клиенты из данных кейса; по умолчанию — крупный бизнес (выручка от 15 млрд ₽)."""
+    return {"source": clients.source_kind(), "segment_revenue": clients.SEGMENT_REVENUE,
+            "items": clients.list_clients(segment, q.strip(), limit)}
+
+
+@app.get("/api/clients/{uid}")
+def client_card(uid: str):
+    c = clients.card(uid)
+    if not c:
+        raise HTTPException(404, "Клиент не найден в данных")
+    return c
+
+
+@app.post("/api/clients/{uid}/profile", status_code=201)
+def client_profile(uid: str):
+    """Профиль для анализа из карточки клиента. Повторный вызов возвращает уже созданный профиль."""
+    with get_db() as conn:
+        for r in conn.execute("SELECT id, data FROM profiles"):
+            if loads(r["data"], {}).get("client_id") == uid:
+                return get_profile(conn, r["id"])
+    p = clients.profile_from_client(uid)
+    if not p:
+        raise HTTPException(404, "Клиент не найден в данных")
+    return create_profile(ProfileIn(**{**p, "autofilled": True}))
 
 
 # ---------- портфель: все компании сразу ----------
