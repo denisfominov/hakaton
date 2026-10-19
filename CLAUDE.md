@@ -33,6 +33,15 @@ npm run dev
 Открыть http://127.0.0.1:5173. Vite проксирует `/api` на backend (порт 8000).
 Проверка сборки и типов: `npm run build`.
 
+### Docker (всё в одном контейнере)
+
+```bash
+docker build -t alpha-intelligence .
+docker run -p 8000:8000 -v alpha-data:/data --env-file .env alpha-intelligence
+```
+
+Открыть http://localhost:8000: FastAPI отдаёт и API, и собранный фронтенд (`FRONTEND_DIST`), база — в томе `/data`.
+
 ### Тесты
 
 ```bash
