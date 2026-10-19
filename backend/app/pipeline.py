@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import analysis, config, dedup, matching, model, nlp, scoring, sources
+from . import analysis, config, dedup, matching, model, nlp, outlets, scoring, sources
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
@@ -133,21 +133,52 @@ def ingest_dataset(conn):
     return added
 
 
+FOREIGN_SHARE = 0.1  # доля зарубежных изданий среди новых новостей: Россия ~90%, зарубежные ~10%
+
+
 def ingest_live(conn):
-    """Один проход по всем включённым источникам. Без бесконечных повторов: ошибка -> в лог и дальше."""
-    report = []
-    for src in sources.load_sources():
-        if not src.get("enabled", True):
-            continue
+    """Один проход по всем включённым источникам (параллельно). Ошибка источника -> в лог и дальше.
+
+    Российские новости сохраняем все, зарубежные — не больше 10% от новых (самые свежие)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    srcs = [s for s in sources.load_sources() if s.get("enabled", True)]
+    report, fetched = [], {}
+
+    def fetch(src):
         try:
-            items = sources.fetch_rss(src)
-            added = save_items(conn, items)
-            log_fetch(conn, src["name"], True, added)
-            report.append({"source": src["name"], "ok": True, "fetched": len(items), "added": added})
+            return src, sources.fetch_rss(src), None
         except sources.SourceError as e:
-            log.warning("source %s failed: %s", src["name"], e)
-            log_fetch(conn, src["name"], False, 0, str(e))
-            report.append({"source": src["name"], "ok": False, "error": str(e)})
+            return src, [], str(e)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for src, items, err in pool.map(fetch, srcs):
+            if err:
+                log.warning("source %s failed: %s", src["name"], err)
+                log_fetch(conn, src["name"], False, 0, err)
+                report.append({"source": src["name"], "country": src.get("country", "RU"), "ok": False, "error": err})
+            else:
+                fetched[src["id"]] = (src, items)
+
+    ru = [(s, it) for s, it in fetched.values() if s.get("country", "RU") == "RU"]
+    foreign = [(s, it) for s, it in fetched.values() if s.get("country", "RU") != "RU"]
+    ru_added = 0
+    for src, items in ru:
+        added = save_items(conn, items)
+        ru_added += added
+        log_fetch(conn, src["name"], True, added)
+        report.append({"source": src["name"], "country": "RU", "ok": True, "fetched": len(items), "added": added})
+    # квота зарубежных: при 90 новых российских — до 10 зарубежных (минимум 1, чтобы было видно, что они есть)
+    quota = max(1, round(ru_added * FOREIGN_SHARE / (1 - FOREIGN_SHARE)))
+    per_source = max(1, quota // max(1, len(foreign)))
+    foreign_added = 0
+    for src, items in foreign:
+        newest = sorted(items, key=lambda it: it["published_at"], reverse=True)[:per_source]
+        added = save_items(conn, newest)
+        foreign_added += added
+        log_fetch(conn, src["name"], True, added)
+        report.append({"source": src["name"], "country": src.get("country"), "ok": True, "fetched": len(items),
+                       "added": added, "limited_to": per_source})
 
     alfa = sources.AlfaBankSource()
     if alfa.is_configured():
@@ -155,13 +186,19 @@ def ingest_live(conn):
             items = alfa.fetch()
             added = save_items(conn, items)
             log_fetch(conn, alfa.name, True, added)
-            report.append({"source": alfa.name, "ok": True, "fetched": len(items), "added": added})
+            report.append({"source": alfa.name, "country": "RU", "ok": True, "fetched": len(items), "added": added})
         except sources.SourceError as e:
             log_fetch(conn, alfa.name, False, 0, str(e))
             report.append({"source": alfa.name, "ok": False, "error": str(e)})
     else:
         report.append({"source": alfa.name, "ok": False, "error": alfa.status(), "skipped": True})
 
+    total = ru_added + foreign_added
+    summary = {"ts": now_iso(), "ru_added": ru_added, "foreign_added": foreign_added,
+               "foreign_share": round(foreign_added / total, 3) if total else 0.0,
+               "sources_ok": sum(1 for r in report if r.get("ok")), "sources_failed": sum(
+                   1 for r in report if not r.get("ok") and not r.get("skipped"))}
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_live', ?)", (dumps(summary),))
     recluster(conn)
     bump_version()
     return report
@@ -206,8 +243,8 @@ def semantic_scores(events, profile):
     return {e["id"]: float(s) for e, s in zip(events, sims)}
 
 
-def fact_status(ev, cluster):
-    n_sources = len({c["source"] for c in cluster})
+def fact_status(ev, cluster, verification=None):
+    n_sources = verification["independent"] if verification else len({c["source"] for c in cluster})
     if ev["nlp"].get("suspicious"):
         return {"code": "suspicious", "label": "Подозрительный текст — проверьте первоисточник"}
     if ev["is_demo"]:
@@ -216,7 +253,7 @@ def fact_status(ev, cluster):
             label += f" · {n_sources} источника"
         return {"code": "demo", "label": label}
     if n_sources >= 2:
-        return {"code": "confirmed", "label": f"Подтверждено: {n_sources} источника"}
+        return {"code": "confirmed", "label": f"Подтверждено: {n_sources} незав. изд."}
     if ev["official"]:
         return {"code": "official", "label": "Официальный источник"}
     return {"code": "single", "label": "Один источник — требует проверки"}
@@ -265,6 +302,7 @@ def analyze_events(events, profile, ml=None):
             score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
                                         extra_relevance=extra, priority_adjust=adjust)
         insight = analysis.build_insight(ev, profile, m, channels, score, n_sources)
+        verif = outlets.verify(members, ev["nlp"].get("suspicious", False))
         feats["rule_impact_type"] = insight["impact_type"]
         model.adjust_insight(ml, insight, feats, fb, info)
         results.append({
@@ -278,7 +316,8 @@ def analyze_events(events, profile, ml=None):
             "feedback": model.public_feedback(fb),
             "ml": info,
             "insight": insight,
-            "fact_status": fact_status(ev, members),
+            "verification": verif,
+            "fact_status": fact_status(ev, members, verif),
         })
 
     results.sort(key=lambda r: -r["score"]["priority"])

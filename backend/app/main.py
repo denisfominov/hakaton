@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import httpx
 
-from . import catalog, config, llm, lookup, market, model, nlp, overview, pipeline, sources
+from . import catalog, company, config, llm, lookup, market, model, nlp, outlets, overview, pipeline, sources
 from .db import dumps, get_db, init_db, loads, now_iso
 from .schemas import (ActionIn, ActionPatch, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
@@ -132,6 +132,7 @@ def card(r, favs=()):
         "summary_line": ins["summary_line"],
         "horizon_label": ins["horizon_label"],
         "fact_status": r["fact_status"],
+        "verification": {k: r["verification"][k] for k in ("score", "level", "label", "independent")},
         "suspicious": ev["nlp"].get("suspicious", False),
         "related_count": len(r["cluster"]) - 1,
         "favorite": ev["id"] in favs,
@@ -154,7 +155,7 @@ SOURCE_MODES = {
 
 
 def apply_filters(results, days=None, category=None, impact=None, level=None, mode=None, q=None, favs=None,
-                  min_relevance=0):
+                  min_relevance=0, min_verification=0):
     out = []
     q_toks = nlp.tokens(q) if q else []
     for r in results:
@@ -162,6 +163,8 @@ def apply_filters(results, days=None, category=None, impact=None, level=None, mo
         if not in_period(ev, days):
             continue
         if min_relevance and r["score"]["relevance"] < min_relevance:
+            continue
+        if min_verification and r["verification"]["score"] < min_verification:
             continue
         if category and ev["category"] != category:
             continue
@@ -204,6 +207,14 @@ def status():
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
         ms = model.status(conn)
         deleted = deleted_presets(conn)
+        n_profiles = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
+        row = conn.execute("SELECT value FROM settings WHERE key = 'last_live'").fetchone()
+        last_live = loads(row["value"], None) if row else None
+        by_country = {r["c"] or "RU": r["n"] for r in conn.execute(
+            "SELECT json_extract(extra, '$.country') AS c, COUNT(*) AS n FROM events "
+            "WHERE source_type IN ('rss', 'alfa') GROUP BY c")}
+        live_outlets = conn.execute("SELECT COUNT(DISTINCT source) AS n FROM events "
+                                    "WHERE source_type IN ('rss', 'alfa')").fetchone()["n"]
     model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
                    "labels": ms["labels"]["relevance"], "min_labels": ms["min_labels"]}
     curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
@@ -230,11 +241,29 @@ def status():
         },
         "model": model_short,
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
+        "companies": n_profiles,
+        "live": {"last": last_live, "by_country": by_country, "outlets": live_outlets},
         "alfa": {"configured": sources.AlfaBankSource().is_configured(), "status": sources.AlfaBankSource().status()},
-        "sources": [{"name": s["name"], "url": s["url"], "enabled": s.get("enabled", True)}
+        "sources": [{"name": s["name"], "url": s["url"], "enabled": s.get("enabled", True),
+                     "country": s.get("country", "RU"), "reputation": outlets.reputation(s["name"], 0.6),
+                     "tier": outlets.tier_label((outlets.outlet_for(s["name"]) or {}).get("tier", ""))}
                     for s in sources.load_sources()],
         "fetch_log": last,
     }
+
+
+@app.get("/api/outlets")
+def list_outlets():
+    """Реестр изданий: страна, тип, репутация, холдинг — по нему считается достоверность."""
+    reg = outlets.registry()
+    rss = {nlp.normalize_text(s["name"]): s for s in sources.load_sources()}
+    out = []
+    for o in reg["outlets"]:
+        feed = next((s for n, s in rss.items() if any(p in n for p in o["patterns"])), None)
+        out.append({**{k: o[k] for k in ("name", "country", "tier", "reputation", "holding")},
+                    "tier_label": reg["tiers"].get(o["tier"], o["tier"]),
+                    "rss": bool(feed and feed.get("enabled", True))})
+    return sorted(out, key=lambda x: (-x["reputation"], x["name"]))
 
 
 @app.get("/api/meta")
@@ -280,7 +309,8 @@ def profile_options(industry: str = ""):
     """Варианты для выпадающих списков профиля: типичные для отрасли + общие + уже введённые в других профилях."""
     with get_db() as conn:
         rows = conn.execute("SELECT data FROM profiles").fetchall()
-    return catalog.options(industry, [loads(r["data"], {}) for r in rows])
+        custom = catalog.custom_values(conn)
+    return catalog.options(industry, [loads(r["data"], {}) for r in rows], custom)
 
 
 @app.post("/api/profiles/suggest")
@@ -303,7 +333,8 @@ def _profile_data(body: ProfileIn):
     data = body.model_dump()
     for k, v in data.items():
         if isinstance(v, list):
-            data[k] = _clean_list(v)
+            # все списки профиля — по алфавиту, без повторов
+            data[k] = catalog.sort_values(list(dict.fromkeys(_clean_list(v))))
         elif isinstance(v, str):
             data[k] = v.strip()
     return data
@@ -318,6 +349,7 @@ def create_profile(body: ProfileIn):
     with get_db() as conn:
         conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
                      (pid, dumps(data), now_iso()))
+        catalog.remember_custom(conn, data, now_iso())
         return get_profile(conn, pid)
 
 
@@ -331,6 +363,7 @@ def update_profile(profile_id: str, body: ProfileIn):
         data["autofilled"] = False
         data["autofill_info"] = {}
         conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?", (dumps(data), now_iso(), profile_id))
+        catalog.remember_custom(conn, data, now_iso())
         return get_profile(conn, profile_id)
 
 
@@ -384,67 +417,26 @@ def restore_presets():
 
 @app.post("/api/companies/lookup")
 def company_lookup(body: CompanyLookupIn):
-    """Найти компанию по ИНН (ЕГРЮЛ) и/или сайту и предложить заполненный профиль. Ничего не сохраняет."""
-    errors, registry, site = [], None, None
+    """Найти компанию во всех открытых источниках (ЕГРЮЛ, Checko, «За честный бизнес», сайт, Википедия)
+    и предложить заполненный профиль. Ничего не сохраняет."""
     inn = re.sub(r"\D", "", body.inn or "")
-    if inn:
-        if not lookup.valid_inn(inn):
-            errors.append("ИНН не проходит проверку контрольной суммы — проверьте цифры")
-            inn = ""
-        else:
-            try:
-                registry = lookup.company_by_inn(inn)
-                if not registry:
-                    errors.append("По этому ИНН компания в ЕГРЮЛ не найдена")
-                elif registry.get("liquidated"):
-                    errors.append(f"По данным ЕГРЮЛ компания ликвидирована ({registry['liquidated']})")
-            except (httpx.HTTPError, ValueError, lookup.LookupError_) as e:
-                errors.append(f"ЕГРЮЛ сейчас недоступен ({e.__class__.__name__}) — профиль заполнен без него")
-    if body.url.strip():
+    pre_errors = []
+    if inn and not lookup.valid_inn(inn):
+        pre_errors.append("ИНН не проходит проверку контрольной суммы — проверьте цифры")
+        inn = ""
+    url = body.url.strip()
+    if url:
         try:
-            site = lookup.fetch_site(body.url)
+            lookup.normalize_url(url)
         except lookup.LookupError_ as e:
-            errors.append(str(e))
-        except httpx.HTTPError as e:
-            errors.append(f"Сайт не открылся ({e.__class__.__name__})")
-
-    guess = lookup.site_name_guess(site) if site else ""
-    name = body.name.strip() or (registry or {}).get("name") or guess
-    # в ЕГРЮЛ названия заглавными («ООО «К2 ТУЛ»»); если сайт пишет так же, но нормально — берём написание с сайта
-    if not body.name.strip() and registry and guess:
-        short = catalog.clean_company_name(registry["name"])
-        if short and short.lower() == catalog.clean_company_name(guess).lower():
-            name = name.replace(short, catalog.clean_company_name(guess))
-    if len(name) < 2:
+            pre_errors.append(str(e))
+            url = ""
+    s, found, log, errors = company.build(inn, url, body.name, body.industry, body.description)
+    errors = pre_errors + errors
+    if not s:
         raise HTTPException(400, "; ".join(errors) or "Укажите сайт, ИНН или название компании")
-    industry = body.industry.strip() or lookup.template_by_okved((registry or {}).get("okved")) or ""
-    description = body.description.strip() or lookup.clean_description((site or {}).get("description"))
-    context = " ".join(filter(None, [(site or {}).get("title"), " ".join((site or {}).get("headings") or []),
-                                     ((site or {}).get("text") or "")[:8000]]))
-    s = catalog.suggest(name, industry, description, context=context)
-    p = s["profile"]
-    if registry:
-        if registry.get("region") and registry["region"] not in p["regions"]:
-            p["regions"].insert(0, registry["region"])
-        short_name = catalog.clean_company_name(name)
-        if short_name and short_name.lower() not in [a.lower() for a in p["aliases"]]:
-            p["aliases"].append(short_name)
-        reg_note = (f"ИНН {registry['inn']}, ОГРН {registry['ogrn']}"
-                    + (f", зарегистрирована {registry['registered']}" if registry.get("registered") else "")
-                    + (f", регион регистрации: {registry['region']}" if registry.get("region") else "") + ".")
-        p["description"] = f"{description} {reg_note}".strip()
-    if guess and catalog.clean_company_name(guess).lower() not in [a.lower() for a in p["aliases"]]:
-        p["aliases"].append(catalog.clean_company_name(guess))
-    p["inn"] = inn
-    p["website"] = (site or {}).get("url") or body.url.strip()
-    used = [x["source"] for x in (registry, site) if x]
-    p["autofill_info"] = {"template": s["template"], "from_description": s["from_description"], "sources": used}
-    return {
-        "suggestion": s,
-        "registry": registry,
-        "site": {k: v for k, v in site.items() if k != "text"} if site else None,
-        "errors": errors,
-    }
+    return {"suggestion": s, "found": company.public_found(found), "sources_log": log, "errors": errors,
+            "registry": found.get("registry"), "site": company.public_found(found).get("site")}
 
 
 # ---------- события ----------
@@ -455,6 +447,7 @@ SORTS = {
     "relevance": lambda r: -r["score"]["relevance"],
     "urgency": lambda r: -r["score"]["urgency"],
     "confidence": lambda r: -r["score"]["confidence"],
+    "verification": lambda r: -r["verification"]["score"],
 }
 
 
@@ -470,6 +463,7 @@ def list_events(
     favorites_only: bool = False,
     sort: str = "priority",
     min_relevance: int = Query(0, ge=0, le=100),
+    min_verification: int = Query(0, ge=0, le=100),
     limit: int = Query(100, le=500),
 ):
     with get_db() as conn:
@@ -479,7 +473,7 @@ def list_events(
     if level and level not in LEVEL_ORDER:
         raise HTTPException(400, "Неизвестный уровень важности")
     items = apply_filters(results, days or None, category or None, impact or None, level or None, mode or None,
-                          q.strip() or None, favs if favorites_only else None, min_relevance)
+                          q.strip() or None, favs if favorites_only else None, min_relevance, min_verification)
     key = SORTS.get(sort, SORTS["priority"])
     items = sorted(items, key=key, reverse=(sort == "date"))
     return {"total": len(items), "items": [card(r, favs) for r in items[:limit]]}
@@ -514,6 +508,7 @@ def event_detail(event_id: str, profile_id: str):
         "rules_insight": r["insight"],
         "llm": llm_state,
         "rules_relevance": r["rules_relevance"],
+        "verification_detail": r["verification"],
         "market": reaction,
         "feedback": r["feedback"],
         "ml": r["ml"],

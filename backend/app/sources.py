@@ -139,7 +139,9 @@ def fetch_rss(source):
 
     fetched = datetime.now(timezone.utc)
     items = []
-    for entry in feed.entries[: config.RSS_MAX_ITEMS]:
+    from . import outlets
+
+    for entry in feed.entries[: source.get("max_items", config.RSS_MAX_ITEMS)]:
         title = strip_html(entry.get("title", ""))
         link = entry.get("link")
         if not title:
@@ -159,9 +161,11 @@ def fetch_rss(source):
             "url": link,
             # если даты нет — честно ставим время загрузки
             "published_at": (published or fetched).isoformat(timespec="seconds"),
-            "reliability": source.get("reliability", 0.7),
+            # надёжность — по реестру изданий (data/outlets.json)
+            "reliability": source.get("reliability") or outlets.reputation(source["name"], 0.6),
             "official": bool(source.get("official")),
             "is_demo": False,
+            "extra": {"country": source.get("country", "RU")},
         })
     return items
 
