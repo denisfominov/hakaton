@@ -36,3 +36,10 @@ __pycache__/
 .env
 frontend/.vite/
 backend/alpha.db
+
+# данные кейса (обезличенные CSV и PDF): не коммитим, загружаются из папки CLIENT_DATA_DIR
+df_*_hack.csv
+*.pdf
+!backend/data/clients/sample/*.csv
+# датасеты для дообучения (scripts/export_sft.py)
+sft*.jsonl

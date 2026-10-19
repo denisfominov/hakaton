@@ -1,6 +1,6 @@
 # Alpha Intelligence в одном контейнере: FastAPI отдаёт API (/api) и собранный фронтенд (/).
-#   docker build -t alpha-intelligence .
-#   docker run -p 8000:8000 -v alpha-data:/data --env-file .env alpha-intelligence
+#   docker compose up --build            (рекомендуется: тома, данные кейса, своя LLM — см. docker-compose.yml)
+#   docker build -t alpha-intelligence . && docker run -p 8000:8000 -v alpha-data:/data --env-file .env alpha-intelligence
 # Открыть http://localhost:8000. База — в томе /data (переживает пересоздание контейнера).
 
 # ---------- 1. сборка фронтенда ----------
@@ -22,8 +22,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # uv — как в CLAUDE.md; ставим зависимости в системный Python образа
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /bin/uv
 WORKDIR /app/backend
-COPY backend/requirements.txt ./
-RUN uv pip install --system --no-cache -r requirements.txt
+# версии всех зависимостей зафиксированы в requirements.lock (uv pip compile requirements.txt)
+COPY backend/requirements.txt backend/requirements.lock ./
+RUN uv pip install --system --no-cache -r requirements.lock
 
 COPY backend/ ./
 COPY --from=frontend /app/frontend/dist /app/frontend/dist

@@ -18,3 +18,6 @@ backend/.venv
 !.env.example
 .DS_Store
 *.log
+# данные кейса и материалы банка подключаются томом (docker-compose.yml), в образ не копируются
+df_*_hack.csv
+*.pdf
