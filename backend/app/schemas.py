@@ -21,6 +21,27 @@ class ProfileIn(BaseModel):
     risks: list[str] = []
     investment_plans: list[str] = []
     keywords: list[str] = []
+    # профиль заполнен сервисом и ещё не проверен пользователем (сбрасывается при сохранении формы)
+    autofilled: bool = False
+    autofill_info: dict = {}
+
+
+class SuggestIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    industry: str = ""
+    description: str = Field("", max_length=5000)
+
+
+class FeedbackIn(BaseModel):
+    profile_id: str
+    # None — пользователь не отвечал на этот вопрос
+    relevant: Optional[bool] = None
+    impact_type: Optional[Literal["risk", "opportunity", "neutral"]] = None
+    priority: Optional[Literal["higher", "ok", "lower"]] = None
+
+
+class ModelSettingsIn(BaseModel):
+    enabled: bool
 
 
 Priority = Literal["high", "medium", "low"]

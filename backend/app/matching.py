@@ -67,6 +67,10 @@ def profile_index(p):
     debt_sensitive = not is_bank and any(nlp.has_root(risk_toks, r) for r in DEBT_ROOTS)
 
     primary = nlp.detect_industries(nlp.tokens(p.get("industry", "")))
+    # продаёт то, что клиенты покупают на инвестиции (станки, оборудование, техника)
+    capex_toks = nlp.tokens(" ".join([p.get("industry", "")] + (p.get("products") or [])
+                                     + (p.get("subindustries") or [])))
+    sells_capex = any(nlp.has_root(capex_toks, r) for r in ("оборудован", "станк", "станок", "техник", "робот"))
     return {
         "primary_industry": primary[0] if primary else (sorted(industries)[0] if industries else "other"),
         "is_bank": is_bank,
@@ -80,6 +84,7 @@ def profile_index(p):
         "is_importer": is_importer,
         "debt_sensitive": debt_sensitive,
         "has_investments": bool(p.get("investment_plans")),
+        "sells_capex": sells_capex,
     }
 
 

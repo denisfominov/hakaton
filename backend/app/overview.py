@@ -26,7 +26,7 @@ def build(results, days):
     df = pd.DataFrame(rows)
     if df.empty:
         return {"kpi": {"important": 0, "critical_risks": 0, "opportunities": 0, "attention": 0, "total": 0},
-                "trend": [], "categories": [], "entities": []}
+                "trend": [], "trend_step": "day", "categories": [], "entities": []}
 
     rel = df[df.relevance >= RELEVANT]
     is_risk = rel.impact_type.isin(["risk", "mixed"])
@@ -41,13 +41,22 @@ def build(results, days):
         "attention": int(rel.urgency_level.isin(["critical", "high"]).sum()),
     }
 
-    # динамика повестки по дням: сколько значимых рисков / возможностей / прочего
+    # динамика повестки: до месяца — по дням, 90 дней — по неделям (иначе 90 тонких столбиков)
     end = datetime.now(timezone.utc).date()
-    # +1 день: период "7 дней" от текущего часа захватывает кусок восьмой календарной даты
-    span = max(1, min(days, 30)) + 1
-    all_days = [(end - timedelta(days=i)).isoformat() for i in range(span - 1, -1, -1)]
     rel = rel.assign(kind=rel.impact_type.map({"risk": "risk", "mixed": "risk", "opportunity": "opportunity"})
                      .fillna("neutral"))
+    step = "week" if days > 31 else "day"
+    if step == "week":
+        def bucket(d):
+            d = datetime.fromisoformat(d).date() if isinstance(d, str) else d
+            return (d - timedelta(days=d.weekday())).isoformat()
+        start = end - timedelta(days=days)
+        all_days = sorted({bucket(start + timedelta(days=i)) for i in range(days + 1)})
+        rel = rel.assign(day=rel.day.map(bucket))
+    else:
+        # +1 день: период "7 дней" от текущего часа захватывает кусок восьмой календарной даты
+        span = max(1, days) + 1
+        all_days = [(end - timedelta(days=i)).isoformat() for i in range(span - 1, -1, -1)]
     pivot = rel.pivot_table(index="day", columns="kind", values="id", aggfunc="count", fill_value=0)
     trend = []
     for d in all_days:
@@ -79,4 +88,4 @@ def build(results, days):
             counter[reg] += 1
     entities = [{"name": k, "count": v} for k, v in counter.most_common(12)]
 
-    return {"kpi": kpi, "trend": trend, "categories": categories, "entities": entities}
+    return {"kpi": kpi, "trend": trend, "trend_step": step, "categories": categories, "entities": entities}

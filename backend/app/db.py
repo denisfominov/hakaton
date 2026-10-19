@@ -116,6 +116,8 @@ def init_db():
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(events)")]
         if "extra" not in cols:
             conn.execute("ALTER TABLE events ADD COLUMN extra TEXT")
+        from . import model  # таблицы оценок и своей модели
+        model.init(conn)
 
 
 def dumps(obj):

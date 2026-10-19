@@ -115,6 +115,15 @@ def test_overview(client):
     assert o["top_events"][0]["priority"] >= o["top_events"][-1]["priority"]
 
 
+def test_overview_90_days_by_weeks(client):
+    o = client.get("/api/overview", params={"profile_id": "uralmet", "days": 90}).json()
+    assert o["trend_step"] == "week"
+    assert 13 <= len(o["trend"]) <= 15
+    month = client.get("/api/overview", params={"profile_id": "uralmet", "days": 30}).json()
+    assert month["trend_step"] == "day"
+    assert o["kpi"]["total"] >= month["kpi"]["total"]
+
+
 def test_compare(client):
     rows = client.get("/api/events/demo-06/compare").json()
     by = {r["profile_id"]: r for r in rows}

@@ -8,9 +8,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config, llm, nlp, overview, pipeline, sources
+from . import catalog, config, llm, model, nlp, overview, pipeline, sources
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import ActionIn, ActionPatch, ProfileIn, RefreshIn
+from .schemas import ActionIn, ActionPatch, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn, SuggestIn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("alpha")
@@ -181,6 +181,9 @@ def status():
         period = conn.execute("SELECT MIN(published_at) AS a, MAX(published_at) AS b FROM events "
                               "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
+        ms = model.status(conn)
+    model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
+                   "labels": ms["labels"]["relevance"], "min_labels": ms["min_labels"]}
     curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
     live = by_type.get("rss", 0) + by_type.get("alfa", 0)
     builtin = curated or demo
@@ -203,6 +206,7 @@ def status():
             "note": None if config.llm_enabled() else
             "LLM не подключён: аналитика строится правилами. Добавьте ANTHROPIC_API_KEY в .env, чтобы включить.",
         },
+        "model": model_short,
         "alfa": {"configured": sources.AlfaBankSource().is_configured(), "status": sources.AlfaBankSource().status()},
         "sources": [{"name": s["name"], "url": s["url"], "enabled": s.get("enabled", True)}
                     for s in sources.load_sources()],
@@ -248,6 +252,20 @@ def list_profiles():
         return [get_profile(conn, r["id"]) for r in rows]
 
 
+@app.get("/api/profile-options")
+def profile_options(industry: str = ""):
+    """Варианты для выпадающих списков профиля: типичные для отрасли + общие + уже введённые в других профилях."""
+    with get_db() as conn:
+        rows = conn.execute("SELECT data FROM profiles").fetchall()
+    return catalog.options(industry, [loads(r["data"], {}) for r in rows])
+
+
+@app.post("/api/profiles/suggest")
+def suggest_profile(body: SuggestIn):
+    """Черновик профиля новой компании по отрасли и описанию. Ничего не сохраняет."""
+    return catalog.suggest(body.name, body.industry, body.description)
+
+
 @app.get("/api/profiles/{profile_id}")
 def read_profile(profile_id: str):
     with get_db() as conn:
@@ -286,6 +304,9 @@ def update_profile(profile_id: str, body: ProfileIn):
         get_profile(conn, profile_id)
         data = _profile_data(body)
         data["id"] = profile_id
+        # сохранили форму — значит, пользователь проверил автозаполнение
+        data["autofilled"] = False
+        data["autofill_info"] = {}
         conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?", (dumps(data), now_iso(), profile_id))
         return get_profile(conn, profile_id)
 
@@ -310,6 +331,8 @@ def delete_profile(profile_id: str):
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
         conn.execute("DELETE FROM favorites WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM analyses WHERE profile_id = ?", (profile_id,))
+        if conn.execute("DELETE FROM feedback WHERE profile_id = ?", (profile_id,)).rowcount:
+            model.train(conn)
     return {"ok": True}
 
 
@@ -378,6 +401,9 @@ def event_detail(event_id: str, profile_id: str):
         "insight": insight,
         "rules_insight": r["insight"],
         "llm": llm_state,
+        "rules_relevance": r["rules_relevance"],
+        "feedback": r["feedback"],
+        "ml": r["ml"],
         "linked_actions": len(linked),
         "linked_action_titles": linked,
         "related": [{"id": c["id"], "title": c["title"], "source": c["source"], "url": c["url"],
@@ -443,6 +469,43 @@ def run_llm(event_id: str, profile_id: str):
     with get_db() as conn:
         pipeline.save_llm(conn, r["event"]["id"], profile, insight)
     return {"insight": insight}
+
+
+# ---------- оценки пользователя и своя модель ----------
+
+@app.post("/api/events/{event_id}/feedback")
+def event_feedback(event_id: str, body: FeedbackIn):
+    """Оценка разбора. Сохраняем вместе со снимком признаков и сразу переобучаем модель."""
+    with get_db() as conn:
+        profile = get_profile(conn, body.profile_id)
+        r = pipeline.find_result(conn, profile, event_id)
+        if not r:
+            raise HTTPException(404, "Событие не найдено")
+        saved = model.save_feedback(conn, r["event"]["id"], profile["id"], body.relevant, body.impact_type,
+                                    body.priority, r["features"])
+        model.train(conn)
+        st = model.status(conn)
+    return {"feedback": saved, "model": st}
+
+
+@app.get("/api/model")
+def model_status():
+    with get_db() as conn:
+        return model.status(conn)
+
+
+@app.post("/api/model/train")
+def model_train():
+    with get_db() as conn:
+        model.train(conn)
+        return model.status(conn)
+
+
+@app.put("/api/model/settings")
+def model_settings(body: ModelSettingsIn):
+    with get_db() as conn:
+        model.set_enabled(conn, body.enabled)
+        return model.status(conn)
 
 
 # ---------- обзор ----------

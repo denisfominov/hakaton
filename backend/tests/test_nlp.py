@@ -54,3 +54,25 @@ def test_term_in_text_handles_word_forms():
     toks = nlp.tokens("остановила толстолистовой прокатный стан, поставки толстолистового проката сократятся")
     assert nlp.term_in_text("Толстолистовой прокат", toks)
     assert not nlp.term_in_text("Трубы большого диаметра", toks)
+
+
+def test_stemmer_is_safe_for_parallel_requests():
+    # FastAPI обрабатывает запросы в пуле потоков: общий стеммер snowball падал с IndexError
+    import threading
+
+    from app import nlp
+    words = [f"инвестиций{i}" for i in range(3000)] + ["поставщиков", "металлургических", "станкостроение"] * 200
+    errors = []
+
+    def work():
+        try:
+            nlp.stem.cache_clear()
+            for w in words:
+                nlp.stem(w)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors

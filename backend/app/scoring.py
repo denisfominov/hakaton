@@ -118,13 +118,17 @@ def relevance_factors(m, channels, semantic, offtopic=False):
     return f
 
 
-def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None):
+def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None, extra_relevance=None,
+                priority_adjust=None):
+    """extra_relevance — поправки своей модели и оценки пользователя (видны в разложении релевантности),
+    priority_adjust — явная поправка приоритета от пользователя («важнее» / «менее важно»)."""
     text = " ".join([ev.get("title") or "", ev.get("summary") or "", ev.get("body") or ""])
     sig = ev["nlp"]["signals"]
     hours = age_hours(ev.get("published_at"), now)
 
     # --- релевантность
     rel_f = relevance_factors(m, channels, semantic, nlp.is_offtopic(ev["nlp"].get("tokens", [])))
+    rel_f += extra_relevance or []
     relevance = clamp(sum(x["points"] for x in rel_f))
     exposure = relevance / 100
 
@@ -213,6 +217,9 @@ def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None):
         cut = priority - (relevance + 10)
         priority = relevance + 10
         adjustments.append({"label": "Слабая связь с компанией: приоритет ограничен", "points": -round(cut)})
+    if priority_adjust:
+        priority += priority_adjust["points"]
+        adjustments.append(priority_adjust)
     priority = clamp(priority)
 
     contributions = [
