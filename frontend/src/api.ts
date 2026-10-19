@@ -1,5 +1,6 @@
 import type {
   Action,
+  CompanyLookup,
   CompareRow,
   EventCard,
   EventDetail,
@@ -77,6 +78,9 @@ export const api = {
     request<Profile>(`/profiles/${id}`, { method: "PUT", body: JSON.stringify(p) }),
   resetProfile: (id: string) => request<Profile>(`/profiles/${id}/reset`, { method: "POST" }),
   deleteProfile: (id: string) => request<{ ok: boolean }>(`/profiles/${id}`, { method: "DELETE" }),
+  restorePresets: () => request<{ restored: string[] }>("/profiles/restore-presets", { method: "POST" }),
+  lookupCompany: (b: { url: string; inn: string; name: string; industry: string; description: string }) =>
+    request<CompanyLookup>("/companies/lookup", { method: "POST", body: JSON.stringify(b) }),
   profileOptions: (industry: string) => request<ProfileOptions>(`/profile-options?${qs({ industry })}`),
   suggestProfile: (b: { name: string; industry: string; description: string }) =>
     request<ProfileSuggestion>("/profiles/suggest", { method: "POST", body: JSON.stringify(b) }),
@@ -87,6 +91,9 @@ export const api = {
     }),
   model: () => request<ModelStatus>("/model"),
   trainModel: () => request<ModelStatus>("/model/train", { method: "POST" }),
+  marketRefresh: (refreshPrices: boolean) =>
+    request<{ prices: { ticker: string; ok: boolean; days?: number; error?: string }[]; model: ModelStatus }>(
+      `/model/market?${qs({ refresh_prices: refreshPrices })}`, { method: "POST" }),
   setModelEnabled: (enabled: boolean) =>
     request<ModelStatus>("/model/settings", { method: "PUT", body: JSON.stringify({ enabled }) }),
 

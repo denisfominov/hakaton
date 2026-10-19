@@ -1,6 +1,7 @@
 import { Plus, RotateCcw, Save, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import { ErrorBox, Loading } from "../components/States";
@@ -13,7 +14,7 @@ type ProfileData = Omit<Profile, "id" | "is_demo" | "updated_at">;
 const EMPTY: ProfileData = {
   name: "", aliases: [], kind: "", source_note: "", description: "", industry: "", subindustries: [], regions: [],
   products: [], clients: [], suppliers: [], competitors: [], goals: [], priorities: [], risks: [],
-  investment_plans: [], keywords: [], autofilled: false, autofill_info: {},
+  investment_plans: [], keywords: [], ticker: "", inn: "", website: "", autofilled: false, autofill_info: {},
 };
 
 type FieldDef = { key: ProfileListField; label: string; hint?: string; placeholder?: string };
@@ -55,14 +56,12 @@ function countFilled(d: ProfileData) {
 }
 
 export default function ProfilePage() {
-  const { profile, profiles, setProfileId, reloadProfiles, bumpData, toast } = useApp();
+  const { profile, profiles, reloadProfiles, reloadStatus, bumpData, toast } = useApp();
+  const navigate = useNavigate();
   const [form, setForm] = useState<ProfileData>(EMPTY);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newCo, setNewCo] = useState({ name: "", industry: "", description: "" });
-  const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [options, setOptions] = useState<ProfileOptions | null>(null);
 
@@ -159,35 +158,15 @@ export default function ProfilePage() {
     }
   };
 
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
-    if (newCo.name.trim().length < 2) return;
-    setBusy(true);
-    try {
-      const s = await api.suggestProfile(newCo);
-      const p = await api.createProfile({
-        ...s.profile, autofilled: true, autofill_info: { template: s.template, from_description: s.from_description },
-      });
-      await reloadProfiles();
-      setProfileId(p.id);
-      bumpData();
-      setCreating(false);
-      setNewCo({ name: "", industry: "", description: "" });
-      toast(s.template ? "Профиль заполнен по отрасли — проверьте и сохраните" : "Профиль создан — заполните поля из списков");
-    } catch (err: any) {
-      toast(err.message, "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const remove = async () => {
     try {
       await api.deleteProfile(profile.id);
       setConfirmDelete(false);
       await reloadProfiles();
+      await reloadStatus();
       bumpData();
-      toast("Профиль удалён");
+      toast("Компания удалена");
+      navigate("/companies");
     } catch (err: any) {
       toast(err.message, "error");
     }
@@ -208,19 +187,19 @@ export default function ProfilePage() {
           <p className="mt-1 text-sm text-ink-500">Контекст, по которому система решает, что важно именно для этой компании</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><Plus size={15} /> Новая компания</button>
+          <button type="button" className="btn-secondary" onClick={() => navigate("/companies?add=1")}><Plus size={15} /> Новая компания</button>
           <button type="button" className="btn-secondary" onClick={fillEmpty} title="Заполнить пустые поля вариантами по отрасли и описанию">
             <Wand2 size={15} /> Дополнить по отрасли
           </button>
-          {profile.is_demo ? (
+          {profile.is_demo && (
             <button type="button" className="btn-secondary" onClick={reset} title="Вернуть исходные значения встроенного профиля">
               <RotateCcw size={15} /> Сбросить
             </button>
-          ) : (
-            <button type="button" className="btn-secondary !text-red-700" onClick={() => setConfirmDelete(true)}>
-              <Trash2 size={15} /> Удалить
-            </button>
           )}
+          <button type="button" className="btn-secondary !text-red-700" onClick={() => setConfirmDelete(true)}
+            disabled={profiles.length <= 1}>
+            <Trash2 size={15} /> Удалить
+          </button>
           <button type="submit" className="btn-primary" disabled={(!dirty && !profile.autofilled) || saving}>
             <Save size={15} /> {saving ? "Сохраняем…" : profile.autofilled && !dirty ? "Подтвердить" : "Сохранить"}
           </button>
@@ -231,7 +210,8 @@ export default function ProfilePage() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <b>Профиль заполнен автоматически</b>
           {info.template ? <> по типичному профилю отрасли «{info.template}»</> : null}
-          {fromDesc.length ? <> и описанию компании (нашлось: {fromDesc.slice(0, 6).join(", ")}{fromDesc.length > 6 ? "…" : ""})</> : null}.
+          {info.sources?.length ? <> с данными из {info.sources.join(" и ")}</> : null}
+          {fromDesc.length ? <> (нашлось: {fromDesc.slice(0, 6).join(", ")}{fromDesc.length > 6 ? "…" : ""})</> : null}.
           {" "}Это предложение сервиса: уберите лишнее, добавьте своё из списков или вручную и нажмите «Подтвердить».
           Дальше оценки новостей считаются по вашей версии профиля.
         </div>
@@ -263,6 +243,23 @@ export default function ProfilePage() {
               <input id="p-industry" className="input" value={form.industry} list="industry-options"
                 placeholder="Выберите из списка или впишите свою" onChange={(e) => set("industry", e.target.value)} />
               <p className="mt-1 text-xs text-ink-400">От отрасли зависят варианты в списках ниже: типичные для неё показываются первыми</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="label" htmlFor="p-site">Сайт</label>
+                <input id="p-site" className="input" value={form.website || ""} placeholder="example.ru"
+                  onChange={(e) => set("website", e.target.value)} />
+              </div>
+              <div>
+                <label className="label" htmlFor="p-inn">ИНН</label>
+                <input id="p-inn" className="input" value={form.inn || ""} inputMode="numeric"
+                  onChange={(e) => set("inn", e.target.value.replace(/[^\d]/g, "").slice(0, 12))} />
+              </div>
+              <div>
+                <label className="label" htmlFor="p-ticker">Тикер на Мосбирже</label>
+                <input id="p-ticker" className="input" value={form.ticker || ""} placeholder="Если компания публичная"
+                  onChange={(e) => set("ticker", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))} />
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="p-desc">Краткое описание бизнеса</label>
@@ -337,43 +334,10 @@ export default function ProfilePage() {
       )}
     </form>
 
-      {creating && (
-        <Modal title="Новая компания" onClose={() => setCreating(false)}>
-          <form onSubmit={create} className="space-y-4">
-            <div>
-              <label className="label" htmlFor="new-name">Название компании</label>
-              <input id="new-name" className="input" value={newCo.name} autoFocus placeholder="Например: ООО «Ромашка»"
-                onChange={(e) => setNewCo({ ...newCo, name: e.target.value })} />
-            </div>
-            <div>
-              <label className="label" htmlFor="new-industry">Отрасль</label>
-              <input id="new-industry" className="input" value={newCo.industry} list="industry-options"
-                placeholder="Выберите из списка или впишите свою"
-                onChange={(e) => setNewCo({ ...newCo, industry: e.target.value })} />
-            </div>
-            <div>
-              <label className="label" htmlFor="new-desc">Пара фраз о компании (необязательно)</label>
-              <textarea id="new-desc" className="input min-h-[80px]" value={newCo.description}
-                placeholder="Что продаёт и кому, где работает, откуда закупает. Например: поставляем станки из Китая заводам Урала и Казахстана"
-                onChange={(e) => setNewCo({ ...newCo, description: e.target.value })} />
-            </div>
-            <p className="text-xs text-ink-500">
-              Сервис предложит заполнение всех разделов по отрасли и описанию. Дальше его можно отредактировать под себя —
-              анализ пойдёт по вашей версии.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>Отмена</button>
-              <button type="submit" className="btn-primary" disabled={newCo.name.trim().length < 2 || busy}>
-                <Wand2 size={15} /> {busy ? "Заполняем…" : "Создать и заполнить"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
       {confirmDelete && (
         <Modal title="Удалить профиль?" onClose={() => setConfirmDelete(false)}>
-          <p className="text-sm text-ink-700">Профиль «{profile.name}», его избранное, оценки и кэш анализа будут удалены. Действия в плане останутся.</p>
+          <p className="text-sm text-ink-700">Профиль «{profile.name}», его избранное, оценки и кэш анализа будут удалены. Действия в плане останутся.
+            {profile.is_demo && " Встроенную компанию можно восстановить на странице «Выбор компании»."}</p>
           <div className="mt-5 flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setConfirmDelete(false)}>Отмена</button>
             <button type="button" className="btn-primary !bg-red-600 hover:!bg-red-700" onClick={remove}>Удалить</button>

@@ -1,4 +1,4 @@
-import { Building2, ChevronDown, ClipboardCheck, Cpu, LayoutDashboard, Newspaper, RefreshCw } from "lucide-react";
+import { Briefcase, Building2, ChevronDown, ClipboardCheck, Cpu, LayoutDashboard, Newspaper, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
@@ -7,6 +7,7 @@ import { useApp } from "../context";
 import AnalyticsPanel from "./AnalyticsPanel";
 
 const NAV = [
+  { to: "/companies", label: "Выбор компании", icon: Briefcase, end: false },
   { to: "/", label: "Обзор", icon: LayoutDashboard, end: true },
   { to: "/feed", label: "Лента событий", icon: Newspaper },
   { to: "/decisions", label: "Решения", icon: ClipboardCheck },
@@ -158,6 +159,7 @@ function ProfileSwitcher() {
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
+  const { profile } = useApp();
   return (
     <div className="min-h-screen md:pl-60">
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-ink-200 bg-white px-4 py-5 md:flex">
@@ -168,8 +170,13 @@ export default function Layout({ children }: { children: ReactNode }) {
               className={({ isActive }) =>
                 `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
                   isActive ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-100"}`}>
-              <Icon size={17} />
-              {label}
+              <Icon size={17} className="shrink-0" />
+              <span className="min-w-0">
+                {label}
+                {to === "/companies" && profile && (
+                  <span className="block truncate text-[11px] font-normal opacity-70">{profile.name}</span>
+                )}
+              </span>
             </NavLink>
           ))}
         </nav>

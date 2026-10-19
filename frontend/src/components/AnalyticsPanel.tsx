@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
 import { useApp, useLoad } from "../context";
-import type { ModelCv, ModelFeature } from "../types";
+import type { ModelCv, ModelFeature, ModelStatus } from "../types";
 import { formatDate } from "../utils";
 import Modal from "./Modal";
 import { ErrorBox, Loading } from "./States";
@@ -33,6 +33,50 @@ function Cv({ cv }: { cv: ModelCv | null }) {
       <b className="text-ink-900"> {Math.round(cv.rules_accuracy * 100)}%</b>
       {better > 0.001 ? " — модель уже лучше правил." : better < -0.001 ? " — пока хуже правил, нужно больше оценок." : " — пока на уровне правил."}
     </p>
+  );
+}
+
+function MarketBlock({ m, busy, onRefresh }: { m: ModelStatus; busy: boolean; onRefresh: (prices: boolean) => void }) {
+  const mk = m.market;
+  const origin: Record<string, string> = { history: "история", curated: "подборка", rss: "RSS", alfa: "Альфа" };
+  return (
+    <div className="rounded-lg border border-ink-200 bg-white p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-medium text-ink-900">Разметка по реакции рынка</div>
+        <div className="flex gap-1.5">
+          <button className="btn-ghost !px-2 !py-1 text-xs" disabled={busy} onClick={() => onRefresh(false)}>Пересчитать</button>
+          <button className="btn-secondary !px-2 !py-1 text-xs" disabled={busy} onClick={() => onRefresh(true)}
+            title="Докачать свежие котировки с Мосбиржи (нужен интернет) и разметить новости">
+            <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Обновить котировки
+          </button>
+        </div>
+      </div>
+      <p className="mt-1 text-ink-700">
+        Меток: <b>{mk.labels}</b> — «значимо» {mk.significant}, «рынок не заметил» {mk.quiet}
+        {Object.keys(mk.by_origin).length > 0 && <> (по источникам: {Object.entries(mk.by_origin).map(([k, v]) => `${origin[k] || k} ${v}`).join(", ")})</>}.
+        Неоднозначных (не используются): {mk.ambiguous}. Акции: {mk.tickers.join(", ") || "нет публичных компаний"};
+        котировки до {mk.prices_until ? formatDate(mk.prices_until, false) : "—"}
+      </p>
+      <p className="mt-1 text-ink-500">
+        «Значимо» — отклонение от индекса больше {mk.significant_z} обычных колебаний (вес {mk.weight});
+        «не заметил» — меньше {mk.quiet_z}, и только если правила тоже считают новость слабой (релевантность до
+        {" "}{mk.quiet_max_rule_relevance}, вес {mk.quiet_weight}): бизнесу событие может быть важно, даже если акции стоят.
+      </p>
+      {mk.examples.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {mk.examples.map((e) => (
+            <li key={e.event_id + e.ticker} className="flex gap-2">
+              <span className={`w-14 shrink-0 text-right font-semibold tabular-nums ${e.ar < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                {e.ar > 0 ? "+" : ""}{e.ar}%
+              </span>
+              <span className="min-w-0 text-ink-700">
+                {e.ticker}: {e.title} <span className="text-ink-400">({formatDate(e.t0, false)}, z = {e.z})</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -86,14 +130,17 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
             срочность и уверенность. Работают офлайн, без ключей.</p>
         </Layer>
 
-        <Layer icon={GraduationCap} title="2. Своя модель — учится на ваших оценках"
-          state={!m ? "…" : m.active ? `Активна · вес ${Math.round(m.weight * 100)}%` : m.trained ? "Выключена" : "Копит оценки"}
+        <Layer icon={GraduationCap} title="2. Своя модель — учится на оценках и на реакции рынка"
+          state={!m ? "…" : m.active ? `Активна · вес ${Math.round(m.weight * 100)}%` : m.trained ? "Выключена" : "Копит метки"}
           tone={m?.active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}>
-          <p>На странице события ответьте, относится ли новость к компании, риск это или возможность и верна ли важность.
-            На этих оценках обучаются две логистические регрессии (scikit-learn, локально): «значимо ли для компании» и
-            «тип влияния». Признаки — что нашли правила плюс слова новости в связке с отраслью. Модель сдвигает
-            релевантность (не больше чем на {Math.round((m?.max_weight ?? 0.5) * 100)}%), поправка видна отдельной строкой в разложении балла.
-            Ваша оценка конкретного события учитывается сразу.</p>
+          <p>Две логистические регрессии (scikit-learn, локально): «значимо ли для компании» и «тип влияния». Признаки —
+            что нашли правила плюс слова новости в связке с отраслью. Модель сдвигает релевантность (не больше чем на
+            {" "}{Math.round((m?.max_weight ?? 0.5) * 100)}%), поправка видна отдельной строкой в разложении балла.</p>
+          <p><b>Учителя два.</b> Первый — ваши оценки на странице события (относится ли, риск или возможность, верна ли
+            важность); оценка конкретного события учитывается сразу. Второй — рынок: для публичных компаний сервис
+            смотрит, как акции отклонились от индекса Мосбиржи за {m?.market.horizon ?? 2} торговых дня после новости, —
+            в том числе на старых новостях. Так модель учится и без оценок, но рыночные метки шумные, поэтому их вес
+            меньше, а одни они дают модели не больше {Math.round((m?.auto_max_weight ?? 0.25) * 100)}% голоса.</p>
           {loading && !m && <Loading text="Загружаем состояние модели…" />}
           {error && <ErrorBox error={error} onRetry={reload} />}
           {m && (
@@ -104,6 +151,8 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
                 <div><div className="text-ink-500">Тип влияния</div><div className="text-lg font-semibold tabular-nums">{m.labels.impact}</div></div>
                 <div><div className="text-ink-500">Важность</div><div className="text-lg font-semibold tabular-nums">{m.labels.priority}</div></div>
               </div>
+              <MarketBlock m={m} busy={busy} onRefresh={(prices) => run(async () => (await api.marketRefresh(prices)).model,
+                prices ? "Котировки обновлены, разметка пересчитана" : "Разметка пересчитана")} />
               {!m.trained && (
                 <p className="text-xs text-ink-700">
                   До обучения: ещё {left > 0 ? left : 0} {left > 0 ? "оценок" : ""} — нужно минимум {m.min_labels}, среди них хотя бы
@@ -115,7 +164,8 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
                   <Cv cv={m.relevance.cv} />
                   <Features title="Чаще всего делает новость значимой" items={m.relevance.top.positive} tone="bg-emerald-50 text-emerald-800" />
                   <Features title="Чаще всего делает новость незначимой" items={m.relevance.top.negative} tone="bg-rose-50 text-rose-800" />
-                  <p className="text-xs text-ink-400">Обучена {formatDate(m.relevance.trained_at)} на {m.relevance.n} оценках.
+                  <p className="text-xs text-ink-400">Обучена {formatDate(m.relevance.trained_at)}: {m.relevance.n_user ?? 0} оценок
+                    пользователя и {m.relevance.n_market ?? 0} рыночных меток.
                     {m.impact ? ` Модель типа влияния: ${m.impact.n} оценок.` : " Модель типа влияния ждёт оценок."}</p>
                 </>
               )}
@@ -123,7 +173,7 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
                 <p className="text-xs text-ink-500">По компаниям: {m.by_profile.map((p) => `${p.name} — ${p.count}`).join("; ")}</p>
               )}
               <div className="flex flex-wrap gap-2">
-                <button className="btn-secondary !py-1.5 text-xs" disabled={busy || !m.labels.total}
+                <button className="btn-secondary !py-1.5 text-xs" disabled={busy}
                   onClick={() => run(api.trainModel, "Модель переобучена")}>
                   <RefreshCw size={13} className={busy ? "animate-spin" : ""} /> Переобучить
                 </button>
@@ -148,9 +198,11 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
         </Layer>
       </div>
       <p className="mt-4 text-xs text-ink-400">
-        Почему не своя большая языковая модель: для неё нужны тысячи размеченных примеров и GPU. Оценки пользователей —
-        это и есть разметка; когда их наберутся сотни, на них можно дообучить компактную русскоязычную модель
-        (например, ruBERT) вместо логистической регрессии.
+        Почему не готовый датасет с Kaggle: там размечена тональность новостей вообще, а не «важно ли это конкретной
+        компании», и чаще на английском. Рыночная реакция и ваши оценки отвечают ровно на наш вопрос. Архив старых
+        новостей (CSV или JSON) можно добавить командой <code>python -m scripts.import_history</code> — он разметится
+        по рынку. Когда меток наберутся тысячи, вместо логистической регрессии можно дообучить компактную
+        русскоязычную модель (например, ruBERT).
       </p>
     </Modal>
   );

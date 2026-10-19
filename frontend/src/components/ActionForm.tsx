@@ -4,6 +4,9 @@ import type { Action } from "../types";
 
 export type ActionDraft = Pick<Action, "title" | "description" | "priority" | "due_date" | "owner" | "comment"> & {
   status?: Action["status"];
+  why?: string | null;
+  if_done?: string | null;
+  if_ignored?: string | null;
 };
 
 interface Props {
@@ -47,6 +50,23 @@ export default function ActionForm({ initial, withStatus, submitLabel, onSubmit,
       <div>
         <label className="label" htmlFor="a-desc">Описание</label>
         <textarea id="a-desc" className="input min-h-[90px]" value={d.description} onChange={(e) => set("description", e.target.value)} />
+      </div>
+      <div className="grid gap-3">
+        <div>
+          <label className="label" htmlFor="a-why">Почему важно</label>
+          <textarea id="a-why" className="input min-h-[60px]" value={d.why || ""}
+            onChange={(e) => set("why", e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="a-done">Если сделать</label>
+          <textarea id="a-done" className="input min-h-[60px]" value={d.if_done || ""}
+            onChange={(e) => set("if_done", e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="a-ignored">Если оставить без внимания</label>
+          <textarea id="a-ignored" className="input min-h-[60px]" value={d.if_ignored || ""}
+            onChange={(e) => set("if_ignored", e.target.value)} />
+        </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <div>

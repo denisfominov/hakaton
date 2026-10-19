@@ -90,6 +90,17 @@ export default function FeedbackPanel({ ev }: { ev: EventDetail }) {
           onPick={(v) => send({ ...answer, priority: v })} />
       </div>
 
+      {ev.market && (
+        <div className="mt-4 rounded-lg border border-ink-200 px-3 py-2 text-xs leading-relaxed text-ink-700">
+          <b>Реакция рынка:</b> акции {ev.market.ticker} за {ev.market.horizon} торговых дня после новости{" "}
+          <span className={ev.market.ar < 0 ? "font-semibold text-rose-700" : "font-semibold text-emerald-700"}>
+            {ev.market.ar > 0 ? "+" : ""}{ev.market.ar}%
+          </span>{" "}к индексу Мосбиржи (z = {ev.market.z}).{" "}
+          {ev.market.relevant === true ? "Это значимая реакция — метка «относится» для обучения модели."
+            : ev.market.relevant === false ? "Рынок новость не заметил."
+            : "Реакция неоднозначная — в обучение не идёт."}
+        </div>
+      )}
       <div className="mt-4 rounded-lg bg-ink-50 px-3 py-2 text-xs leading-relaxed text-ink-700">
         {model?.active && p !== undefined ? (
           <>Своя модель: вероятность, что событие значимо для компании, — <b>{Math.round(p * 100)}%</b>.
@@ -97,8 +108,8 @@ export default function FeedbackPanel({ ev }: { ev: EventDetail }) {
         ) : model?.trained && !model.enabled ? (
           <>Своя модель обучена, но выключена — баллы считают только правила.</>
         ) : (
-          <>Модель начнёт работать после {model?.min_labels ?? 6} оценок «относится / не относится» (сейчас {model?.labels ?? 0}).
-            Пока баллы считают правила.</>
+          <>Модель пока не обучена: нужно {model?.min_labels ?? 6} оценок «относится / не относится» (сейчас {model?.labels ?? 0})
+            или рыночная разметка по публичным компаниям. Пока баллы считают правила.</>
         )}
       </div>
     </div>

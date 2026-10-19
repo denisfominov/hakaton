@@ -62,6 +62,11 @@ function ActionCard({ a, onStatus, onOpen }: { a: Action; onStatus: (s: Action["
           <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${prioCls[a.priority]}`}>{PRIORITY_LABEL[a.priority]}</span>
         </div>
         {a.description && <p className="mt-1 line-clamp-2 text-sm text-ink-500">{a.description}</p>}
+        {a.if_ignored && (
+          <p className="mt-1.5 line-clamp-2 text-xs text-rose-700">
+            <span className="font-medium">Если оставить без внимания:</span> {a.if_ignored}
+          </p>
+        )}
       </button>
       <div className="mt-3 space-y-1 text-xs text-ink-500">
         {a.event_id && a.event_title && (
@@ -180,7 +185,8 @@ export default function DecisionsPage() {
               <ActionForm
                 key={opened.updated_at}
                 initial={{ title: opened.title, description: opened.description || "", priority: opened.priority,
-                  due_date: opened.due_date, owner: opened.owner || "", comment: opened.comment || "", status: opened.status }}
+                  due_date: opened.due_date, owner: opened.owner || "", comment: opened.comment || "", status: opened.status,
+                  why: opened.why || "", if_done: opened.if_done || "", if_ignored: opened.if_ignored || "" }}
                 withStatus submitLabel="Сохранить" onSubmit={saveEdit} onCancel={() => setOpenId(null)} />
             </div>
             <div className="md:col-span-2">

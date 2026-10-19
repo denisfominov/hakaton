@@ -1,10 +1,11 @@
 import { ArrowRight, CalendarClock, FlaskConical, Lightbulb, Newspaper, ShieldAlert, Siren, Sparkles, Target } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api";
+import AboutService from "../components/AboutService";
 import { ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge } from "../components/Badges";
 import { Empty, ErrorBox, Skeleton } from "../components/States";
+import TrendChart from "../components/TrendChart";
 import { useApp, useLoad } from "../context";
 import type { EventCard } from "../types";
 import { PRIORITY_LABEL, formatDate, isOverdue, timeAgo } from "../utils";
@@ -74,6 +75,7 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
+      <AboutService />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Обзор для руководителя</h1>
@@ -216,26 +218,13 @@ export default function OverviewPage() {
             <section className="card p-4 lg:col-span-2">
               <h2 className="section-title">Динамика повестки</h2>
               <p className="text-xs text-ink-500">
-                События, связанные с компанией (релевантность от 25), {data.trend_step === "week" ? "по неделям" : "по дням"} публикации
+                События, связанные с компанией (релевантность от 25), {data.trend_step === "week" ? "по неделям" : "по дням"} публикации.
+                Наведите на столбец, чтобы увидеть новости, нажмите — чтобы открыть
               </p>
               {data.trend.every((d) => !d.risk && !d.opportunity && !d.neutral) ? (
                 <div className="py-12 text-center text-sm text-ink-500">Нет значимых событий за период</div>
               ) : (
-                <div className="mt-4 h-60">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.trend.map((d) => ({
-                      ...d, label: (data.trend_step === "week" ? "с " : "") + formatDate(d.day, false) }))} barCategoryGap="25%">
-                      <CartesianGrid vertical={false} stroke="#eef1f4" />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" width={28} />
-                      <Tooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13 }} />
-                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="risk" name="Риски" stackId="a" fill="#e11d48" />
-                      <Bar dataKey="opportunity" name="Возможности" stackId="a" fill="#059669" />
-                      <Bar dataKey="neutral" name="Нейтральные" stackId="a" fill="#cbd5e1" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <TrendChart trend={data.trend} step={data.trend_step} />
               )}
             </section>
 

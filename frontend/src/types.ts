@@ -20,9 +20,13 @@ export interface Profile {
   risks: string[];
   investment_plans: string[];
   keywords: string[];
+  // тикер на Мосбирже: новости публичной компании размечаются по реакции акций
+  ticker?: string;
+  inn?: string;
+  website?: string;
   // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
-  autofill_info?: { template?: string | null; from_description?: Record<string, string[]> };
+  autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[] };
   is_demo?: boolean;
   updated_at?: string;
 }
@@ -46,6 +50,24 @@ export interface ProfileSuggestion {
   profile: Omit<Profile, "id">;
   template: string | null;
   from_description: Record<string, string[]>;
+}
+
+export interface MarketReaction {
+  ticker: string;
+  ar: number;
+  z: number;
+  t0: string;
+  t_end: string;
+  relevant: boolean | null;
+  impact_type: string | null;
+  horizon: number;
+}
+
+export interface CompanyLookup {
+  suggestion: ProfileSuggestion;
+  registry: null | { source: string; inn: string; ogrn: string; name: string; region: string; registered: string | null };
+  site: null | { source: string; url: string; title: string; description: string };
+  errors: string[];
 }
 
 export interface Feedback {
@@ -79,10 +101,18 @@ export interface ModelStatus {
   labels: { total: number; relevance: number; relevant: number; not_relevant: number; impact: number; priority: number };
   by_profile: { profile_id: string; name: string; count: number }[];
   relevance: null | {
-    n: number; positive: number; negative: number; cv: ModelCv | null; trained_at: string;
+    n: number; positive: number; negative: number; n_user?: number; n_market?: number; cv: ModelCv | null; trained_at: string;
     top: { positive: ModelFeature[]; negative: ModelFeature[] };
   };
   impact: null | { n: number; classes: Record<string, number>; cv: ModelCv | null; trained_at: string };
+  auto_max_weight: number;
+  market: {
+    labels: number; significant: number; quiet: number; ambiguous: number; by_origin: Record<string, number>;
+    tickers: string[]; prices_until: string | null; horizon: number; significant_z: number; quiet_z: number;
+    weight: number; quiet_weight: number; quiet_max_rule_relevance: number;
+    examples: { event_id: string; title: string; company: string; ticker: string; ar: number; z: number;
+      impact_type: string | null; t0: string; origin: string }[];
+  };
 }
 
 export interface FactStatus {
@@ -156,6 +186,10 @@ export interface InsightItem {
 export interface SuggestedAction {
   title: string;
   description: string;
+  // почему это важно / к чему приведёт, если сделать / что будет, если не сделать
+  why?: string;
+  if_done?: string;
+  if_ignored?: string;
   owner: string;
   due_days: number;
   due_date: string;
@@ -187,6 +221,7 @@ export interface EventDetail extends EventCard {
   body: string;
   rules_relevance: number;
   feedback: Feedback | null;
+  market: MarketReaction | null;
   ml: { p_relevant?: number; weight?: number; impact_hint?: { type: string; p: number } };
   score: Score;
   insight: Insight;
@@ -223,6 +258,9 @@ export interface Action {
   status: "new" | "in_progress" | "done";
   comment: string;
   owner: string;
+  why?: string | null;
+  if_done?: string | null;
+  if_ignored?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -237,6 +275,16 @@ export interface HistoryItem {
   new_value: string | null;
 }
 
+export type TrendKind = "risk" | "opportunity" | "neutral";
+
+export interface TrendPoint {
+  day: string;
+  risk: number;
+  opportunity: number;
+  neutral: number;
+  events: Record<TrendKind, { id: string; title: string; priority: number }[]>;
+}
+
 export interface Overview {
   profile: { id: string; name: string };
   days: number;
@@ -249,7 +297,7 @@ export interface Overview {
     opportunities: number;
     attention: number;
   };
-  trend: { day: string; risk: number; opportunity: number; neutral: number }[];
+  trend: TrendPoint[];
   trend_step: "day" | "week";
   categories: { key: string; label: string; count: number; avg_priority: number }[];
   entities: { name: string; count: number }[];
@@ -266,6 +314,7 @@ export interface Status {
   events: { curated: number; demo: number; live: number; total: number };
   llm: { enabled: boolean; model: string | null; note: string | null };
   model: { active: boolean; trained: boolean; enabled: boolean; weight: number; labels: number; min_labels: number };
+  deleted_presets: { id: string; name: string }[];
   alfa: { configured: boolean; status: string };
   sources: { name: string; url: string; enabled: boolean }[];
   fetch_log: { id: number; ts: string; source: string; ok: number; items: number; error: string | null }[];

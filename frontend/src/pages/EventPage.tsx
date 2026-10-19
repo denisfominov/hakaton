@@ -1,5 +1,6 @@
 import {
-  ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ExternalLink, Eye, FileText, Info, Plus, ShieldAlert, Star,
+  AlertTriangle, ArrowLeft, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, ExternalLink, Eye, FileText, Info, Plus,
+  ShieldAlert, Star,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -130,29 +131,61 @@ function ScorePanel({ score, profileName }: { score: Score; profileName?: string
   );
 }
 
+// формат рекомендации: действие -> почему важно -> если сделать -> если оставить без внимания
+export function ActionRationale({ why, ifDone, ifIgnored, compact }: {
+  why?: string | null; ifDone?: string | null; ifIgnored?: string | null; compact?: boolean;
+}) {
+  if (!why && !ifDone && !ifIgnored) return null;
+  const rows = [
+    { label: "Почему важно", text: why, icon: Info, tone: "text-ink-500" },
+    { label: "Если сделать", text: ifDone, icon: CheckCircle2, tone: "text-emerald-600" },
+    { label: "Если оставить без внимания", text: ifIgnored, icon: AlertTriangle, tone: "text-rose-600" },
+  ].filter((r) => r.text);
+  return (
+    <dl className={`divide-y divide-ink-100 rounded-lg bg-ink-50 ${compact ? "" : "mt-3"}`}>
+      {rows.map(({ label, text, icon: Icon, tone }) => (
+        <div key={label} className="grid gap-0.5 px-3 py-2 sm:grid-cols-[170px_1fr] sm:gap-3">
+          <dt className={`flex items-start gap-1.5 text-xs font-medium ${tone}`}>
+            <Icon size={14} className="mt-px shrink-0" /> {label}
+          </dt>
+          <dd className="text-sm leading-snug text-ink-700">{text}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ActionsBlock({ actions, added, onAdd }: { actions: SuggestedAction[]; added: Set<string>; onAdd: (a: SuggestedAction) => void }) {
   if (!actions.length) return <p className="text-sm text-ink-500">Конкретных действий не требуется.</p>;
   return (
-    <ul className="space-y-2">
-      {actions.map((a) => (
-        <li key={a.title} className="flex flex-col gap-3 rounded-lg border border-ink-200 px-4 py-3 sm:flex-row sm:items-start">
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">{a.title}</div>
-            <p className="mt-0.5 text-sm text-ink-700">{a.description}</p>
-            <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-ink-500">
-              <span>Ответственный: {a.owner}</span>
-              <span>Срок: {a.due_days} дн. (до {formatDate(a.due_date, false)})</span>
-              <span>Приоритет: {PRIORITY_LABEL[a.priority]?.toLowerCase()}</span>
+    <ol className="space-y-3">
+      {actions.map((a, i) => (
+        <li key={a.title} className="rounded-lg border border-ink-200 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-900 text-[11px] font-semibold text-white">{i + 1}</span>
+                <div>
+                  <div className="font-medium leading-snug">{a.title}</div>
+                  <p className="mt-0.5 text-sm text-ink-700">{a.description}</p>
+                </div>
+              </div>
             </div>
+            {added.has(a.title) ? (
+              <Link to="/decisions" className="btn-secondary shrink-0 !text-emerald-700"><Check size={15} /> В плане</Link>
+            ) : (
+              <button className="btn-secondary shrink-0" onClick={() => onAdd(a)}><Plus size={15} /> В план действий</button>
+            )}
           </div>
-          {added.has(a.title) ? (
-            <Link to="/decisions" className="btn-secondary shrink-0 !text-emerald-700"><Check size={15} /> В плане</Link>
-          ) : (
-            <button className="btn-secondary shrink-0" onClick={() => onAdd(a)}><Plus size={15} /> В план действий</button>
-          )}
+          <ActionRationale why={a.why} ifDone={a.if_done} ifIgnored={a.if_ignored} />
+          <div className="mt-2 flex flex-wrap gap-x-3 text-xs text-ink-500">
+            <span>Ответственный: {a.owner}</span>
+            <span>Срок: {a.due_days} дн. (до {formatDate(a.due_date, false)})</span>
+            <span>Приоритет: {PRIORITY_LABEL[a.priority]?.toLowerCase()}</span>
+          </div>
         </li>
       ))}
-    </ul>
+    </ol>
   );
 }
 
@@ -360,6 +393,9 @@ export default function EventPage() {
       due_date: a?.due_date || null,
       owner: a?.owner || "",
       comment: "",
+      why: a?.why || "",
+      if_done: a?.if_done || "",
+      if_ignored: a?.if_ignored || "",
     });
   };
 
