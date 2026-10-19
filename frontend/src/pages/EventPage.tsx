@@ -2,9 +2,9 @@ import {
   AlertTriangle, ArrowLeft, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, ExternalLink, Eye, FileText, Info, Plus,
   ShieldAlert, Star,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api";
 import ActionForm from "../components/ActionForm";
 import FeedbackPanel from "../components/FeedbackPanel";
@@ -13,8 +13,10 @@ import { DemoBadge, ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge, Verifi
 import Modal from "../components/Modal";
 import { ErrorBox, Loading } from "../components/States";
 import { useApp, useLoad } from "../context";
-import type { EventDetail, Factor, Insight, InsightItem, Score, SuggestedAction, VerificationDetail } from "../types";
-import { AREA_LABEL, LEVEL_LABEL, PRIORITY_LABEL, URGENCY_LABEL, formatDate, levelText } from "../utils";
+import type {
+  EventDetail, Factor, Insight, InsightItem, Score, SuggestedAction, ThreadDetail, VerificationDetail,
+} from "../types";
+import { AREA_LABEL, LEVEL_LABEL, PRIORITY_LABEL, URGENCY_LABEL, formatDate, levelText, plural } from "../utils";
 
 function Block({ n, title, children, hint }: { n: number; title: string; children: ReactNode; hint?: string }) {
   return (
@@ -64,6 +66,35 @@ function FactorList({ factors }: { factors: Factor[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function ThreadTimeline({ t }: { t: ThreadDetail }) {
+  const dot = { risk: "bg-rose-500", opportunity: "bg-emerald-500", mixed: "bg-amber-500", neutral: "bg-ink-300" };
+  return (
+    <section id="thread" className="card scroll-mt-24 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="section-title">Сюжет: {t.label}</h2>
+        <span className="text-xs text-ink-500">
+          {t.n_clusters} {plural(t.n_clusters, "событие", "события", "событий")} · {formatDate(t.first_at, false)} — {formatDate(t.last_at, false)}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-ink-500">Как развивалась история: события одной темы за последние 60 дней.</p>
+      <ol className="relative mt-4 space-y-3 border-l border-ink-200 pl-5">
+        {t.events.map((e) => (
+          <li key={e.id} className="relative">
+            <span className={`absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${dot[e.impact_type]}`} />
+            <div className="text-xs text-ink-500">{formatDate(e.published_at, false)} · {e.source}</div>
+            {e.current ? (
+              <div className="font-medium leading-snug text-ink-900">{e.title} <span className="text-xs font-normal text-ink-400">— это событие</span></div>
+            ) : (
+              <Link to={`/events/${e.id}`} className="font-medium leading-snug text-ink-700 hover:text-ink-900 hover:underline">{e.title}</Link>
+            )}
+            <div className="mt-0.5 text-xs text-ink-500">Приоритет для компании: <b className={levelText[e.priority_level]}>{e.priority}</b></div>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -396,6 +427,11 @@ export default function EventPage() {
   const [llmError, setLlmError] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showText, setShowText] = useState(false);
+  const location = useLocation();
+  // ссылка «Сюжет» ведёт к хронологии: прокручиваем, когда страница загрузилась
+  useEffect(() => {
+    if (data && location.hash === "#thread") document.getElementById("thread")?.scrollIntoView({ behavior: "smooth" });
+  }, [data, location.hash]);
 
   if (loading && !data) return <Loading text="Загружаем событие и считаем аналитику…" />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
@@ -554,6 +590,7 @@ export default function EventPage() {
             {llmError && <div className="border-b border-red-100 bg-red-50 px-5 py-2 text-sm text-red-800">{llmError}</div>}
             <Analysis ins={ins} ev={ev} added={inPlan} onAdd={openDraft} />
           </div>
+          {ev.thread_detail && <ThreadTimeline t={ev.thread_detail} />}
           <ComparePanel eventId={ev.id} />
         </div>
         <aside className="space-y-5 lg:self-start">

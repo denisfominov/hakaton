@@ -7,7 +7,7 @@ import { Empty, ErrorBox, Skeleton } from "../components/States";
 import TrendChart from "../components/TrendChart";
 import { useApp, useLoad } from "../context";
 import type { EventCard } from "../types";
-import { PRIORITY_LABEL, formatDate, isOverdue, timeAgo } from "../utils";
+import { PRIORITY_LABEL, formatDate, isOverdue, plural, timeAgo } from "../utils";
 
 const PERIODS = [
   { days: 1, label: "24 часа" },
@@ -246,6 +246,28 @@ export default function OverviewPage() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {data.threads.length > 0 && (
+                <>
+                  <h3 className="mt-5 text-xs font-medium uppercase tracking-wide text-ink-500">Сюжеты</h3>
+                  <ul className="mt-2 space-y-2">
+                    {data.threads.map((t) => (
+                      <li key={t.id}>
+                        <Link to={`/events/${t.latest_event_id}#thread`} className="block rounded-lg border border-ink-100 px-2.5 py-2 hover:bg-ink-50">
+                          <div className="flex items-start justify-between gap-2 text-sm">
+                            <span className="font-medium text-ink-900">{t.label}</span>
+                            <span className="shrink-0 text-xs tabular-nums text-ink-500" title="Максимальный приоритет для компании">{t.max_priority}</span>
+                          </div>
+                          <div className="mt-0.5 text-xs text-ink-500">
+                            {t.total} {plural(t.total, "событие", "события", "событий")} · {formatDate(t.first_at, false)} — {formatDate(t.last_at, false)}
+                            {t.risks > 0 && <span className="text-rose-700"> · рисков {t.risks}</span>}
+                            {t.opportunities > 0 && <span className="text-emerald-700"> · возможностей {t.opportunities}</span>}
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
               {data.entities.length > 0 && (
                 <>

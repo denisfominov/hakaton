@@ -11,6 +11,7 @@ import DecisionsPage from "./pages/DecisionsPage";
 import EventPage from "./pages/EventPage";
 import FeedPage from "./pages/FeedPage";
 import OverviewPage from "./pages/OverviewPage";
+import PortfolioPage from "./pages/PortfolioPage";
 import ProfilePage from "./pages/ProfilePage";
 
 interface Toast {
@@ -39,6 +40,7 @@ function Routed() {
         <Route path="/" element={<OverviewPage />} />
         <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/events/:id" element={<EventPage />} />
         <Route path="/profile" element={<ProfilePage />} />

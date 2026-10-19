@@ -9,6 +9,7 @@ import { plural } from "../utils";
 
 const DEFAULTS = { q: "", days: "", category: "", impact: "", level: "", mode: "", ver: "", fav: "", all: "", sort: "priority" };
 type FilterKey = keyof typeof DEFAULTS;
+const PAGE = 30;
 
 // ниже этой релевантности новость почти не связана с компанией; в живых RSS таких большинство
 const MIN_RELEVANCE = 20;
@@ -48,9 +49,12 @@ export default function FeedPage() {
     min_relevance: get("all") === "1" ? 0 : MIN_RELEVANCE,
   };
 
+  // постранично: по PAGE событий, «Показать ещё» добавляет следующую страницу
+  const [shown, setShown] = useState(PAGE);
+  useEffect(() => setShown(PAGE), [profileId, params.toString()]);
   const { data, setData, loading, error, reload } = useLoad(
-    () => api.events(profileId, filters),
-    [profileId, params.toString(), dataVersion],
+    () => api.events(profileId, { ...filters, limit: shown }),
+    [profileId, params.toString(), dataVersion, shown],
   );
 
   const toggleFavorite = async (id: string) => {
@@ -58,7 +62,7 @@ export default function FeedPage() {
       const res = await api.toggleFavorite(profileId, id);
       if (!data) return;
       if (filters.favorites_only && !res.favorite) {
-        setData({ total: data.total - 1, items: data.items.filter((e) => e.id !== id) });
+        setData({ ...data, total: data.total - 1, items: data.items.filter((e) => e.id !== id) });
       } else {
         setData({ ...data, items: data.items.map((e) => (e.id === id ? { ...e, favorite: res.favorite } : e)) });
       }
@@ -171,6 +175,14 @@ export default function FeedPage() {
       {data && data.items.length > 0 && (
         <div className={`space-y-3 ${loading ? "opacity-60" : ""}`}>
           {data.items.map((ev) => <EventCard key={ev.id} ev={ev} onToggleFavorite={toggleFavorite} />)}
+          <div className="flex flex-col items-center gap-2 pt-2 text-sm text-ink-500">
+            <span>Показано {data.items.length} из {data.total}</span>
+            {data.items.length < data.total && (
+              <button className="btn-secondary" disabled={loading} onClick={() => setShown((n) => n + PAGE)}>
+                {loading ? "Загружаем…" : `Показать ещё ${Math.min(PAGE, data.total - data.items.length)}`}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

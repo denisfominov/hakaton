@@ -1,4 +1,4 @@
-import { ArrowRight, Briefcase, ClipboardCheck, Compass, Cpu, LayoutDashboard, Newspaper, ShieldCheck } from "lucide-react";
+import { ArrowRight, Briefcase, ClipboardCheck, Compass, Cpu, Grid3x3, LayoutDashboard, Newspaper, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -59,14 +59,19 @@ export default function AboutPage() {
             Выберите компанию или добавьте свою по сайту или ИНН: сервис соберёт данные из ЕГРЮЛ, порталов проверки
             контрагентов, сайта компании и Википедии и заполнит профиль. Проверьте и поправьте его.
           </Step>
-          <Step n={2} icon={LayoutDashboard} title="Обзор" to="/">
-            Что требует реакции и главные события за период. Столбцы динамики кликабельны — откроют новости дня.
+          <Step n={2} icon={Grid3x3} title="Портфель" to="/portfolio">
+            Все компании сразу: индекс внимания, критические риски и главное событие у каждой, тепловая карта
+            «темы × компании». Видно, кому из клиентов звонить первым.
           </Step>
-          <Step n={3} icon={Newspaper} title="Лента и разбор события" to="/feed">
-            В разборе — связь с компанией, риски и возможности, балл 0–100 и из чего он сложился, достоверность
-            и рекомендуемые действия.
+          <Step n={3} icon={LayoutDashboard} title="Обзор" to="/">
+            Что требует реакции и главные события за период по одной компании, активные сюжеты. Столбцы динамики
+            кликабельны — откроют новости дня.
           </Step>
-          <Step n={4} icon={ClipboardCheck} title="Решения" to="/decisions">
+          <Step n={4} icon={Newspaper} title="Лента и разбор события" to="/feed">
+            В разборе — связь с компанией, риски и возможности, балл 0–100 и из чего он сложился, достоверность,
+            сюжет (как развивалась история) и рекомендуемые действия.
+          </Step>
+          <Step n={5} icon={ClipboardCheck} title="Решения" to="/decisions">
             Нужные действия добавьте в план: ответственный, срок, статус. Оцените разбор — сервис учится на оценках.
           </Step>
         </ol>
@@ -95,7 +100,8 @@ export default function AboutPage() {
         <div className="card p-5">
           <h2 className="flex items-center gap-2 section-title"><Cpu size={15} className="text-ink-500" /> Как считается</h2>
           <p className="mt-2">
-            Правила по профилю компании находят каналы влияния и считают баллы; своя модель учится на оценках
+            Названия компаний ищутся с учётом морфологии и распознавания организаций («Магнит» — не «магнитные
+            станки»); правила по профилю находят каналы влияния и считают баллы; своя модель учится на оценках
             пользователей и на реакции акций публичных компаний; LLM по кнопке только переписывает разбор понятным
             языком. Подробности — по кнопке «Аналитика» вверху.
           </p>

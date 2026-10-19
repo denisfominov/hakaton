@@ -181,6 +181,36 @@ export interface EventCard {
   suspicious: boolean;
   related_count: number;
   favorite: boolean;
+  thread: ThreadBrief | null;
+}
+
+export interface ThreadBrief {
+  id: string;
+  label: string;
+  n: number;
+}
+
+export interface ThreadDetail {
+  id: string;
+  label: string;
+  first_at: string;
+  last_at: string;
+  n_clusters: number;
+  events: { id: string; title: string; published_at: string; source: string; priority: number; priority_level: Level;
+    impact_type: ImpactType; current: boolean }[];
+}
+
+export interface ActiveThread {
+  id: string;
+  label: string;
+  total: number;
+  first_at: string;
+  last_at: string;
+  in_period: number;
+  max_priority: number;
+  latest_event_id: string;
+  risks: number;
+  opportunities: number;
 }
 
 export interface Factor {
@@ -253,6 +283,7 @@ export interface EventDetail extends EventCard {
   body: string;
   rules_relevance: number;
   verification_detail: VerificationDetail;
+  thread_detail: ThreadDetail | null;
   feedback: Feedback | null;
   market: MarketReaction | null;
   ml: { p_relevant?: number; weight?: number; impact_hint?: { type: string; p: number } };
@@ -332,6 +363,7 @@ export interface Overview {
   };
   trend: TrendPoint[];
   trend_step: "day" | "week";
+  threads: ActiveThread[];
   categories: { key: string; label: string; count: number; avg_priority: number }[];
   entities: { name: string; count: number }[];
   top_events: EventCard[];
@@ -364,4 +396,27 @@ export interface Meta {
   categories: { key: string; label: string }[];
   levels: { key: Level; label: string }[];
   impact_types: { key: string; label: string }[];
+}
+
+export interface PortfolioRow {
+  profile_id: string;
+  name: string;
+  industry: string;
+  ticker: string;
+  attention_index: number;
+  relevant: number;
+  critical_risks: number;
+  risks: number;
+  opportunities: number;
+  attention: number;
+  top_event: EventCard | null;
+  threads: ActiveThread[];
+  heat: Record<string, { max: number; n: number }>;
+}
+
+export interface Portfolio {
+  days: number;
+  formula: string;
+  rows: PortfolioRow[];
+  categories: { key: string; label: string }[];
 }

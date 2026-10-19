@@ -1,5 +1,6 @@
 import {
-  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, LayoutDashboard, Newspaper, RefreshCw, ShieldCheck,
+  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Grid3x3, LayoutDashboard, Newspaper, RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -12,6 +13,7 @@ import SourcesModal from "./SourcesModal";
 
 const NAV = [
   { to: "/companies", label: "Выбор компании", icon: Briefcase, end: false },
+  { to: "/portfolio", label: "Портфель", icon: Grid3x3, end: false },
   { to: "/", label: "Обзор", icon: LayoutDashboard, end: true },
   { to: "/feed", label: "Лента событий", icon: Newspaper },
   { to: "/decisions", label: "Решения", icon: ClipboardCheck },

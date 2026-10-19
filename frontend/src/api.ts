@@ -11,6 +11,7 @@ import type {
   ModelStatus,
   Outlet,
   Overview,
+  Portfolio,
   Profile,
   ProfileOptions,
   ProfileSuggestion,
@@ -68,6 +69,8 @@ export interface EventFilters {
   sort?: string;
   min_relevance?: number;
   min_verification?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export const api = {
@@ -100,11 +103,12 @@ export const api = {
   setModelEnabled: (enabled: boolean) =>
     request<ModelStatus>("/model/settings", { method: "PUT", body: JSON.stringify({ enabled }) }),
 
+  portfolio: (days: number) => request<Portfolio>(`/portfolio?${qs({ days })}`),
   overview: (profileId: string, f: { days: number; category?: string; impact?: string; level?: string }) =>
     request<Overview>(`/overview?${qs({ profile_id: profileId, ...f })}`),
 
   events: (profileId: string, f: EventFilters) =>
-    request<{ total: number; items: EventCard[] }>(`/events?${qs({ profile_id: profileId, ...f })}`),
+    request<{ total: number; offset: number; limit: number; items: EventCard[] }>(`/events?${qs({ profile_id: profileId, ...f })}`),
   event: (profileId: string, id: string) => request<EventDetail>(`/events/${id}?${qs({ profile_id: profileId })}`),
   compare: (id: string) => request<CompareRow[]>(`/events/${id}/compare`),
   toggleFavorite: (profileId: string, id: string) =>

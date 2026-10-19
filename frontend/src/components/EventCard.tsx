@@ -1,4 +1,4 @@
-import { ExternalLink, Layers, ShieldAlert, Star } from "lucide-react";
+import { ExternalLink, GitCommitHorizontal, Layers, ShieldAlert, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { EventCard as EventCardT } from "../types";
 import { timeAgo } from "../utils";
@@ -48,6 +48,12 @@ export default function EventCard({ ev, onToggleFavorite }: Props) {
             <ImpactBadge type={ev.impact_type} />
             <UrgencyBadge level={ev.urgency_level} />
             <VerificationBadge v={ev.verification} status={ev.fact_status} />
+            {ev.thread && (
+              <Link to={`/events/${ev.id}#thread`} title="События одной истории во времени"
+                className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
+                <GitCommitHorizontal size={12} /> Сюжет: {ev.thread.label} · {ev.thread.n}
+              </Link>
+            )}
             {ev.suspicious && (
               <span className="inline-flex items-center gap-1 text-xs text-red-700" title="В тексте найдены инструкции для ИИ — проигнорированы">
                 <ShieldAlert size={12} /> текст с инструкциями
