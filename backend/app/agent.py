@@ -3,9 +3,10 @@
 Цикл:
 1. Планирование — какие данные нужны. С LLM план строит разрешённая модель (сама выбирает инструменты из реестра),
    без LLM — эвристический планировщик по признакам события и компании.
-2. Работа с инструментами — профиль и данные клиента, событие, анализ влияния правилами, поиск новостей,
-   RAG по аналитике Альфа-Банка, реакция рынка. Только инструменты из реестра, аргументы проверяются.
-3. Контекст — результаты шагов накапливаются, следующий шаг и итог опираются на них.
+2. Работа с инструментами — реестр agent_tools.py (описание, схемы входа и выхода, права): событие, профиль, данные
+   банка о клиенте, граф связей, анализ влияния правилами, свои ML-модели, RAG по аналитике банка, поиск и RAG по
+   новостям, реакция рынка. Только инструменты из реестра и только с разрешёнными классами данных.
+3. Контекст — единое хранилище результатов шагов (ContextStore): следующий шаг и итог опираются на него.
 4. Самопроверка и адаптация — полнота (факты, связь с компанией, позиция банка, подтверждения),
    непротиворечивость (сигналы новости, цифры изданий, позиция банка против новости, оценка пользователя)
    и обоснованность (у каждого утверждения есть источник). При нехватке или расхождении — повторный поиск
@@ -20,13 +21,14 @@ import logging
 import time
 import uuid
 
-from . import agent_rules, analysis, bank_rag, clients, llm_client, ner, pipeline, prompts, store
+from . import agent_rules, agent_tools, bank_rag, clients, llm_client, ner, pipeline, prompts
+from .agent_tools import TOOLS, run_tool  # noqa: F401 — реестр инструментов (agent_tools.py)
 from .db import dumps, loads, now_iso
 from .schemas import AgentResultOut
 
 log = logging.getLogger("alpha.agent")
 
-MAX_STEPS = 8
+MAX_STEPS = 10
 MAX_ROUNDS = 2
 
 SCHEMA = """
@@ -74,13 +76,31 @@ CATEGORY_TOPICS = {"economy": "макроэкономика ВВП инфляц�
 TASK_ROLE = {"plan": "fast", "analysis": "reasoning"}  # явные модели можно задать и по старым ролям
 
 
-class Ctx:
-    """Контекст запуска: профиль, событие, результаты инструментов, трассировка."""
+class ContextStore:
+    """Единое хранилище результатов шагов: последний результат инструмента и история (шаг, инструмент)."""
 
-    def __init__(self, conn, profile, result, question="", models=None):
+    def __init__(self):
+        self.results = {}
+        self.history = []
+
+    def put(self, tool, out, step):
+        key = tool if tool not in self.results else f"{tool}#{step}"
+        self.results[key] = out
+        self.history.append({"step": step, "tool": tool, "key": key, "empty": out is None})
+
+    def get(self, tool, default=None):
+        return self.results.get(tool, default)
+
+
+class Ctx:
+    """Контекст запуска: профиль, событие, общий контекст результатов, трассировка, права, учёт модели."""
+
+    def __init__(self, conn, profile, result, question="", models=None, permissions=None):
         self.conn, self.profile, self.r, self.question = conn, profile, result, question
         self.ev = result["event"]
-        self.data = {}
+        self.store = ContextStore()
+        self.data = self.store.results  # общий контекст: результаты шагов по инструментам
+        self.permissions = set(permissions or agent_tools.ALL_DATA)  # классы данных, разрешённые этому запуску
         self.trace = []
         self.sources = {}
         self.models = models or {}  # явные модели по задачам (сравнение моделей); иначе — роутер
@@ -114,6 +134,9 @@ class Ctx:
                                       "cached": bool(usage.get("cached")), "fallback_from": usage.get("fallback_from")})
         return data, usage
 
+    def store_result(self, tool, out):
+        self.store.put(tool, out, len(self.trace) + 1)
+
     def step(self, kind, title, **kw):
         item = {"n": len(self.trace) + 1, "kind": kind, "title": title, **kw}
         self.trace.append(item)
@@ -123,128 +146,6 @@ class Ctx:
     def source(self, sid, **info):
         self.sources.setdefault(sid, {"id": sid, **info})
         return sid
-
-
-def tool_company_profile(ctx, **_):
-    p = ctx.profile
-    out = {k: p.get(k) for k in ("name", "industry", "regions", "products", "clients", "suppliers", "competitors",
-                                 "risks", "bank_products", "client_id")}
-    ctx.source("client:profile", type="client", title="Профиль компании", detail=p.get("industry", ""))
-    return out, f"{p.get('name')}: {p.get('industry') or 'отрасль не указана'}, регионов {len(p.get('regions') or [])}"
-
-
-def tool_client_card(ctx, **_):
-    uid = ctx.profile.get("client_id")
-    c = clients.card(uid) if uid else None
-    if not c:
-        return None, "у профиля нет данных банка о клиенте"
-    ctx.source("client:bank", type="client", title=f"Данные банка о клиенте {uid}",
-               detail=f"ОКВЭД {c['okved_code']}, выручка {c['revenue_bn']} млрд ₽, продукты: {', '.join(c['products'])}")
-    cls = (c.get("position") or {}).get("okved_class")
-    place = f", {cls['rank']}-е место из {cls['companies']} в ОКВЭД {cls['okved']}" if cls else ""
-    return c, f"ОКВЭД {c['okved_code']}, {c['revenue_bn']} млрд ₽{place}, продукты: {', '.join(c['products']) or 'нет'}"
-
-
-def tool_event(ctx, **_):
-    ev = ctx.ev
-    facts = analysis.extract_facts(ev, limit=5) or [ev.get("summary") or ev["title"]]
-    v = ctx.r.get("verification") or {}
-    ctx.data["event_sources"] = [ctx.source(f"news:{o['name']}", type="news", title=o["name"], url=o.get("url"),
-                                            detail=f"{o['tier_label']}, репутация {o['reputation']:.2f}")
-                                 for o in v.get("outlets", [])]
-    details = agent_rules.event_details(ev, v)
-    out = {"title": ev["title"], "date": ev["published_at"], "facts": facts, "url": ev.get("url"),
-           "verification": {k: v.get(k) for k in ("score", "label", "independent")}, "details": details,
-           "signals": list(ev["nlp"].get("signals", {})), "category": ev.get("category")}
-    return out, (f"{len(facts)} фактов, участников {len(details['participants'])}, сроков {len(details['dates'])}, "
-                 f"{details['confirmation']['label'].lower()}")
-
-
-def tool_impact(ctx, **_):
-    r = ctx.r
-    ctx.source("rules:analysis", type="rules", title="Анализ влияния по правилам",
-               detail=f"релевантность {r['score']['relevance']}, приоритет {r['score']['priority']}")
-    out = {"channels": r["channels"], "score": r["score"], "matches": r["matches"], "insight": r["insight"]}
-    return out, f"каналов влияния: {len(r['channels'])}, релевантность {r['score']['relevance']}"
-
-
-def tool_search_bank(ctx, query="", k=4):
-    hits = bank_rag.search(query, k=int(k))
-    for h in hits:
-        ctx.source(f"bank:{h['id']}", type="bank", title=h["title"],
-                   detail=f"{h['doc']}, стр. {h['page']}" + (f", {h['date']}" if h.get("date") else ""))
-    found = ctx.data.setdefault("bank_hits", {})
-    for h in hits:
-        found.setdefault(h["id"], {**h, "query": query})
-    return hits, (f"найдено фрагментов: {len(hits)} ({', '.join(sorted({h['title'][:40] for h in hits}))})"
-                  if hits else "в аналитике банка ничего по запросу")
-
-
-def tool_search_news(ctx, query="", days=60, limit=5):
-    """Связанные события из базы: сначала тот же сюжет, затем по совпадению лемм заголовка."""
-    tid = ctx.ev.get("thread_id")
-    q = set(w for w in ner.lemmas(query) if len(w) > 3)
-    out = []
-    for ev in store.events_for(ctx.conn):
-        if ev["id"] == ctx.ev["id"] or ev.get("cluster_id") == ctx.ev.get("cluster_id"):
-            continue
-        same_thread = tid and ev.get("thread_id") == tid
-        overlap = len(q & set(ner.lemmas(ev["title"]))) if q else 0
-        if same_thread or overlap >= 2:
-            out.append((2 if same_thread else 1, overlap, ev))
-    out.sort(key=lambda x: (-x[0], -x[1], x[2]["published_at"]))
-    hits = [{"id": ev["id"], "title": ev["title"], "source": ev["source"], "date": ev["published_at"],
-             "url": ev.get("url"), "same_thread": rank == 2} for rank, _, ev in out[:int(limit)]]
-    for h in hits:
-        ctx.source(f"news:{h['source']}", type="news", title=h["source"], url=h.get("url"))
-    ctx.data.setdefault("related", []).extend(hits)
-    return hits, f"связанных публикаций: {len(hits)}"
-
-
-def tool_market(ctx, **_):
-    from . import market
-
-    m = market.event_reaction(ctx.conn, [c["id"] for c in ctx.r["cluster"]], ctx.profile["id"])
-    if m:
-        ctx.source("market:reaction", type="market", title=f"Реакция акций {m['ticker']}",
-                   detail=f"{m['ar']}% к индексу за {m['horizon']} дня")
-    return m, (f"{m['ticker']}: {m['ar']}% к IMOEX (z={m['z']})" if m else "компания непубличная или окно не прошло")
-
-
-TOOLS = {
-    "get_company_profile": (tool_company_profile, "профиль компании: отрасль, продукты, контрагенты, регионы, риски", {}),
-    "get_client_card": (tool_client_card, "данные банка о клиенте: ОКВЭД, выручка, продукты банка, ВЭД, контрагенты", {}),
-    "get_event": (tool_event, "факты события, источники и достоверность", {}),
-    "analyze_impact": (tool_impact, "каналы влияния события на компанию и баллы (правила)", {}),
-    "search_bank_analytics": (tool_search_bank, "поиск в аналитике Альфа-Банка (RAG)", {"query": str, "k": int}),
-    "search_news": (tool_search_news, "связанные новости и подтверждения в других изданиях", {"query": str, "limit": int}),
-    "get_market_reaction": (tool_market, "реакция акций публичной компании на новость", {}),
-}
-
-
-def run_tool(ctx, name, args, why):
-    """Вызов только из реестра; лишние и неверные аргументы отбрасываются (безопасность)."""
-    if name not in TOOLS:
-        ctx.step("tool", f"отклонён неизвестный инструмент «{name}»", tool=name, ok=False, why=why)
-        return None
-    fn, _desc, spec = TOOLS[name]
-    clean = {}
-    for k, typ in spec.items():
-        if k in (args or {}):
-            try:
-                clean[k] = typ(args[k])
-            except (TypeError, ValueError):
-                continue
-    started = time.time()
-    try:
-        out, summary = fn(ctx, **clean)
-        ok = True
-    except Exception as e:  # noqa: BLE001 — сбой инструмента записываем, агент продолжает
-        out, summary, ok = None, f"ошибка: {e.__class__.__name__}", False
-    ctx.data[name if name not in ctx.data else f"{name}#{len(ctx.trace)}"] = out
-    ctx.step("tool", TOOLS[name][1], tool=name, args=clean, why=why, result=summary, ok=ok,
-             ms=int((time.time() - started) * 1000))
-    return out
 
 
 # ---------- планирование ----------
@@ -262,23 +163,53 @@ def heuristic_plan(ctx):
     plan = [("get_event", {}, "узнать, что произошло: факты, источники, достоверность"),
             ("get_company_profile", {}, "контекст компании: отрасль, контрагенты, регионы, риски")]
     if ctx.profile.get("client_id"):
-        plan.append(("get_client_card", {}, "данные банка: продукты (кредиты, депозиты), ВЭД, контрагенты по платежам"))
+        plan.append(("get_client_card", {}, "данные банка: продукты (кредиты, депозиты), ВЭД, место в отрасли"))
+        plan.append(("get_relationship_graph", {}, "граф связей: отрасли и регионы контрагентов по платежам, группа"))
     plan.append(("analyze_impact", {}, "связь события с компанией и каналы влияния"))
+    if ctx.profile.get("client_id"):
+        plan.append(("score_with_models", {}, "свои ML-модели: значимость и вклад признаков компании"))
     plan.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция Альфа-Банка по теме события"))
     if ctx.ev.get("thread_id") or (ctx.r.get("verification") or {}).get("independent", 1) < 2:
         plan.append(("search_news", {"query": ctx.ev["title"]}, "развитие сюжета и подтверждения в других изданиях"))
+    if ctx.question:
+        plan.append(("search_news_rag", {"query": ctx.question + " " + ctx.ev["title"]}, "контекст для ответа на вопрос"))
     if ctx.profile.get("ticker"):
         plan.append(("get_market_reaction", {}, "как рынок оценил событие для акций компании"))
     return plan
 
 
+SOURCE_OF_TOOL = {"get_event": "новость", "get_company_profile": "профиль компании", "get_client_card": "данные банка о клиенте",
+                  "get_relationship_graph": "граф контрагентов", "analyze_impact": "правила", "score_with_models": "свои ML-модели",
+                  "search_bank_analytics": "аналитика Альфа-Банка", "search_news": "другие новости",
+                  "search_news_rag": "тексты новостей", "get_market_reaction": "котировки"}
+
+
+def plan_json(ctx, plan, by):
+    """План как JSON: цель, нужные источники, шаги — явный результат шага планирования."""
+    return {"goal": f"Объяснить, что событие «{ctx.ev['title'][:120]}» значит для {ctx.profile.get('name')}",
+            "by": by, "sources": list(dict.fromkeys(SOURCE_OF_TOOL.get(t, t) for t, _a, _w in plan)),
+            "steps": [{"tool": t, "args": a, "why": w} for t, a, w in plan]}
+
+
+def untrusted(tag, text):
+    """Недоверенный текст (новость, документ) для модели: в теге, без угловых скобок, без строк-инструкций."""
+    lines = [ln for ln in str(text).splitlines() if not nlp_injection(ln)]
+    body = "\n".join(lines).replace("<", "‹").replace(">", "›")
+    return f"<{tag}>\n{body}\n</{tag}>"
+
+
+def nlp_injection(line):
+    from . import nlp
+
+    return nlp.looks_like_injection(line)
+
+
 def llm_plan(ctx):
-    tools = "\n".join(f"- {n}: {d}" + (f" (аргументы: {', '.join(spec)})" if spec else "")
-                      for n, (_f, d, spec) in TOOLS.items())
     prompt = prompts.get("agent_plan")
-    msg = [{"role": "system", "content": prompt.render(tools=tools)},
-           {"role": "user", "content": f"Событие: {ctx.ev['title']}\nКомпания: {ctx.profile.get('name')}, "
-            f"отрасль: {ctx.profile.get('industry')}, продукты банка: {', '.join(ctx.profile.get('bank_products') or []) or 'нет данных'}"
+    msg = [{"role": "system", "content": prompt.render(tools=agent_tools.prompt_list())},
+           {"role": "user", "content": untrusted("untrusted_news", f"Событие: {ctx.ev['title']}")
+            + f"\nКомпания: {ctx.profile.get('name')}, отрасль: {ctx.profile.get('industry')}, продукты банка: "
+            f"{', '.join(ctx.profile.get('bank_products') or []) or 'нет данных'}"
             + (f"\nВопрос пользователя: {ctx.question}" if ctx.question else "")}]
     data, usage = ctx.llm(msg, "plan", "agent_plan", 600, prompt)
     plan = [(s.get("tool"), s.get("args") or {}, s.get("why") or "")
@@ -364,7 +295,8 @@ def compose(ctx, gaps):
                          ["rules:analysis"]))
 
     hits = sorted((ctx.data.get("bank_hits") or {}).values(), key=lambda h: -h["score"])
-    issues, agreement = agent_rules.consistency(r, hits)
+    pred = ctx.data.get("score_with_models")
+    issues, agreement = agent_rules.consistency(r, hits, pred)
     bank_signals = {s for h in hits for s in h.get("signals") or []}
     consequences = {
         "risks": [_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"]) for x in insight["risks"]],
@@ -392,7 +324,9 @@ def compose(ctx, gaps):
     for h in hits:
         q = bank_rag.quote(h, h.get("query", ""))
         if q and len(bank_items) < 3:
-            bank_items.append(_item(q, "bank", [f"bank:{h['id']}"]))
+            bank_items.append({**_item(q, "bank", [f"bank:{h['id']}"]),
+                               "link": {"doc": h["doc"], "title": h["title"], "page": h["page"], "date": h.get("date"),
+                                        "url": bank_rag.link(h)}})
     bank_view = {"found": bool(bank_items), "items": bank_items, "agreement": agreement,
                  "topics": sorted({bank_rag.topic_label(t) for h in hits[:3] for t in h.get("topics") or []}),
                  "note": None if bank_items else "В загруженных аналитических материалах банка нет позиции по этой теме."}
@@ -404,12 +338,25 @@ def compose(ctx, gaps):
                                  + [f"{label}: {', '.join((r['matches'] or {}).get(k) or [])}" for k, label in MATCH_LABELS.items()
                                     if (r["matches"] or {}).get(k)],
              "market": market}
+    # признаки компании, повлиявшие на вывод: вклад своей модели и совпадения с профилем по правилам
+    features = []
+    if pred:
+        features += [{"label": c["label"], "contribution": c["contribution"], "value": c["value"], "source": "case_model"}
+                     for c in pred["relevance"]["contributions"]]
+    features += [{"label": f"{x['element']}: {x['value']}", "contribution": None, "value": None, "source": "rules"}
+                 for x in insight.get("company_link", [])[:5]]
+    ai_sources = ["rules:analysis"] + (["model:case"] if pred else [])
     score = r["score"]
     confidence = score["confidence"]
-    if any(i["type"] in ("numbers", "bank", "signals") for i in issues):
+    if any(i["type"] in ("numbers", "bank", "signals", "model") for i in issues):
         confidence = max(0, confidence - 10)
     return {
         "summary": insight["summary_line"],
+        "ai_conclusion": {"text": insight["summary_line"], "kind": "ai", "model": None, "prompt": None,
+                          "engine": "rules" + (" + своя модель" if pred else ""), "sources": ai_sources},
+        "features": features,
+        "contradictions": [{**i["pair"], "note": i["text"]} for i in issues if i.get("pair")],
+        "plan": getattr(ctx, "plan_json", None),
         "answers": {"what_happened": what, "event": {**details, "category": ctx.ev.get("category")},
                     "why_important": why, "consequences": consequences, "actions": actions, "follow_up": follow,
                     "bank_view": bank_view, "basis": basis, "question": None},
@@ -441,10 +388,12 @@ def llm_payload(ctx, draft):
     """Вход модели: только собранный агентом контекст. Он же — вход примера для дообучения своей LLM."""
     a = draft["answers"]
     bank = bank_texts(ctx)
-    return ("FACTS:\n" + "\n".join(f"- {x['text']}" for x in a["what_happened"])
+    # тексты новости и документов банка — недоверенные данные: в тегах, без угловых скобок и строк-инструкций
+    return (untrusted("untrusted_news", "FACTS:\n" + "\n".join(f"- {x['text']}" for x in a["what_happened"]))
             + "\nCLIENT:\n" + "\n".join(f"- {x['text']}" for x in a["why_important"])
             + "\nRULES:\n" + "\n".join(f"- {x['text']}" for x in a["consequences"]["risks"] + a["consequences"]["opportunities"])
-            + "\nBANK:\n" + ("\n".join(f"[{k}] {v}" for k, v in bank.items()) or "нет материалов")
+            + "\n" + untrusted("untrusted_bank", "BANK:\n" + ("\n".join(f"[{k}] {v}" for k, v in bank.items())
+                                                                 or "нет материалов"))
             + (f"\nВОПРОС: {ctx.question}" if ctx.question else ""))
 
 
@@ -468,6 +417,8 @@ def llm_rewrite(ctx, draft):
 
     if data.get("summary"):
         out["summary"] = str(data["summary"])[:400]
+        out["ai_conclusion"]["text"] = out["summary"]
+    out["ai_conclusion"].update(model=usage.get("model"), prompt=usage.get("prompt_version"), engine="llm")
     client_src = ["client:bank"] if "client:bank" in ctx.sources else ["client:profile"]
     why = grounded(data.get("why_important") or [])[:5]
     if why:
@@ -506,26 +457,28 @@ def _llm_step(usage):
             "fallback_from": usage.get("fallback_from")}
 
 
-def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True):
+def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True, permissions=None):
     """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/compare_models.py);
     save=False — не писать в agent_runs (сборка датасета на копии базы)."""
     started = time.time()
     r = pipeline.find_result(conn, profile, event_id)
     if r is None:
         return None
-    ctx = Ctx(conn, profile, r, question.strip(), models)
+    ctx = Ctx(conn, profile, r, question.strip(), models, permissions)
     mode, model = "rules", None
     plan = None
     if use_llm and llm_client.enabled():
         try:
             plan, usage = llm_plan(ctx)
             mode, model = "llm", usage.get("model")
+            plan_by = "модель"
             ctx.step("plan", "план построила модель", plan=[{"tool": t, "why": w} for t, _a, w in plan],
                      **_llm_step(usage))
         except llm_client.LLMError as e:
             ctx.step("plan", f"модель недоступна ({e}) — план по правилам", ok=False)
     if not plan:
         plan = heuristic_plan(ctx)
+        plan_by = "правила"
         ctx.step("plan", "план по признакам события и компании", plan=[{"tool": t, "why": w} for t, _a, w in plan])
     # обязательный минимум: без факта, профиля и анализа влияния ответ на 6 вопросов не собрать
     names = [t for t, _a, _w in plan]
@@ -533,6 +486,8 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
                       ("analyze_impact", "обязательно: связь с компанией")):
         if must not in names:
             plan.insert(0, (must, {}, why))
+    ctx.plan_json = plan_json(ctx, plan[:MAX_STEPS], plan_by)
+    ctx.trace[0]["plan_json"] = ctx.plan_json
     for tool, args, why in plan[:MAX_STEPS]:
         run_tool(ctx, tool, args, why)
     gaps = []

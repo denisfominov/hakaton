@@ -673,6 +673,23 @@ def llm_usage(days: int = Query(14, ge=1, le=90)):
             "prices": {m: dict(zip(("input", "output"), llm_budget.prices(m))) for m in llm_client.ALLOWED_MODELS}}
 
 
+@app.get("/api/bank-docs/file/{name}")
+def bank_doc_file(name: str):
+    """Исходный материал банка (PDF) — переход к первоисточнику из ответа агента."""
+    path = bank_rag.file_path(name)
+    if path is None:
+        raise HTTPException(404, "Материал не найден")
+    return FileResponse(path, media_type="application/pdf" if path.suffix.lower() == ".pdf" else "text/plain")
+
+
+@app.get("/api/agent/tools")
+def agent_tools_catalog():
+    """Реестр инструментов агента: описание, схемы входа и выхода, права."""
+    from . import agent_tools
+
+    return agent_tools.catalog()
+
+
 @app.get("/api/bank-docs")
 def bank_docs():
     """Какие аналитические материалы банка проиндексированы для RAG."""

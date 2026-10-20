@@ -88,7 +88,7 @@ def test_training_target_has_answer_and_scenarios(conn, profiles):
     target = agent.training_target(res["result"])
     assert {"summary", "why_important", "risks", "bank_view", "actions", "scenarios"} <= set(target)
     assert json.loads(json.dumps(target, ensure_ascii=False)) == target
-    assert res["context"].startswith("FACTS:")
+    assert res["context"].startswith("<untrusted_news>\nFACTS:"), "текст новости — в теге недоверенных данных"
 
 
 def test_stratified_group_split_keeps_each_industry_in_test():

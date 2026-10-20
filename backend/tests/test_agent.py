@@ -163,7 +163,7 @@ def test_export_sft_dataset(client, bank_docs, tmp_path, monkeypatch):
     assert lines
     ex = lines[-1]
     assert [m["role"] for m in ex["messages"]] == ["system", "user", "assistant"]
-    assert ex["messages"][1]["content"].startswith("FACTS:")
+    assert ex["messages"][1]["content"].startswith("<untrusted_news>\nFACTS:")
     target = json.loads(ex["messages"][2]["content"])
     assert {"summary", "why_important", "risks", "opportunities", "bank_view", "actions"} <= set(target)
     assert ex["meta"]["mode"] == "rules"

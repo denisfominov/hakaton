@@ -295,5 +295,18 @@ def status(folder=None):
             "topics": {k: label for k, (label, _r) in TOPICS.items()}}
 
 
+def link(hit):
+    """Ссылка на страницу исходного материала банка (PDF открывается на нужной странице)."""
+    from urllib.parse import quote as urlquote
+
+    return f"/api/bank-docs/file/{urlquote(hit['doc'])}#page={hit['page']}"
+
+
+def file_path(name, folder=None):
+    """Файл материала банка по имени — только из списка материалов папки BANK_DOCS_DIR (без выхода за её пределы)."""
+    allowed = {p.name: p for p in _files(folder)}  # только проиндексированные материалы, без README и служебных
+    return allowed.get(name)
+
+
 def topic_label(key):
     return TOPICS.get(key, (key, None))[0]

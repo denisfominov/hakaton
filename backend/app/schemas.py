@@ -115,6 +115,7 @@ class ClaimOut(BaseModel):
     kind: ClaimKind
     sources: list[str]
     confirmed: Optional[bool] = None  # для фактов: подтверждено официальным источником или 2+ независимыми изданиями
+    link: Optional[dict] = None  # для позиции банка: {doc, title, page, date, url} — переход к странице материала
 
 
 class AgentActionOut(BaseModel):
@@ -174,7 +175,7 @@ class BankViewOut(BaseModel):
 
 class SourceOut(BaseModel):
     id: str
-    type: Literal["news", "bank", "client", "rules", "market"]
+    type: Literal["news", "bank", "client", "rules", "market", "model"]
     title: str
     detail: Optional[str] = None
     url: Optional[str] = None
@@ -205,9 +206,10 @@ class AnswersOut(BaseModel):
 
 
 class IssueOut(BaseModel):
-    type: Literal["signals", "numbers", "bank", "feedback"]
+    type: Literal["signals", "numbers", "bank", "feedback", "model"]
     text: str
     sources: list[str]
+    pair: Optional[dict] = None
 
 
 class GroundingOut(BaseModel):
@@ -242,8 +244,42 @@ class LLMMetaOut(BaseModel):
     degraded: Optional[dict] = None  # {"reason": "budget" | "error", "detail"} — ответ правилами вместо модели
 
 
+class AIConclusionOut(BaseModel):
+    text: str
+    kind: ClaimKind = "ai"
+    model: Optional[str] = None  # разрешённая модель, сформулировавшая вывод; None — правила и свои модели
+    prompt: Optional[str] = None  # версия промпта, например agent_answer@v2
+    engine: str = "rules"
+    sources: list[str]
+
+
+class FeatureOut(BaseModel):
+    label: str
+    contribution: Optional[float] = None  # вклад в вывод своей модели; None — совпадение по правилам
+    value: Optional[float] = None
+    source: Literal["case_model", "rules"]
+
+
+class SideOut(BaseModel):
+    text: str
+    source: str
+    url: Optional[str] = None
+    date: Optional[str] = None
+
+
+class ContradictionOut(BaseModel):
+    topic: str
+    news: SideOut
+    bank: SideOut
+    note: str
+
+
 class AgentResultOut(BaseModel):
     summary: str
+    ai_conclusion: Optional[AIConclusionOut] = None
+    features: list[FeatureOut] = []
+    contradictions: list[ContradictionOut] = []
+    plan: Optional[dict] = None  # {goal, by, sources, steps} — явный результат шага планирования
     answers: AnswersOut
     checks: ChecksOut
     scores: ScoresOut

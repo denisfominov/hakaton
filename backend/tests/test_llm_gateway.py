@@ -32,7 +32,7 @@ def test_mock_mode_runs_agent_end_to_end(client, mock):
     r = res["result"]
     assert r["mode"] == "llm" and r["llm"]["mock"] and r["llm"]["provider"] == "mock"
     assert {"Gemma 4 26B A4B", "GLM-5.3-Flash"} <= set(r["llm"]["models"]), "план — Gemma, ответ — GLM (роутер)"
-    assert {"agent_plan@v1", "agent_answer@v1"} <= set(r["llm"]["prompts"])
+    assert {prompts.get("agent_plan").id, prompts.get("agent_answer").id} <= set(r["llm"]["prompts"])
     assert r["llm"]["cost_rub"] > 0 and r["llm"]["tokens"] > 0
     assert r["checks"]["grounding"]["llm_dropped"] == 0, "мок отвечает только по входным данным"
     plan = res["trace"][0]
@@ -146,6 +146,8 @@ def test_unknown_api_format_is_refused(gateway, monkeypatch):
 
 def test_prompts_are_versioned_files(monkeypatch):
     p = prompts.get("agent_answer")
-    assert p.id == "agent_answer@v1" and "JSON" in p.text
+    assert p.id == "agent_answer@v2" and "JSON" in p.text and "untrusted" in p.text, "используется последняя версия"
+    monkeypatch.setenv("PROMPT_AGENT_ANSWER", "v1")
+    assert prompts.get("agent_answer").id == "agent_answer@v1", "версию можно закрепить в .env"
     assert prompts.get("agent_plan").render(tools="- get_event: факты").endswith("- get_event: факты")
     assert {"agent_plan", "agent_answer", "event_rewrite", "vision_ocr"} <= {x["name"] for x in prompts.catalog()}
