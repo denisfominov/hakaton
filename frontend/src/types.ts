@@ -468,6 +468,14 @@ export interface Claim {
   kind: ClaimKind;
   sources: string[];
   confirmed?: boolean | null;
+  link?: { doc: string; title: string; page: number; date: string | null; url: string } | null;
+}
+
+export interface Contradiction {
+  topic: string;
+  news: { text: string; source: string; url?: string | null };
+  bank: { text: string; source: string; url?: string | null; date?: string | null };
+  note: string;
 }
 
 export interface Scenario {
@@ -487,7 +495,7 @@ export interface AgentIssue {
 
 export interface AgentSource {
   id: string;
-  type: "news" | "bank" | "client" | "rules" | "market";
+  type: "news" | "bank" | "client" | "rules" | "market" | "model";
   title: string;
   detail?: string;
   url?: string | null;
@@ -525,10 +533,16 @@ export interface AgentStep {
   issues?: string[];
   extra?: string[];
   plan?: { tool: string; why: string }[];
+  plan_json?: { goal: string; by: string; sources: string[]; steps: { tool: string; args: Record<string, unknown>; why: string }[] };
+  rights?: { access: string; data: string };
 }
 
 export interface AgentResult {
   summary: string;
+  ai_conclusion?: { text: string; kind: ClaimKind; model: string | null; prompt: string | null; engine: string; sources: string[] } | null;
+  features?: { label: string; contribution: number | null; value: number | null; source: "case_model" | "rules" }[];
+  contradictions?: Contradiction[];
+  plan?: { goal: string; by: string; sources: string[]; steps: { tool: string; why: string }[] } | null;
   answers: {
     what_happened: Claim[];
     event: {

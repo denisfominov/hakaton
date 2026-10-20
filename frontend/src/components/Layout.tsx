@@ -1,6 +1,6 @@
 import {
-  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Gauge, Grid3x3, Landmark, LayoutDashboard, Newspaper,
-  RefreshCw, ShieldCheck,
+  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Gauge, Grid3x3, Home, Landmark, LayoutDashboard,
+  Newspaper, RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -12,6 +12,7 @@ import AnalyticsPanel from "./AnalyticsPanel";
 import SourcesModal from "./SourcesModal";
 
 const NAV = [
+  { to: "/alfa-business", label: "Альфа-Бизнес (макет)", icon: Home, end: false },
   { to: "/companies", label: "Выбор компании", icon: Briefcase, end: false },
   { to: "/portfolio", label: "Портфель", icon: Grid3x3, end: false },
   { to: "/", label: "Обзор", icon: LayoutDashboard, end: true },

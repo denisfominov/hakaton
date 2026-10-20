@@ -1,16 +1,18 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, Info, RefreshCw, Send, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Info, RefreshCw, Send, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
-import type { AgentRun, AgentSource, AgentStep, Claim, ClaimKind } from "../types";
+import type { AgentResult, AgentRun, AgentSource, AgentStep, Claim, ClaimKind } from "../types";
 
-// разделение, которого требует кейс: факты из новости, позиция банка, данные о клиенте и выводы модели
-const KIND: Record<ClaimKind, { label: string; cls: string }> = {
-  fact: { label: "Факт из новости", cls: "bg-sky-50 text-sky-800 ring-sky-200" },
-  bank: { label: "Позиция банка", cls: "bg-rose-50 text-rose-800 ring-rose-200" },
-  client: { label: "Данные о компании", cls: "bg-violet-50 text-violet-800 ring-violet-200" },
-  ai: { label: "Вывод AI", cls: "bg-amber-50 text-amber-900 ring-amber-200" },
+// разделение, которого требует кейс: факт, позиция банка, вывод ИИ (и данные о компании, на которых он основан)
+const KIND: Record<ClaimKind, { label: string; cls: string; hint: string }> = {
+  fact: { label: "Факт", cls: "bg-sky-50 text-sky-800 ring-sky-200", hint: "из текста новости, со ссылкой на издание" },
+  bank: { label: "Позиция банка", cls: "bg-rose-50 text-rose-800 ring-rose-200", hint: "цитата аналитики Альфа-Банка со страницей материала" },
+  client: { label: "Данные о компании", cls: "bg-violet-50 text-violet-800 ring-violet-200", hint: "профиль и данные банка о клиенте" },
+  ai: { label: "Вывод ИИ", cls: "bg-amber-50 text-amber-900 ring-amber-200", hint: "вывод модели, правил и своих ML-моделей" },
 };
+const DATA_LABEL: Record<string, string> = { public: "публичные", bank_internal: "внутренние банка", client_confidential: "данные клиента" };
 
 const STEP_LABEL: Record<AgentStep["kind"], string> = {
   plan: "План",
@@ -21,7 +23,7 @@ const STEP_LABEL: Record<AgentStep["kind"], string> = {
 
 function KindBadge({ kind }: { kind: ClaimKind }) {
   const k = KIND[kind];
-  return <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${k.cls}`}>{k.label}</span>;
+  return <span title={k.hint} className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${k.cls}`}>{k.label}</span>;
 }
 
 function Refs({ ids, index }: { ids: string[]; index: Map<string, number> }) {
@@ -44,6 +46,11 @@ function Claims({ items, index, empty }: { items: Claim[]; index: Map<string, nu
           <span className="text-ink-800">
             {c.text}<Refs ids={c.sources} index={index} />
             {c.confirmed === false && <span className="ml-1.5 whitespace-nowrap rounded bg-amber-50 px-1 text-[11px] text-amber-800">не подтверждено</span>}
+            {c.link && (
+              <a href={c.link.url} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 whitespace-nowrap text-[11px] text-rose-700 hover:underline">
+                <FileText size={11} /> {c.link.title.slice(0, 40)}{c.link.title.length > 40 ? "…" : ""}, стр. {c.link.page}{c.link.date ? `, ${c.link.date}` : ""}
+              </a>
+            )}
           </span>
         </li>
       ))}
@@ -64,7 +71,7 @@ function Block({ n, title, children }: { n: number; title: string; children: Rea
 }
 
 function SourceRow({ s, n }: { s: AgentSource; n: number }) {
-  const type = { news: "Новость", bank: "Аналитика банка", client: "Данные о компании", rules: "Правила сервиса", market: "Рынок" }[s.type];
+  const type = { news: "Новость", bank: "Аналитика банка", client: "Данные о компании", rules: "Правила сервиса", market: "Рынок", model: "Своя ML-модель" }[s.type];
   return (
     <li id={`agent-src-${n}`} className="flex gap-2 text-xs">
       <span className="w-6 shrink-0 text-ink-400">[{n}]</span>
@@ -102,6 +109,8 @@ function Trace({ steps, ms }: { steps: AgentStep[]; ms: number }) {
             )}
             {s.issues && s.issues.length > 0 && <span className="text-amber-700"> · противоречия: {s.issues.join(" ")}</span>}
             {s.plan && <span className="text-ink-500"> → {s.plan.map((p) => p.tool).join(" → ")}</span>}
+            {s.plan_json && <span className="block text-ink-500">Цель: {s.plan_json.goal}. Источники: {s.plan_json.sources.join(", ")}.</span>}
+            {s.rights && <span className="ml-1 rounded bg-ink-50 px-1 text-[10px] text-ink-500" title="права инструмента">{s.rights.access === "read" ? "чтение" : s.rights.access}, {DATA_LABEL[s.rights.data] || s.rights.data}</span>}
             {s.model && <span className="text-ink-400"> · {s.model}{s.fallback_from ? ` (запасная вместо ${s.fallback_from})` : ""}</span>}
             {s.prompt && <span className="text-ink-400"> · промпт {s.prompt}</span>}
             {s.tokens ? <span className="text-ink-400"> · {s.tokens} ток., {(s.cost_rub ?? 0).toFixed(3)} ₽{s.cached ? ", из кэша" : ""}</span> : null}
@@ -111,6 +120,52 @@ function Trace({ steps, ms }: { steps: AgentStep[]; ms: number }) {
       ))}
       <li className="pl-7 text-ink-400">Всего: {ms} мс. Журнал запусков хранится в таблице agent_runs.</li>
     </ol>
+  );
+}
+
+function ContradictionCard({ c }: { c: NonNullable<AgentResult["contradictions"]>[number] }) {
+  return (
+    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-xs">
+      <div className="mb-2 flex items-center gap-1.5 font-medium text-amber-900"><AlertTriangle size={13} /> Новость и аналитика банка расходятся: {c.topic}</div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <div className="rounded bg-white p-2">
+          <KindBadge kind="fact" />
+          <p className="mt-1 text-ink-800">{c.news.text}</p>
+          {c.news.url && <a href={c.news.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-ink-500 hover:underline"><ExternalLink size={11} /> первоисточник</a>}
+        </div>
+        <div className="rounded bg-white p-2">
+          <KindBadge kind="bank" />
+          <p className="mt-1 text-ink-800">{c.bank.text}</p>
+          {c.bank.url && <a href={c.bank.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-rose-700 hover:underline"><FileText size={11} /> материал банка{c.bank.date ? ` от ${c.bank.date}` : ""}</a>}
+        </div>
+      </div>
+      <p className="mt-2 text-amber-900">{c.note}</p>
+    </div>
+  );
+}
+
+function Features({ r }: { r: AgentResult }) {
+  const model = (r.features || []).filter((f) => f.source === "case_model" && f.contribution !== null);
+  const rules = (r.features || []).filter((f) => f.source === "rules");
+  if (!model.length && !rules.length) return null;
+  const max = Math.max(0.001, ...model.map((f) => Math.abs(f.contribution || 0)));
+  return (
+    <div className="mb-3 text-xs">
+      <div className="mb-1 font-medium text-ink-700">Признаки компании, повлиявшие на вывод</div>
+      {model.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {model.map((f) => (
+            <li key={f.label}>
+              <div className="flex justify-between gap-2"><span className="text-ink-700">{f.label}</span>
+                <span className={`tabular-nums ${(f.contribution || 0) > 0 ? "text-emerald-700" : "text-rose-700"}`}>{(f.contribution || 0) > 0 ? "+" : ""}{(f.contribution || 0).toFixed(2)}</span></div>
+              <div className="mt-0.5 h-1 rounded-full bg-ink-100"><div className={`h-1 rounded-full ${(f.contribution || 0) > 0 ? "bg-emerald-500" : "bg-rose-500"}`} style={{ width: `${(Math.abs(f.contribution || 0) / max) * 100}%` }} /></div>
+            </li>
+          ))}
+          <li className="text-ink-400">Вклад своей модели (не LLM) по данным клиента; модель черновая, пока нет ручной разметки.</li>
+        </ul>
+      )}
+      {rules.length > 0 && <p className="text-ink-600">Совпадения с профилем: {rules.map((f) => f.label).join(" · ")}</p>}
+    </div>
   );
 }
 
@@ -196,7 +251,15 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
       {r && a && (
         <div className={busy ? "opacity-60" : ""}>
           <div className="border-b border-ink-100 px-5 py-3">
-            <p className="font-medium text-ink-900">{r.summary}</p>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-2">
+              <KindBadge kind="ai" />
+              <p className="font-medium text-ink-900">{r.summary}<Refs ids={r.ai_conclusion?.sources || []} index={index} /></p>
+            </div>
+            {r.ai_conclusion && (
+              <p className="mt-1 text-xs text-ink-500">
+                {r.ai_conclusion.model ? `Сформулировала модель ${r.ai_conclusion.model}${r.llm?.mock ? " (мок)" : ""}, промпт ${r.ai_conclusion.prompt}` : `Без языковой модели: ${r.ai_conclusion.engine}`}
+              </p>
+            )}
             {r.question && <p className="mt-1 text-xs text-ink-500">Вопрос: {r.question}</p>}
             <div className="mt-2 flex flex-wrap gap-1.5">{(Object.keys(KIND) as ClaimKind[]).map((k) => <KindBadge key={k} kind={k} />)}</div>
           </div>
@@ -296,6 +359,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
               </div>
             )}
             <Claims items={a.bank_view.items} index={index} empty={a.bank_view.note || "Нет позиции банка"} />
+            {(r.contradictions || []).map((c, i) => <ContradictionCard key={i} c={c} />)}
             {!a.bank_view.found && (
               <p className="mt-2 flex gap-1.5 text-xs text-ink-500">
                 <Info size={13} className="mt-0.5 shrink-0" /> Агент искал дважды (по теме события и по отрасли). Позиция банка
@@ -304,6 +368,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
             )}
           </Block>
           <Block n={6} title="На чём основан вывод?">
+            <Features r={r} />
             {a.basis.client_features.length > 0 && (
               <p className="mb-2 text-xs text-ink-600"><b className="font-medium">Особенности компании:</b> {a.basis.client_features.join(" · ")}</p>
             )}
@@ -330,6 +395,14 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
               </div>
             )}
           </Block>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-ink-100 px-5 py-2.5 text-xs">
+            <span className="text-ink-500">Другой разрез:</span>
+            <a href="#compare" className="inline-flex items-center gap-1 text-ink-700 hover:underline">эта новость для других компаний <ArrowRight size={12} /></a>
+            {a.event.category && <Link to={`/feed?category=${a.event.category}&sort=priority`} className="inline-flex items-center gap-1 text-ink-700 hover:underline">все события темы <ArrowRight size={12} /></Link>}
+            <a href="#thread" className="inline-flex items-center gap-1 text-ink-700 hover:underline">развитие сюжета <ArrowRight size={12} /></a>
+            <Link to="/bank" className="inline-flex items-center gap-1 text-ink-700 hover:underline">аналитика банка <ArrowRight size={12} /></Link>
+          </div>
 
           <form onSubmit={ask} className="flex gap-2 border-t border-ink-100 px-5 py-3">
             <input className="input flex-1 !py-1.5 text-sm" placeholder="Уточнить у агента: например, «что это значит для наших кредитов?»"

@@ -383,7 +383,7 @@ function ComparePanel({ eventId }: { eventId: string }) {
   const { profileId, setProfileId, bumpData, dataVersion } = useApp();
   const { data, loading, error } = useLoad(() => api.compare(eventId), [eventId, dataVersion]);
   return (
-    <section className="card overflow-hidden">
+    <section id="compare" className="card scroll-mt-24 overflow-hidden">
       <div className="px-5 pt-5">
         <h2 className="section-title">Та же новость для других компаний</h2>
         <p className="mt-0.5 text-xs text-ink-500">Оценка зависит от профиля: отрасли, регионов, контрагентов и стратегии</p>
