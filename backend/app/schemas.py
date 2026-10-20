@@ -101,3 +101,143 @@ class AgentIn(BaseModel):
 class RefreshIn(BaseModel):
     # demo — старое название для dataset, оставлено для совместимости
     mode: Literal["dataset", "demo", "live"] = "dataset"
+
+
+# ---------- ответ агента: JSON-схема обмена (кейс, слайд 13) ----------
+# Отделяет подтверждённые факты (fact), аналитику банка (bank), данные о клиенте (client) и выводы модели (ai);
+# передаёт источники, признаки клиента, оценки релевантности, риски и возможности. GET /api/agent/schema.
+
+ClaimKind = Literal["fact", "bank", "client", "ai"]
+
+
+class ClaimOut(BaseModel):
+    text: str
+    kind: ClaimKind
+    sources: list[str]
+    confirmed: Optional[bool] = None  # для фактов: подтверждено официальным источником или 2+ независимыми изданиями
+
+
+class AgentActionOut(BaseModel):
+    title: str
+    description: str = ""
+    why: Optional[str] = None
+    if_done: Optional[str] = None
+    if_ignored: Optional[str] = None
+    owner: Optional[str] = None
+    due_days: Optional[int] = None
+    kind: ClaimKind = "ai"
+    sources: list[str]
+
+
+class ScenarioOut(BaseModel):
+    title: str
+    text: str
+    direction: Optional[str] = None
+    bank_view: Optional[str] = None  # «по оценке банка более вероятен», если аналитика банка указывает в эту сторону
+    kind: ClaimKind = "ai"
+    sources: list[str]
+
+
+class ConfirmationOut(BaseModel):
+    status: Literal["official", "confirmed", "single"]
+    label: str
+    outlets: int
+
+
+class EventDetailsOut(BaseModel):
+    participants: list[str]
+    dates: list[str]
+    confirmation: ConfirmationOut
+    category: Optional[str] = None
+
+
+class ConsequencesOut(BaseModel):
+    risks: list[ClaimOut]
+    opportunities: list[ClaimOut]
+    bank_adjusted: list[ClaimOut] = []
+    horizon: Optional[str] = None
+
+
+class FollowUpOut(BaseModel):
+    questions: list[str]
+    indicators: list[str]
+    scenarios: list[ScenarioOut]
+
+
+class BankViewOut(BaseModel):
+    found: bool
+    items: list[ClaimOut]
+    agreement: Literal["agree", "conflict", "none"] = "none"
+    topics: list[str] = []
+    note: Optional[str] = None
+
+
+class SourceOut(BaseModel):
+    id: str
+    type: Literal["news", "bank", "client", "rules", "market"]
+    title: str
+    detail: Optional[str] = None
+    url: Optional[str] = None
+
+
+class BasisOut(BaseModel):
+    sources: list[SourceOut]
+    client_features: list[str]
+    market: Optional[dict] = None
+
+
+class QuestionOut(BaseModel):
+    text: str
+    items: list[ClaimOut]
+    note: Optional[str] = None
+
+
+class AnswersOut(BaseModel):
+    what_happened: list[ClaimOut]
+    event: EventDetailsOut
+    why_important: list[ClaimOut]
+    consequences: ConsequencesOut
+    actions: list[AgentActionOut]
+    follow_up: FollowUpOut
+    bank_view: BankViewOut
+    basis: BasisOut
+    question: Optional[QuestionOut] = None
+
+
+class IssueOut(BaseModel):
+    type: Literal["signals", "numbers", "bank", "feedback"]
+    text: str
+    sources: list[str]
+
+
+class GroundingOut(BaseModel):
+    claims: int = 0
+    dropped: int = 0
+    llm_dropped: int = 0
+
+
+class ChecksOut(BaseModel):
+    completeness: list[str]
+    consistency: list[IssueOut]
+    grounding: GroundingOut
+
+
+class ScoresOut(BaseModel):
+    relevance: float
+    impact: float
+    urgency: float
+    confidence: float
+    priority: float
+
+
+class AgentResultOut(BaseModel):
+    summary: str
+    answers: AnswersOut
+    checks: ChecksOut
+    scores: ScoresOut
+    data_gaps: list[str]
+    confidence: float
+    priority: float
+    mode: Literal["rules", "llm"]
+    model: Optional[str] = None
+    question: Optional[str] = None

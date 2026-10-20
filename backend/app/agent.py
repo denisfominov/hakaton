@@ -6,10 +6,13 @@
 2. Работа с инструментами — профиль и данные клиента, событие, анализ влияния правилами, поиск новостей,
    RAG по аналитике Альфа-Банка, реакция рынка. Только инструменты из реестра, аргументы проверяются.
 3. Контекст — результаты шагов накапливаются, следующий шаг и итог опираются на них.
-4. Самопроверка и адаптация — полнота (факты, связь с компанией, позиция банка, подтверждения), при нехватке —
-   повторный поиск с расширенным запросом (до 2 раундов).
+4. Самопроверка и адаптация — полнота (факты, связь с компанией, позиция банка, подтверждения),
+   непротиворечивость (сигналы новости, цифры изданий, позиция банка против новости, оценка пользователя)
+   и обоснованность (у каждого утверждения есть источник). При нехватке или расхождении — повторный поиск
+   (до 2 раундов), расхождения показываются пользователю и снижают уверенность.
 5. Ответ — ровно 6 вопросов кейса; у каждого утверждения тип: fact (из новости), bank (позиция банка),
-   client (данные о клиенте), ai (вывод модели/правил) и ссылки на источники.
+   client (данные о клиенте), ai (вывод модели/правил) и ссылки на источники. Формат — JSON по схеме
+   schemas.AgentResultOut (GET /api/agent/schema).
 Каждый шаг пишется в трассировку (таблица agent_runs) и в лог: что вызвали, зачем, что получили, сколько заняло.
 """
 import json
@@ -17,8 +20,9 @@ import logging
 import time
 import uuid
 
-from . import analysis, bank_rag, clients, llm_client, ner, pipeline, store
+from . import agent_rules, analysis, bank_rag, clients, llm_client, ner, pipeline, store
 from .db import dumps, loads, now_iso
+from .schemas import AgentResultOut
 
 log = logging.getLogger("alpha.agent")
 
@@ -103,7 +107,9 @@ def tool_client_card(ctx, **_):
         return None, "у профиля нет данных банка о клиенте"
     ctx.source("client:bank", type="client", title=f"Данные банка о клиенте {uid}",
                detail=f"ОКВЭД {c['okved_code']}, выручка {c['revenue_bn']} млрд ₽, продукты: {', '.join(c['products'])}")
-    return c, f"ОКВЭД {c['okved_code']}, {c['revenue_bn']} млрд ₽, продукты: {', '.join(c['products']) or 'нет'}"
+    cls = (c.get("position") or {}).get("okved_class")
+    place = f", {cls['rank']}-е место из {cls['companies']} в ОКВЭД {cls['okved']}" if cls else ""
+    return c, f"ОКВЭД {c['okved_code']}, {c['revenue_bn']} млрд ₽{place}, продукты: {', '.join(c['products']) or 'нет'}"
 
 
 def tool_event(ctx, **_):
@@ -113,10 +119,12 @@ def tool_event(ctx, **_):
     ctx.data["event_sources"] = [ctx.source(f"news:{o['name']}", type="news", title=o["name"], url=o.get("url"),
                                             detail=f"{o['tier_label']}, репутация {o['reputation']:.2f}")
                                  for o in v.get("outlets", [])]
+    details = agent_rules.event_details(ev, v)
     out = {"title": ev["title"], "date": ev["published_at"], "facts": facts, "url": ev.get("url"),
-           "verification": {k: v.get(k) for k in ("score", "label", "independent")},
+           "verification": {k: v.get(k) for k in ("score", "label", "independent")}, "details": details,
            "signals": list(ev["nlp"].get("signals", {})), "category": ev.get("category")}
-    return out, f"{len(facts)} фактов, достоверность {v.get('score')} ({v.get('independent')} изд.)"
+    return out, (f"{len(facts)} фактов, участников {len(details['participants'])}, сроков {len(details['dates'])}, "
+                 f"{details['confirmation']['label'].lower()}")
 
 
 def tool_impact(ctx, **_):
@@ -265,8 +273,17 @@ def self_check(ctx):
         if broad and not any(s.get("args", {}).get("query") == broad for s in ctx.trace):
             extra.append(("search_bank_analytics", {"query": broad}, "повторный поиск позиции банка по теме и отрасли"))
     v = (ctx.data.get("get_event") or {}).get("verification") or {}
-    if (v.get("independent") or 1) < 2 and not ctx.data.get("related") and "search_news" not in ctx.data:
+    issues, _agreement = agent_rules.consistency(ctx.r, list((ctx.data.get("bank_hits") or {}).values()))
+    searched_news = "search_news" in ctx.data
+    if (v.get("independent") or 1) < 2 and not ctx.data.get("related") and not searched_news:
         extra.append(("search_news", {"query": ctx.ev["title"]}, "одно издание — ищем подтверждения"))
+    elif any(i["type"] == "numbers" for i in issues) and not searched_news:
+        extra.append(("search_news", {"query": ctx.ev["title"]}, "издания расходятся в цифрах — ищем другие публикации"))
+    if any(i["type"] == "bank" for i in issues):
+        q = " ".join(filter(None, [topic_query(ctx), ctx.ev["published_at"][:7]]))
+        if not any(s.get("args", {}).get("query") == q for s in ctx.trace):
+            extra.append(("search_bank_analytics", {"query": q}, "позиция банка расходится с новостью — ищем более свежий материал"))
+    ctx.data["issues"] = issues
     return gaps, extra
 
 
@@ -281,13 +298,20 @@ def _item(text, kind, sources):
 
 def compose(ctx, gaps):
     """Ответ из контекста без LLM: каждое утверждение — с типом и источниками."""
-    ev, r = ctx.ev, ctx.r
+    r = ctx.r
     insight = r["insight"]
     news_src = (ctx.data.get("event_sources") or [])[:3] or ["rules:analysis"]  # факты — только из публикаций события
     card = ctx.data.get("get_client_card")
-    what = [_item(f, "fact", news_src) for f in (ctx.data.get("get_event") or {}).get("facts", [])][:4]
+    event = ctx.data.get("get_event") or {}
+    details = event.get("details") or agent_rules.event_details(ctx.ev, r.get("verification"))
+    confirmed = details["confirmation"]["status"] != "single"
+    what = [{**_item(f, "fact", news_src), "confirmed": confirmed} for f in event.get("facts", [])][:4]
 
     why = []
+    if card and card.get("position"):
+        place = clients.position_text(card["position"])
+        if place:
+            why.append(_item(f"Масштаб компании. {place}", "client", ["client:bank"]))
     for link in insight.get("company_link", [])[:5]:
         why.append(_item(f"{link['element']}: {link['value']}", "client", ["client:profile"]))
     for c in r["channels"]:
@@ -302,40 +326,61 @@ def compose(ctx, gaps):
                                                                      "foreign_trade": ("fx_import", "fx_export")}[sgn["key"]]):
                 why.append(_item(f"{sgn['label']}: {sgn['detail']}", "client", ["client:bank"]))
     seen = set()
-    why = [x for x in why if not (x["text"] in seen or seen.add(x["text"]))][:6]
+    why = [x for x in why if not (x["text"] in seen or seen.add(x["text"]))][:7]
     if not why:
         why.append(_item("Прямой связи с профилем компании не найдено: событие отраслевое или макроэкономическое.", "ai",
                          ["rules:analysis"]))
 
+    hits = sorted((ctx.data.get("bank_hits") or {}).values(), key=lambda h: -h["score"])
+    issues, agreement = agent_rules.consistency(r, hits)
+    bank_signals = {s for h in hits for s in h.get("signals") or []}
     consequences = {
         "risks": [_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"]) for x in insight["risks"]],
         "opportunities": [_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"])
                           for x in insight["opportunities"]],
+        "bank_adjusted": [],
         "horizon": insight.get("horizon_label"),
     }
+    if hits and (r["channels"] or insight["risks"] or insight["opportunities"]):
+        # аналитика банка влияет на вывод: подтверждает его, уточняет или показывает расхождение
+        tail = {"agree": "оценка банка совпадает с направлением новости — вывод усиливается",
+                "conflict": "оценка банка расходится с новостью — см. проверку на противоречия, вывод требует сверки",
+                "none": "позиция банка дополняет картину, прямого подтверждения или опровержения в ней нет"}[agreement]
+        src = [f"bank:{hits[0]['id']}", "rules:analysis"] + (["client:bank"] if card else [])
+        consequences["bank_adjusted"].append(_item(f"С учётом аналитики банка: {insight['summary_line']} — {tail}.", "ai", src))
     actions = [{"title": a["title"], "description": a["description"], "why": a.get("why"), "if_done": a.get("if_done"),
                 "if_ignored": a.get("if_ignored"), "owner": a.get("owner"), "due_days": a.get("due_days"), "kind": "ai",
                 "sources": ["rules:analysis"]} for a in insight["actions"][:4]]
+    follow = agent_rules.follow_up(r, card, event.get("facts") or [], bank_signals)
+    for sc in follow["scenarios"]:
+        sc.update(kind="ai", sources=["rules:analysis"] + ([f"bank:{hits[0]['id']}"] if sc.get("bank_view") and hits else []))
 
-    bank_items = []
-    for h in sorted((ctx.data.get("bank_hits") or {}).values(), key=lambda h: -h["score"])[:3]:
-        bank_items.append(_item(_sentence(h["text"]), "bank", [f"bank:{h['id']}"]))
-    bank_view = {"found": bool(bank_items), "items": bank_items,
+    bank_items = [_item(_sentence(h["text"]), "bank", [f"bank:{h['id']}"]) for h in hits[:3]]
+    bank_view = {"found": bool(bank_items), "items": bank_items, "agreement": agreement,
+                 "topics": sorted({bank_rag.topic_label(t) for h in hits[:3] for t in h.get("topics") or []}),
                  "note": None if bank_items else "В загруженных аналитических материалах банка нет позиции по этой теме."}
 
     market = ctx.data.get("get_market_reaction")
     basis = {"sources": list(ctx.sources.values()),
-             "client_features": ([s["label"] for s in card["signals"]] if card else [])
+             "client_features": ([f"{s['label']}: {s['detail']}" if s["key"] in ("leader", "affiliates") else s["label"]
+                                  for s in card["signals"]] if card else [])
                                  + [f"{label}: {', '.join((r['matches'] or {}).get(k) or [])}" for k, label in MATCH_LABELS.items()
                                     if (r["matches"] or {}).get(k)],
              "market": market}
+    score = r["score"]
+    confidence = score["confidence"]
+    if any(i["type"] in ("numbers", "bank", "signals") for i in issues):
+        confidence = max(0, confidence - 10)
     return {
         "summary": insight["summary_line"],
-        "answers": {"what_happened": what, "why_important": why, "consequences": consequences, "actions": actions,
-                    "bank_view": bank_view, "basis": basis},
+        "answers": {"what_happened": what, "event": {**details, "category": ctx.ev.get("category")},
+                    "why_important": why, "consequences": consequences, "actions": actions, "follow_up": follow,
+                    "bank_view": bank_view, "basis": basis, "question": None},
+        "checks": {"completeness": gaps, "consistency": issues, "grounding": {"claims": 0, "dropped": 0}},
+        "scores": {k: score.get(k) for k in ("relevance", "impact", "urgency", "confidence", "priority")},
         "data_gaps": gaps + insight.get("data_gaps", []),
-        "confidence": r["score"]["confidence"],
-        "priority": r["score"]["priority"],
+        "confidence": confidence,
+        "priority": score["priority"],
     }
 
 
@@ -353,9 +398,12 @@ LLM_SYSTEM = """Ты аналитик Альфа-Банка для руково�
 - bank_view — только из раздела BANK, каждое утверждение со ссылкой на id фрагмента (тип bank);
 - why_important — связь с компанией по разделу CLIENT (тип client);
 - consequences и actions — твои выводы (тип ai), опирайся на CLIENT, FACTS, BANK, учитывай несколько факторов;
+- scenarios — 2 сценария развития с учётом BANK, если он есть;
+- answer — ответ на ВОПРОС пользователя, если он задан, только по данным выше;
 - ничего не выдумывай: если данных нет — так и напиши.
 Ответ — JSON {"summary": str, "why_important": [str], "risks": [str], "opportunities": [str],
-"bank_view": [{"text": str, "source": id фрагмента}], "actions": [{"title": str, "why": str}]}"""
+"bank_view": [{"text": str, "source": id фрагмента}], "actions": [{"title": str, "why": str}],
+"scenarios": [{"title": str, "text": str}], "answer": str}"""
 
 
 def bank_texts(ctx):
@@ -380,17 +428,41 @@ def llm_rewrite(ctx, draft):
     data, usage = llm_client.chat_json([{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": payload}],
                                        role="reasoning", purpose="agent_answer", max_tokens=1800, conn=ctx.conn)
     out = json.loads(json.dumps(draft))
+    roots = agent_rules.context_roots(payload)
+    dropped = 0
+
+    def grounded(texts):
+        """Утверждения модели без опоры на входные данные отбрасываются (обоснованность)."""
+        nonlocal dropped
+        keep = [str(t) for t in texts if agent_rules.supported(str(t), roots)]
+        dropped += len(texts) - len(keep)
+        return keep
+
     if data.get("summary"):
         out["summary"] = str(data["summary"])[:400]
-    if data.get("why_important"):
-        out["answers"]["why_important"] = [_item(str(t), "client", ["client:profile"]) for t in data["why_important"][:5]]
+    client_src = ["client:bank"] if "client:bank" in ctx.sources else ["client:profile"]
+    why = grounded(data.get("why_important") or [])[:5]
+    if why:
+        out["answers"]["why_important"] = [_item(t, "client", client_src) for t in why]
     for key in ("risks", "opportunities"):
-        if data.get(key):
-            out["answers"]["consequences"][key] = [_item(str(t), "ai", ["rules:analysis"]) for t in data[key][:5]]
+        texts = grounded(data.get(key) or [])[:5]
+        if texts:
+            out["answers"]["consequences"][key] = [_item(t, "ai", ["rules:analysis"]) for t in texts]
     verified = [_item(str(b.get("text")), "bank", [b.get("source")]) for b in (data.get("bank_view") or [])
                 if isinstance(b, dict) and b.get("source") in bank]  # без ссылки на найденный фрагмент — отбрасываем
+    dropped += len(data.get("bank_view") or []) - len(verified)
     if verified:
         out["answers"]["bank_view"]["items"] = verified
+    scen = [x for x in (data.get("scenarios") or []) if isinstance(x, dict) and x.get("title") and x.get("text")
+            and agent_rules.supported(f"{x['title']} {x['text']}", roots, 0.4)]
+    if scen:
+        src = ["rules:analysis"] + list(bank)[:1]
+        out["answers"]["follow_up"]["scenarios"] = [{"title": str(x["title"])[:120], "text": str(x["text"])[:500],
+                                                    "direction": None, "bank_view": None, "kind": "ai", "sources": src}
+                                                   for x in scen[:3]]
+    if ctx.question and data.get("answer"):
+        out["llm_answer"] = str(data["answer"])[:1200]
+    out["checks"]["grounding"]["llm_dropped"] = dropped
     return out, usage
 
 
@@ -441,9 +513,25 @@ def run(conn, profile, event_id, question="", use_llm=True):
             ctx.step("synthesis", f"модель недоступна ({e}) — ответ собран правилами", ok=False)
     else:
         ctx.step("synthesis", "ответ собран из результатов инструментов (без LLM)")
+    # обоснованность: утверждение без существующего источника не показываем
+    total, dropped = agent_rules.ground(result, ctx.sources)
+    result["checks"]["grounding"].update(claims=total, dropped=dropped)
+    issues = result["checks"]["consistency"]
+    ctx.step("check", "итоговая проверка: источники и противоречия",
+             issues=[i["text"] for i in issues], result=f"утверждений {total}, без источника отброшено {dropped}, "
+                                                     f"противоречий {len(issues)}")
+    if ctx.question:
+        q = agent_rules.answer_question(ctx.question, result)
+        llm_answer = result.pop("llm_answer", None)
+        if llm_answer:
+            q["items"].insert(0, _item(llm_answer, "ai", ["rules:analysis"]))
+            q["note"] = "Ответ сформулировала модель по данным, собранным агентом."
+        result["answers"]["question"] = q
+    result.pop("llm_answer", None)
     run_id = uuid.uuid4().hex[:12]
     ms = int((time.time() - started) * 1000)
     result.update(mode=mode, model=model, question=ctx.question or None)
+    result = AgentResultOut.model_validate(result).model_dump()  # ответ строго по JSON-схеме
     conn.execute("INSERT INTO agent_runs (id, profile_id, event_id, question, created_at, mode, model, ms, plan, trace, "
                  "result, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (run_id, profile["id"], r["event"]["id"], ctx.question, now_iso(), mode, model, ms,

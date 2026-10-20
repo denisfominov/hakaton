@@ -25,7 +25,10 @@ def bank_docs(tmp_path, monkeypatch):
 
 def check_answer(res):
     a = res["result"]["answers"]
-    assert set(a) == {"what_happened", "why_important", "consequences", "actions", "bank_view", "basis"}
+    assert set(a) == {"what_happened", "event", "why_important", "consequences", "actions", "follow_up", "bank_view",
+                      "basis", "question"}
+    assert {"completeness", "consistency", "grounding"} <= set(res["result"]["checks"])
+    assert {"relevance", "impact", "urgency", "confidence", "priority"} <= set(res["result"]["scores"])
     for key in ("what_happened", "why_important"):
         for item in a[key]:
             assert item["kind"] in KINDS and item["text"] and item["sources"]
@@ -40,7 +43,7 @@ def test_agent_rate_hike_without_llm(client, bank_docs):
     a = check_answer(res)
     assert res["result"]["mode"] == "rules"
     kinds = [s["kind"] for s in res["trace"]]
-    assert kinds[0] == "plan" and "check" in kinds and kinds[-1] == "synthesis"
+    assert kinds[0] == "plan" and "check" in kinds and kinds[-2:] == ["synthesis", "check"]
     tools = [s["tool"] for s in res["trace"] if s["kind"] == "tool"]
     for must in ("get_event", "get_company_profile", "analyze_impact", "search_bank_analytics"):
         assert must in tools
@@ -112,7 +115,9 @@ def test_agent_with_llm_plan_and_verified_bank_quotes(client, bank_docs, monkeyp
         bank_id = next(line.split("]")[0][1:] for line in json["messages"][1]["content"].splitlines()
                        if line.startswith("[bank:"))
         return Resp(_dumps({"summary": "Ставка 18% удорожает долг",
-                            "risks": ["Рост стоимости обслуживания кредитов"],
+                            "risks": ["Рост стоимости обслуживания кредитов",
+                                      "Космический туризм марсианских колонистов подорожает"],
+                            "answer": "Сократить долю плавающих кредитов",
                             "bank_view": [{"text": "Банк ждёт высокую ставку до конца года", "source": bank_id},
                                           {"text": "Выдуманная позиция без ссылки", "source": "bank:fake#1"}]}))
 
@@ -128,6 +133,11 @@ def test_agent_with_llm_plan_and_verified_bank_quotes(client, bank_docs, monkeyp
     texts = [x["text"] for x in a["bank_view"]["items"]]
     assert texts == ["Банк ждёт высокую ставку до конца года"], "позиция банка без ссылки на найденный фрагмент отброшена"
     assert res["result"]["summary"] == "Ставка 18% удорожает долг"
+    risks = [x["text"] for x in a["consequences"]["risks"]]
+    assert "Рост стоимости обслуживания кредитов" in risks
+    assert not any("космическ" in t for t in risks), "вывод модели без опоры на контекст отброшен"
+    assert res["result"]["checks"]["grounding"]["llm_dropped"] >= 2
+    assert a["question"]["items"][0]["text"] == "Сократить долю плавающих кредитов"
 
 
 def _dumps(obj):
@@ -157,3 +167,47 @@ def test_export_sft_dataset(client, bank_docs, tmp_path, monkeypatch):
     target = json.loads(ex["messages"][2]["content"])
     assert {"summary", "why_important", "risks", "opportunities", "bank_view", "actions"} <= set(target)
     assert ex["meta"]["mode"] == "rules"
+
+
+def test_event_details_followup_and_bank_conflict(client, bank_docs):
+    res = client.post("/api/agent/insight", json={"profile_id": "uralmet", "event_id": "demo-03", "refresh": True}).json()
+    a = check_answer(res)
+    conf = a["event"]["confirmation"]
+    assert conf["status"] in ("official", "confirmed", "single") and conf["label"]
+    assert all(x["confirmed"] == (conf["status"] != "single") for x in a["what_happened"])
+    assert a["follow_up"]["questions"], "к действиям добавлены вопросы для дополнительного анализа"
+    # материал банка ждёт сохранения ставки, а новость — о повышении: агент видит расхождение и ищет ещё раз
+    issues = res["result"]["checks"]["consistency"]
+    assert any(i["type"] == "bank" for i in issues)
+    assert a["bank_view"]["agreement"] == "conflict"
+    assert any("свежий материал" in (s.get("why") or "") for s in res["trace"] if s.get("tool") == "search_bank_analytics")
+    assert a["consequences"]["bank_adjusted"] and "расходится" in a["consequences"]["bank_adjusted"][0]["text"]
+    assert res["result"]["confidence"] <= res["result"]["scores"]["confidence"]
+    assert res["result"]["checks"]["grounding"]["dropped"] == 0
+
+
+def test_question_answered_without_llm(client, bank_docs):
+    p = client.post("/api/clients/U_S001/profile").json()
+    res = client.post("/api/agent/insight", json={"profile_id": p["id"], "event_id": "demo-03", "refresh": True,
+                                                  "question": "Что это значит для наших кредитов?"}).json()
+    q = check_answer(res)["question"]
+    assert q["text"] == "Что это значит для наших кредитов?"
+    assert q["items"] and q["note"]
+    if "Кредиты" in p.get("bank_products", []):
+        assert any(s["title"].startswith("Ставку снизят") for s in res["result"]["answers"]["follow_up"]["scenarios"])
+
+
+def test_numbers_disagreement_is_flagged():
+    from app import agent_rules
+
+    r = {"event": {"nlp": {"signals": {}}}, "cluster": [{"title": "Тарифы вырастут на 13,8%", "source": "А"},
+                                                         {"title": "Тарифы вырастут на 12%", "source": "Б"}],
+         "score": {"priority": 40}, "feedback": None}
+    issues, agreement = agent_rules.consistency(r, [])
+    assert issues[0]["type"] == "numbers" and "13,8%" in issues[0]["text"] and agreement == "none"
+
+
+def test_agent_schema_endpoint(client):
+    schema = client.get("/api/agent/schema").json()
+    assert {"answers", "checks", "scores"} <= set(schema["properties"])
+    assert "ClaimOut" in schema["$defs"]

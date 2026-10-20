@@ -44,3 +44,13 @@ def test_empty_folder_and_unrelated_query(tmp_path):
     assert bank_rag.search("ключевая ставка", folder=tmp_path / "нет") == []
     write_docs(tmp_path)
     assert bank_rag.search("футбол чемпионат мира", folder=tmp_path) == []
+
+
+def test_documents_are_classified_with_key_theses(tmp_path):
+    write_docs(tmp_path)
+    docs = {d["file"]: d for d in bank_rag.status(folder=tmp_path)["documents"]}
+    rates = docs["rates.txt"]
+    assert "rate" in rates["topics"]
+    assert rates["theses"] and "ожидаем" in rates["theses"][0]["text"].lower()
+    hit = bank_rag.search("ключевая ставка", folder=tmp_path)[0]
+    assert "rate_hold" in hit["signals"] and "rate" in hit["topics"]

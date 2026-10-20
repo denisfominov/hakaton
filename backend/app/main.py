@@ -635,6 +635,14 @@ def agent_insight(body: AgentIn):
     return {**out, "cached": False}
 
 
+@app.get("/api/agent/schema")
+def agent_schema():
+    """JSON-схема ответа агента: факты, позиция банка, данные клиента и выводы модели разделены полем kind."""
+    from .schemas import AgentResultOut
+
+    return AgentResultOut.model_json_schema()
+
+
 @app.get("/api/agent/runs/{run_id}")
 def agent_run(run_id: str):
     with get_db() as conn:
@@ -648,7 +656,7 @@ def agent_run(run_id: str):
 def bank_docs():
     """Какие аналитические материалы банка проиндексированы для RAG."""
     s = bank_rag.status()
-    return {"documents": s["documents"], "chunks": s["chunks"]}
+    return {"documents": s["documents"], "chunks": s["chunks"], "topics": s["topics"]}
 
 
 # ---------- клиенты банка (данные кейса) ----------

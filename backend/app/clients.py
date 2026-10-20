@@ -10,7 +10,10 @@ df_Fid_Uid_link_hack.csv (связанные физлица). Все данны�
 - отрасль и виды деятельности — по ОКВЭД; масштаб — выручка и численность; география — город, регион, страны ФТС;
 - продукты банка: кредиты и лизинг -> чувствительность к ставке, депозиты -> доход при высокой ставке, ВЭД -> валюта;
 - граф платежей: кому компания платит (поставщики) и кто платит ей (покупатели), с их ОКВЭД;
-- группа компаний (GROUP_ID): сколько компаний и какая суммарная выручка.
+- группа компаний (GROUP_ID): сколько компаний, суммарная выручка, место компании в группе;
+- положение в отрасли: место по выручке среди компаний того же ОКВЭД в наборе и доля в их выручке
+  (это доля в выборке кейса, а не рыночная доля — в интерфейсе так и подписано);
+- связи через физлиц (df_Fid_Uid_link_hack.csv): компании, у которых есть общие связанные лица.
 """
 import threading
 from functools import lru_cache
@@ -58,6 +61,11 @@ def _load(path_key):
     d = Path(path_key)
     companies = pd.read_csv(d / FILES["companies"], sep=";", dtype={"MAINOKVED_CODE": str, "SYNTHETIC_U": str})
     companies = companies.set_index("SYNTHETIC_U", drop=False)
+    companies["OKVED_CLASS"] = companies["MAINOKVED_CODE"].fillna("").str[:2]
+    companies["REVENUE_COMPANY"] = pd.to_numeric(companies["REVENUE_COMPANY"], errors="coerce").fillna(0.0)
+    by_class = companies.groupby("OKVED_CLASS")["REVENUE_COMPANY"]
+    companies["CLASS_RANK"] = by_class.rank(ascending=False, method="min").astype(int)
+    companies["CLASS_N"] = by_class.transform("size").astype(int)
     payments = None
     if (d / FILES["payments"]).exists():
         payments = pd.read_csv(d / FILES["payments"], sep=";", dtype={"BENEFICIARY": str, "PAYER": str})
@@ -117,6 +125,8 @@ def brief(row):
         "age": _str(row.get("COMPANY_AGE_YEARS_GRADATION")),
         "group_id": _str(row.get("GROUP_ID")),
         "key_owner_mark": _num(row.get("NEGATIVEMARK")) > 0,
+        "okved_class_rank": int(_num(row.get("CLASS_RANK"))) or None,
+        "okved_class_companies": int(_num(row.get("CLASS_N"))) or None,
     }
 
 
@@ -160,6 +170,51 @@ def _counterparties(payments, companies, uid, side, limit=6):
     return out
 
 
+def _rank(revenues, rev):
+    """Место по выручке (1 — крупнейшая), перцентиль и доля в сумме выручки группы сравнения."""
+    n = int(len(revenues))
+    total = float(revenues.sum())
+    return {"companies": n, "rank": int((revenues > rev).sum()) + 1,
+            "percentile": round(100.0 * float((revenues < rev).sum()) / n, 1) if n else 0.0,
+            "share": round(rev / total, 4) if total > 0 else 0.0}
+
+
+def position(companies, row):
+    """Положение в отрасли (класс и полный код ОКВЭД) и в группе компаний — по выручке внутри набора кейса."""
+    rev = _num(row.get("REVENUE_COMPANY"))
+    code = _str(row.get("MAINOKVED_CODE"))
+    out = {"basis": "выручка компаний того же ОКВЭД в наборе данных кейса (не рыночная доля)"}
+    if code:
+        out["okved_class"] = {"okved": code[:2], **_rank(companies.loc[companies["OKVED_CLASS"] == code[:2], "REVENUE_COMPANY"], rev)}
+        out["okved_code"] = {"okved": code, **_rank(companies.loc[companies["MAINOKVED_CODE"] == code, "REVENUE_COMPANY"], rev)}
+    gid = _str(row.get("GROUP_ID"))
+    if gid:
+        g = companies.loc[companies["GROUP_ID"].astype(str) == gid, "REVENUE_COMPANY"]
+        if len(g) > 1:
+            out["group"] = _rank(g, rev)
+    return out
+
+
+def affiliates(companies, links, uid, limit=8):
+    """Компании, связанные через общих физлиц: аффилированность, общие собственники или руководители."""
+    if links is None:
+        return {"companies": 0, "items": []}
+    persons = links.loc[links["SYNTHETIC_U"] == uid, "SYNTHETIC_F"].dropna().unique()
+    if not len(persons):
+        return {"companies": 0, "items": []}
+    other = links[links["SYNTHETIC_F"].isin(persons) & (links["SYNTHETIC_U"] != uid)]
+    shared = other.groupby("SYNTHETIC_U")["SYNTHETIC_F"].nunique().sort_values(ascending=False)
+    gid = _str(companies.loc[uid].get("GROUP_ID")) if uid in companies.index else ""
+    items = []
+    for cid, n in shared.head(limit).items():
+        info = companies.loc[cid] if cid in companies.index else None
+        items.append({"id": cid, "shared_persons": int(n),
+                      "okved_name": _str(info.get("MAINOKVED_NAME")) if info is not None else "",
+                      "revenue_bn": round(_num(info.get("REVENUE_COMPANY")) / 1e9, 1) if info is not None else 0.0,
+                      "same_group": bool(gid) and info is not None and _str(info.get("GROUP_ID")) == gid})
+    return {"companies": int(len(shared)), "items": items}
+
+
 def card(uid):
     """Полная карточка клиента: признаки, группа, контрагенты по платежам, связанные лица, сигналы для анализа."""
     companies, payments, links = load()
@@ -187,6 +242,17 @@ def card(uid):
     if b["segment"]:
         signals.append({"key": "large", "label": "Крупный бизнес",
                         "detail": f"выручка {b['revenue_bn']} млрд ₽ (порог кейса — 15 млрд ₽)"})
+    pos = position(companies, row)
+    cls = pos.get("okved_class")
+    if cls and cls["companies"] >= 5 and (cls["rank"] <= 10 or cls["percentile"] >= 95):
+        signals.append({"key": "leader", "label": "Один из крупнейших в отрасли",
+                        "detail": f"{cls['rank']}-е место по выручке из {cls['companies']} компаний ОКВЭД {cls['okved']} "
+                                  f"в наборе кейса, {cls['share'] * 100:.1f}% их суммарной выручки"})
+    aff = affiliates(companies, links, uid)
+    if aff["companies"]:
+        signals.append({"key": "affiliates", "label": "Связанные компании через общих лиц",
+                        "detail": f"{aff['companies']} компаний с общими связанными физлицами — риски и новости о них "
+                                  "могут касаться и клиента"})
     return {
         **b,
         "group": {"id": b["group_id"], "companies": int(len(group)),
@@ -195,9 +261,24 @@ def card(uid):
         "customers": _counterparties(payments, companies, uid, "in"),
         "persons": {"count": int(len(persons)) if persons is not None else 0,
                     "cities": sorted(set(persons["CITY_NAME"].dropna()))[:6] if persons is not None else []},
+        "position": pos,
+        "affiliates": aff,
         "signals": signals,
         "source": source_kind(),
     }
+
+
+def position_text(pos):
+    """Положение компании одной фразой для профиля и ответа агента."""
+    parts = []
+    cls = pos.get("okved_class")
+    if cls and cls["companies"] > 1:
+        parts.append(f"{cls['rank']}-е место по выручке из {cls['companies']} компаний ОКВЭД {cls['okved']} в наборе кейса "
+                     f"(доля в их выручке {cls['share'] * 100:.1f}%)")
+    g = pos.get("group")
+    if g:
+        parts.append(f"{g['rank']}-я по выручке в группе из {g['companies']} компаний ({g['share'] * 100:.0f}% выручки группы)")
+    return ("Положение: " + "; ".join(parts) + ".") if parts else ""
 
 
 def profile_from_client(uid):
@@ -214,7 +295,8 @@ def profile_from_client(uid):
             f"Выручка — {c['revenue_bn']} млрд ₽, сотрудников — {c['workers'] or 'нет данных'}, {c['city']}. "
             + (f"Продукты банка: {', '.join(p.lower() for p in c['products'])}. " if c["products"] else "")
             + (f"Внешнеэкономическая деятельность: {', '.join(c['fts_countries'])}. " if c["fts_countries"] else "")
-            + (f"Группа компаний: {c['group']['companies']} компаний, {c['group']['revenue_bn']} млрд ₽." if c["group"]["companies"] > 1 else ""))
+            + (f"Группа компаний: {c['group']['companies']} компаний, {c['group']['revenue_bn']} млрд ₽. " if c["group"]["companies"] > 1 else "")
+            + position_text(c["position"]))
     s = catalog.suggest(name, industry, c["okved_name"], context=" ".join(x["okved_name"] for x in c["suppliers"] + c["customers"]))
     p = s["profile"]
     p["description"] = desc
