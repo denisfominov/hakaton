@@ -60,6 +60,12 @@ def source_kind():
 def _load(path_key):
     d = Path(path_key)
     companies = pd.read_csv(d / FILES["companies"], sep=";", dtype={"MAINOKVED_CODE": str, "SYNTHETIC_U": str})
+    # предобработка (курс ML, занятие 2; отчёт — scripts/case_data_report.py):
+    # один SYNTHETIC_U у разных компаний — коллизия идентификатора, строки нельзя различить: исключаем;
+    # «41.2» и «41.20» — одна запись кода ОКВЭД в разном формате
+    companies = companies[~companies["SYNTHETIC_U"].duplicated(keep=False)].copy()
+    code = companies["MAINOKVED_CODE"].fillna("").str.strip()
+    companies["MAINOKVED_CODE"] = code.where(~code.str.fullmatch(r"\d{2}\.\d"), code + "0")
     companies = companies.set_index("SYNTHETIC_U", drop=False)
     companies["OKVED_CLASS"] = companies["MAINOKVED_CODE"].fillna("").str[:2]
     companies["REVENUE_COMPANY"] = pd.to_numeric(companies["REVENUE_COMPANY"], errors="coerce").fillna(0.0)
@@ -215,6 +221,19 @@ def affiliates(companies, links, uid, limit=8):
     return {"companies": int(len(shared)), "items": items}
 
 
+def data_notes(row, b):
+    """Доменные аномалии (не статистические выбросы): значения нормальны по отдельности, но противоречат друг другу."""
+    notes = []
+    if b["segment"] and b["workers"] == "Менее 15":
+        notes.append(f"Выручка {b['revenue_bn']} млрд ₽ при численности менее 15 человек: вероятно, холдинговая или "
+                     "торговая структура, либо ошибка в данных — выводы о масштабе операций проверьте")
+    if _num(row.get("FTS_FLAG")) > 0 and not b["fts_countries"]:
+        notes.append("Есть признак ВЭД, но страны не указаны — валютный риск оценён без географии")
+    if b["client_type"] == "Потенциальный клиент" and b["products"]:
+        notes.append("Потенциальный клиент с отметками о продуктах банка — данные о продуктах могут быть неполными")
+    return notes
+
+
 def card(uid):
     """Полная карточка клиента: признаки, группа, контрагенты по платежам, связанные лица, сигналы для анализа."""
     companies, payments, links = load()
@@ -242,6 +261,7 @@ def card(uid):
     if b["segment"]:
         signals.append({"key": "large", "label": "Крупный бизнес",
                         "detail": f"выручка {b['revenue_bn']} млрд ₽ (порог кейса — 15 млрд ₽)"})
+    notes = data_notes(row, b)
     pos = position(companies, row)
     cls = pos.get("okved_class")
     if cls and cls["companies"] >= 5 and (cls["rank"] <= 10 or cls["percentile"] >= 95):
@@ -263,6 +283,7 @@ def card(uid):
                     "cities": sorted(set(persons["CITY_NAME"].dropna()))[:6] if persons is not None else []},
         "position": pos,
         "affiliates": aff,
+        "data_notes": notes,
         "signals": signals,
         "source": source_kind(),
     }

@@ -23,16 +23,38 @@ function Layer({ icon: Icon, title, state, tone, children }: {
   );
 }
 
+const METRIC_LABEL: Record<string, string> = { pr_auc: "PR-AUC", macro_f1: "macro-F1" };
+
 function Cv({ cv }: { cv: ModelCv | null }) {
   if (!cv) return <p className="text-xs text-ink-500">Качество оценим, когда в каждом классе будет хотя бы 2 оценки.</p>;
-  const better = cv.model_accuracy - cv.rules_accuracy;
+  if (!cv.metric || !cv.model || !cv.rules) {
+    const better = cv.model_accuracy - cv.rules_accuracy;
+    return (
+      <p className="text-xs text-ink-500">
+        Кросс-валидация ({cv.folds} фолдов): модель {Math.round(cv.model_accuracy * 100)}%, правила {Math.round(cv.rules_accuracy * 100)}%
+        {better > 0.001 ? " — модель лучше правил." : " — модель не лучше правил."}
+      </p>
+    );
+  }
+  const key = cv.metric;
+  const m = cv.model[key] ?? 0;
+  const r = cv.rules[key] ?? 0;
+  const pct = (v?: number) => (v === undefined ? "—" : v.toFixed(2));
   return (
-    <p className="text-xs text-ink-500">
-      Проверка на отложенных оценках ({cv.folds}-кратная кросс-валидация): модель угадывает
-      <b className="text-ink-900"> {Math.round(cv.model_accuracy * 100)}%</b>, правила —
-      <b className="text-ink-900"> {Math.round(cv.rules_accuracy * 100)}%</b>
-      {better > 0.001 ? " — модель уже лучше правил." : better < -0.001 ? " — пока хуже правил, нужно больше оценок." : " — пока на уровне правил."}
-    </p>
+    <div className="space-y-1 text-xs text-ink-500">
+      <p>
+        Проверка на отложенных метках ({cv.folds} фолдов, {cv.scheme}{cv.positive_share !== undefined ? `, доля значимых ${Math.round(cv.positive_share * 100)}%` : ""}).
+        Главная метрика — <b className="text-ink-900">{METRIC_LABEL[key]}</b>: модель <b className="text-ink-900">{pct(m)}</b>,
+        правила <b className="text-ink-900">{pct(r)}</b>{m > r ? " — модель лучше правил." : " — модель пока хуже правил, её голос уменьшен вдвое."}
+      </p>
+      {key === "pr_auc" && (
+        <p>
+          ROC-AUC {pct(cv.model.roc_auc)} / {pct(cv.rules.roc_auc)} · precision {pct(cv.model.precision)} / {pct(cv.rules.precision)} ·
+          recall {pct(cv.model.recall)} / {pct(cv.rules.recall)} · F1 {pct(cv.model.f1)} / {pct(cv.rules.f1)} (модель / правила) ·
+          калибровка (Brier) {pct(cv.model.brier)}{cv.C ? ` · C = ${cv.C}` : ""}. Accuracy не используем: при редком классе она завышена.
+        </p>
+      )}
+    </div>
   );
 }
 

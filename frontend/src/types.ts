@@ -93,10 +93,28 @@ export interface ModelFeature {
   weight: number;
 }
 
+export interface CvMetrics {
+  precision?: number;
+  recall?: number;
+  f1?: number;
+  accuracy: number;
+  roc_auc?: number;
+  pr_auc?: number;
+  brier?: number;
+  macro_f1?: number;
+}
+
 export interface ModelCv {
   folds: number;
   model_accuracy: number;
   rules_accuracy: number;
+  scheme?: string;
+  metric?: "pr_auc" | "macro_f1";
+  n?: number;
+  positive_share?: number;
+  C?: number;
+  model?: CvMetrics;
+  rules?: CvMetrics;
 }
 
 export interface ModelStatus {

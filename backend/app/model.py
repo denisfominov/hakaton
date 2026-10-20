@@ -12,6 +12,16 @@
 
 Почему не нейросеть: оценок будут десятки, а не тысячи. На таком объёме линейная модель честнее —
 её веса можно показать человеку, а качество проверить кросс-валидацией.
+
+Проверка качества (по курсу ML: занятия 4, 5, 8):
+- схема — StratifiedGroupKFold, группа = событие: одна новость, размеченная для разных компаний, не попадает
+  одновременно в обучение и в проверку (иначе утечка через дубликаты);
+- метрики — не accuracy (класс «значимо» редкий), а PR-AUC и ROC-AUC (порядок), precision/recall/F1, Brier
+  (калибровка); всё — на отложенных фолдах, в сравнении с правилами на тех же метках (точка отсчёта);
+- масштабирование (MaxAbsScaler) внутри модели — обучается только на обучающей части фолда;
+- коэффициент регуляризации C — по кросс-валидации на логарифмической сетке, когда меток достаточно;
+- веса классов не меняем: вероятность модели используется как число (поправка релевантности), а веса классов
+  ломают калибровку.
 """
 import logging
 import pickle
@@ -21,7 +31,10 @@ from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score, precision_score, recall_score,
+                             roc_auc_score)
+from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.preprocessing import MaxAbsScaler
 
 from . import nlp
 from .db import dumps, loads, now_iso
@@ -37,6 +50,8 @@ AUTO_MAX_WEIGHT = 0.25
 AUTO_FULL_AT = 60
 RULES_RELEVANT = 25     # порог «значимо» у правил (как в обзоре)
 IMPACT_MIN_PROB = 0.6
+C_GRID = [0.1, 0.3, 1.0, 3.0, 10.0]   # логарифмическая сетка регуляризации
+C_SEARCH_MIN = 40                     # меньше меток — подбор C по CV слишком шумный, берём C = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
@@ -193,10 +208,11 @@ def feature_label(name):
 class TextDenseModel:
     """DictVectorizer (признаки правил) + TF-IDF (слова × отрасль) -> логистическая регрессия."""
 
-    def __init__(self):
+    def __init__(self, C=1.0):
         self.dv = DictVectorizer()
         self.tf = TfidfVectorizer(token_pattern=r"\S+", lowercase=False, sublinear_tf=True)
-        self.clf = LogisticRegression(C=1.0, class_weight="balanced", solver="liblinear", max_iter=2000)
+        self.scaler = MaxAbsScaler()  # разреженные признаки: масштаб без центрирования, нули остаются нулями
+        self.clf = LogisticRegression(C=C, solver="liblinear", max_iter=2000)
         self.has_text = False
 
     def _matrix(self, snaps, fit=False):
@@ -205,13 +221,10 @@ class TextDenseModel:
         a = self.dv.fit_transform(dense) if fit else self.dv.transform(dense)
         if fit:
             self.has_text = any(texts)
-            if self.has_text:
-                b = self.tf.fit_transform(texts)
-                return hstack([a, b]).tocsr()
-            return csr_matrix(a)
-        if self.has_text:
-            return hstack([a, self.tf.transform(texts)]).tocsr()
-        return csr_matrix(a)
+            m = hstack([a, self.tf.fit_transform(texts)]).tocsr() if self.has_text else csr_matrix(a)
+            return self.scaler.fit_transform(m)
+        m = hstack([a, self.tf.transform(texts)]).tocsr() if self.has_text else csr_matrix(a)
+        return self.scaler.transform(m)
 
     def fit(self, snaps, y, weights=None):
         self.clf.fit(self._matrix(snaps, fit=True), y, sample_weight=weights)
@@ -247,26 +260,94 @@ def _enough(y):
     return len(counts) >= 2 and min(counts.values()) >= MIN_PER_CLASS
 
 
-def _cv_accuracy(snaps, y, baseline, weights=None):
-    """Точность модели на отложенных фолдах против точности правил на тех же оценках."""
-    counts = [y.count(c) for c in set(y)]
-    k = min(5, min(counts))
+def _folds(y, groups):
+    """Число фолдов: не больше 5 и не больше числа групп в самом редком классе."""
+    per_class = {c: len({g for g, t in zip(groups, y) if t == c}) for c in set(y)}
+    return min(5, min(per_class.values()))
+
+
+def _oof(snaps, y, groups, weights=None, C=1.0):
+    """Вероятности на отложенных фолдах (out-of-fold): каждое событие предсказано моделью, которая его не видела."""
+    k = _folds(y, groups)
     if k < 2:
-        return None
-    y_arr = np.array(y)
-    correct = 0
-    for train_idx, test_idx in StratifiedKFold(n_splits=k, shuffle=True, random_state=0).split(snaps, y_arr):
-        tr = [snaps[i] for i in train_idx]
+        return None, None, k
+    classes = sorted(set(y))
+    proba = np.full((len(y), len(classes)), np.nan)
+    splitter = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=0)
+    for train_idx, test_idx in splitter.split(snaps, y, groups):
         ytr = [y[i] for i in train_idx]
         if len(set(ytr)) < 2:
             continue
         wtr = [weights[i] for i in train_idx] if weights else None
-        mdl = TextDenseModel().fit(tr, ytr, wtr)
-        proba = mdl.predict_proba([snaps[i] for i in test_idx])
-        pred = [mdl.classes[int(np.argmax(p))] for p in proba]
-        correct += sum(1 for i, p in zip(test_idx, pred) if p == y[i])
-    rules = sum(1 for b, t in zip(baseline, y) if b == t)
-    return {"folds": k, "model_accuracy": round(correct / len(y), 3), "rules_accuracy": round(rules / len(y), 3)}
+        mdl = TextDenseModel(C).fit([snaps[i] for i in train_idx], ytr, wtr)
+        p = mdl.predict_proba([snaps[i] for i in test_idx])
+        for col, c in enumerate(mdl.classes):
+            proba[test_idx, classes.index(c)] = p[:, col]
+    ok = ~np.isnan(proba).any(axis=1)
+    return (proba, ok, k)
+
+
+def _binary_metrics(y, score, threshold):
+    y = np.asarray(y)
+    pred = (np.asarray(score) >= threshold).astype(int)
+    out = {"precision": round(float(precision_score(y, pred, zero_division=0)), 3),
+           "recall": round(float(recall_score(y, pred, zero_division=0)), 3),
+           "f1": round(float(f1_score(y, pred, zero_division=0)), 3),
+           "accuracy": round(float((pred == y).mean()), 3)}
+    if len(set(y.tolist())) == 2:
+        out["roc_auc"] = round(float(roc_auc_score(y, score)), 3)
+        out["pr_auc"] = round(float(average_precision_score(y, score)), 3)
+    return out
+
+
+def evaluate_relevance(snaps, y, groups, rule_scores, weights=None, C=1.0):
+    """Модель против правил на одних и тех же отложенных метках. Правила — ранжирующий балл 0–100."""
+    proba, ok, k = _oof(snaps, y, groups, weights, C)
+    if proba is None or ok.sum() < 4:
+        return None
+    yv = [t for t, m in zip(y, ok) if m]
+    p1 = proba[ok, sorted(set(y)).index(1)]
+    rules = np.asarray(rule_scores, dtype=float)[ok] / 100
+    model = _binary_metrics(yv, p1, 0.5)
+    model["brier"] = round(float(brier_score_loss(yv, p1)), 3)
+    return {"folds": k, "scheme": "StratifiedGroupKFold: группа — событие", "metric": "pr_auc", "n": int(ok.sum()),
+            "positive_share": round(float(np.mean(yv)), 3), "C": C,
+            "model": model, "rules": _binary_metrics(yv, rules, RULES_RELEVANT / 100),
+            # для совместимости со старым интерфейсом
+            "model_accuracy": model["accuracy"], "rules_accuracy": _binary_metrics(yv, rules, RULES_RELEVANT / 100)["accuracy"]}
+
+
+def evaluate_impact(snaps, y, groups, baseline, weights=None, C=1.0):
+    proba, ok, k = _oof(snaps, y, groups, weights, C)
+    if proba is None or ok.sum() < 4:
+        return None
+    classes = sorted(set(y))
+    yv = [t for t, m in zip(y, ok) if m]
+    pred = [classes[int(np.argmax(p))] for p in proba[ok]]
+    base = [b for b, m in zip(baseline, ok) if m]
+
+    def metrics(p):
+        return {"macro_f1": round(float(f1_score(yv, p, average="macro", zero_division=0)), 3),
+                "accuracy": round(float(np.mean([a == b for a, b in zip(yv, p)])), 3)}
+
+    model, rules = metrics(pred), metrics(base)
+    return {"folds": k, "scheme": "StratifiedGroupKFold: группа — событие", "metric": "macro_f1", "n": int(ok.sum()),
+            "C": C, "model": model, "rules": rules,
+            "model_accuracy": model["accuracy"], "rules_accuracy": rules["accuracy"]}
+
+
+def choose_c(snaps, y, groups, rule_scores, weights=None):
+    """Кривая валидации по C: берём значение с лучшим PR-AUC на отложенных фолдах."""
+    if len(y) < C_SEARCH_MIN:
+        return 1.0, []
+    curve = []
+    for c in C_GRID:
+        cv = evaluate_relevance(snaps, y, groups, rule_scores, weights, c)
+        if cv and "pr_auc" in cv["model"]:
+            curve.append({"C": c, "pr_auc": cv["model"]["pr_auc"]})
+    if not curve:
+        return 1.0, []
+    return max(curve, key=lambda x: x["pr_auc"])["C"], curve
 
 
 def load_feedback(conn, profile_id=None):
@@ -315,12 +396,15 @@ def train(conn):
     if _enough(y_rel):
         snaps = [r["snapshot"] for r in rel]
         w = [r["weight"] for r in rel]
-        mdl = TextDenseModel().fit(snaps, y_rel, w)
-        baseline = [1 if r["snapshot"].get("rule_relevance", 0) >= RULES_RELEVANT else 0 for r in rel]
+        groups = [r["event_id"] for r in rel]
+        rule_scores = [r["snapshot"].get("rule_relevance", 0) for r in rel]
+        c, curve = choose_c(snaps, y_rel, groups, rule_scores, w)
+        mdl = TextDenseModel(c).fit(snaps, y_rel, w)
         meta = {"n": len(y_rel), "positive": sum(y_rel), "negative": len(y_rel) - sum(y_rel),
                 "n_user": sum(1 for r in rel if r["source"] == "user"),
                 "n_market": sum(1 for r in rel if r["source"] == "market"),
-                "cv": _cv_accuracy(snaps, y_rel, baseline, w), "top": mdl.top_features()}
+                "cv": evaluate_relevance(snaps, y_rel, groups, rule_scores, w, c), "c_curve": curve,
+                "top": mdl.top_features()}
         _save(conn, "relevance", mdl, meta, trained_at)
         result["relevance"] = meta
     else:
@@ -338,7 +422,7 @@ def train(conn):
         meta = {"n": len(y_imp), "classes": {c: y_imp.count(c) for c in sorted(set(y_imp))},
                 "n_user": sum(1 for r in imp if r["source"] == "user"),
                 "n_market": sum(1 for r in imp if r["source"] == "market"),
-                "cv": _cv_accuracy(snaps, y_imp, baseline, w)}
+                "cv": evaluate_impact(snaps, y_imp, [r["event_id"] for r in imp], baseline, w)}
         _save(conn, "impact", mdl, meta, trained_at)
         result["impact"] = meta
     else:
@@ -350,14 +434,20 @@ def train(conn):
 
 def model_weight(meta):
     """Голос модели растёт с числом меток: оценки пользователя — до 50%, рыночная разметка — до 25%.
-    Если на отложенных метках модель хуже правил, голос уменьшается вдвое."""
+    Если на отложенных метках модель хуже правил по основной метрике (PR-AUC / macro-F1), голос уменьшается вдвое."""
     if not meta:
         return 0.0
     w = (MAX_WEIGHT * min(1.0, meta.get("n_user", meta.get("n", 0)) / FULL_WEIGHT_AT)
          + AUTO_MAX_WEIGHT * min(1.0, meta.get("n_market", 0) / AUTO_FULL_AT))
     cv = meta.get("cv")
-    if cv and cv["model_accuracy"] < cv["rules_accuracy"]:
-        w /= 2
+    if cv:
+        metric = cv.get("metric")
+        if metric and metric in cv.get("model", {}) and metric in cv.get("rules", {}):
+            worse = cv["model"][metric] < cv["rules"][metric]  # PR-AUC или macro-F1, а не accuracy
+        else:
+            worse = cv.get("model_accuracy", 0) < cv.get("rules_accuracy", 0)
+        if worse:
+            w /= 2
     return round(min(MAX_WEIGHT, w), 2)
 
 
