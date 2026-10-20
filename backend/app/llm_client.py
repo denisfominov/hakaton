@@ -4,7 +4,8 @@
 - off     — без LLM: агент и разбор работают на правилах и своих ML-моделях;
 - mock    — мок-режим шлюза (llm_mock.py): ответы в формате шлюза без сети и ключа, для разработки и тестов;
 - gateway — шлюз организаторов: LLM_BASE_URL, LLM_API_KEY, формат запроса LLM_API_FORMAT.
-Реальный формат API шлюза неизвестен; допущение — HTTP Chat Completions (docs/GATEWAY_QUESTIONS.md).
+Шлюз OpenAI-совместимый: POST {LLM_BASE_URL}/chat/completions, Authorization: Bearer <ключ> (ответ организаторов,
+проверено smoke-тестом — docs/GATEWAY_QUESTIONS.md). SDK не используется — только httpx.
 
 Что делает каждый вызов:
 1. маршрут по типу задачи (llm_router.py): основная модель и запасные; имя любой модели сверяется со списком кейса
@@ -12,6 +13,8 @@
 2. кэш по (событие, профиль, версия промпта, модель) — повтор не тратит бюджет;
 3. бюджет (llm_budget.py): худший случай вызова должен помещаться в остаток дневного лимита (ниже 500 ₽);
 4. ограничения длины входа и выхода, таймаут, повтор с паузой при 429/5xx/таймауте, затем — запасная модель;
+   ответ шлюза «Budget has been exceeded» — общий лимит команды исчерпан: без повторов и без запасной модели,
+   BudgetExceeded (агент отвечает правилами или из кэша с пометкой), до сброса в 03:00 МСК шлюз не вызываем;
 5. журнал llm_calls: модель, задача, токены, стоимость, время, ошибка, попадание в кэш (без текстов промптов).
 Перед внешним шлюзом из текста маскируются e-mail, телефоны, ИНН/ОГРН/КПП, счета. Ключ — только из .env, в логи,
 ответы API и ошибки не попадает.
@@ -31,15 +34,20 @@ from .llm_errors import BudgetExceeded, LLMError  # noqa: F401 — реэксп�
 
 log = logging.getLogger("alpha.llm")
 
-# канонические имена разрешённых моделей -> назначение (по приложению 3 кейса)
+# точные имена разрешённых моделей у шлюза -> назначение (по приложению 3 кейса); label — название в кейсе,
+# оно же псевдоним (llm_router.LABELS): «GLM-5.3-Flash» в .env или старом журнале узнаётся как z-ai/glm-5.3-flash
 ALLOWED_MODELS = {
-    "Gemma 4 26B A4B": {"role": "fast", "use": "классификация, извлечение информации, простые преобразования текста"},
-    "GLM-5.3-Flash": {"role": "reasoning", "use": "задачи повышенной сложности: анализ и рассуждения"},
-    "Qwen3.6 35B A3B": {"role": "default", "use": "универсальная: анализ, генерация, обработка материалов"},
-    "DeepSeek-V4.1-Flash": {"role": "research", "use": "поиск взаимосвязей, анализ больших объёмов информации"},
-    "Qwen3-VL-30B-A3B-Instruct": {"role": "vision", "use": "изображения и мультимодальные данные"},
-    "Kimi-K2.6": {"role": "text", "use": "обработка и анализ текстовой информации"},
+    llm_router.GEMMA: {"role": "fast", "use": "классификация, извлечение информации, простые преобразования текста"},
+    llm_router.GLM: {"role": "reasoning", "use": "задачи повышенной сложности: анализ и рассуждения"},
+    llm_router.QWEN: {"role": "default", "use": "универсальная: анализ, генерация, обработка материалов"},
+    llm_router.DEEPSEEK: {"role": "research", "use": "поиск взаимосвязей, анализ больших объёмов информации"},
+    llm_router.QWEN_VL: {"role": "vision", "use": "изображения и мультимодальные данные"},
+    llm_router.KIMI: {"role": "text", "use": "обработка и анализ текстовой информации"},
 }
+for _name, _info in ALLOWED_MODELS.items():
+    _info["label"] = llm_router.LABELS[_name]
+# ответ шлюза, когда общий дневной лимит команды исчерпан (ответ организаторов); повторять бессмысленно
+GATEWAY_BUDGET_TEXT = "budget has been exceeded"
 RETRYABLE = {408, 409, 425, 429, 500, 502, 503, 504, 599}
 
 SCHEMA = """
@@ -83,18 +91,10 @@ def init(conn):
 
 # ---------- белый список и имена моделей ----------
 
-def _compact(name):
-    """«Qwen/Qwen3.6-35B-A3B», «qwen3.6:35b-a3b», «Qwen3.6 35B A3B» -> одно и то же."""
-    name = (name or "").lower().split("/")[-1]
-    return re.sub(r"[^a-z0-9.]", "", name)
-
-
-_ALLOWED_COMPACT = {_compact(k): k for k in ALLOWED_MODELS}
-
-
 def canonical(model_id):
-    """Каноническое имя разрешённой модели или None, если модель не из списка кейса."""
-    return _ALLOWED_COMPACT.get(_compact(model_id))
+    """Точное имя разрешённой модели у шлюза или None, если модель не из списка кейса (прежние названия — тоже)."""
+    name = llm_router.resolve(model_id)
+    return name if name in ALLOWED_MODELS else None
 
 
 def require_allowed(model_id):
@@ -105,9 +105,11 @@ def require_allowed(model_id):
 
 
 def provider_name(model):
-    """Как модель называется у шлюза: LLM_NAME_GLM_5_3_FLASH=... (по умолчанию — каноническое имя).
+    """Как модель называется у шлюза: по умолчанию — точное имя из ответа организаторов. Переопределение на случай
+    переименования: LLM_NAME_Z_AI_GLM_5_3_FLASH=... или прежнее LLM_NAME_GLM_5_3_FLASH=...
     Имя у шлюза тоже должно узнаваться как та же разрешённая модель — иначе отказ."""
-    key = "LLM_NAME_" + re.sub(r"[^A-Z0-9]+", "_", model.upper()).strip("_")
+    keys = llm_router.env_names("LLM_NAME_", model)
+    key = next((k for k in keys if os.getenv(k)), keys[0])
     name = os.getenv(key) or model
     if canonical(name) != model:
         raise LLMError(f"{key}={name}: имя у шлюза не соответствует разрешённой модели {model}")
@@ -254,18 +256,29 @@ def _transport(model, messages, purpose, json_mode, max_tokens, temperature):
     try:
         data = r.json()
     except ValueError:
-        data = None
+        data = {"_raw": r.text[:300]} if r.status_code >= 400 else None  # текст ошибки — чтобы узнать исчерпание лимита
     if isinstance(data, dict):
         # остаток и расход, если шлюз их сообщает: формат неизвестен — сохраняем как есть (llm_budget.gateway_meta)
         data["_gateway"] = llm_budget.gateway_meta(r.headers, data.get("usage"))
     return r.status_code, data
 
 
+def gateway_budget_exhausted(data):
+    """Ответ шлюза «Budget has been exceeded» (код ответа не важен): общий дневной лимит команды исчерпан."""
+    if not isinstance(data, dict) or data.get("choices"):
+        return False
+    body = {k: v for k, v in data.items() if k != "_gateway"}
+    return GATEWAY_BUDGET_TEXT in json.dumps(body, ensure_ascii=False).lower()
+
+
 def _call_model(model, messages, purpose, json_mode, max_tokens, temperature):
-    """Повторы с паузой при 429/5xx/таймауте. Возвращает (текст, usage, попыток) или кидает LLMError."""
+    """Повторы с паузой при 429/5xx/таймауте. Возвращает (текст, usage, попыток) или кидает LLMError.
+    Исчерпанный лимит шлюза — BudgetExceeded сразу, без повторов."""
     status = 0
     for attempt in range(config.LLM_RETRIES + 1):
         status, data = _transport(model, messages, purpose, json_mode, max_tokens, temperature)
+        if gateway_budget_exhausted(data):
+            raise BudgetExceeded(llm_budget.GATEWAY_EXHAUSTED)
         if status in (401, 403):
             raise LLMError(f"шлюз отклонил ключ ({status})")
         if status < 400 and data:
@@ -326,8 +339,8 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
             ms = int((time.time() - started) * 1000)
             _log_call(conn, name, purpose, {}, ms, False, str(e), run_id, fallback_from=fallback_from, **meta)
             errors.append(f"{name}: {e}")
-            if "ключ" in str(e):
-                raise  # неверный ключ — запасная модель через тот же шлюз не поможет
+            if isinstance(e, BudgetExceeded) or "ключ" in str(e):
+                raise  # лимит шлюза общий на все модели, ключ тот же — запасная модель не поможет
             continue
         ms = int((time.time() - started) * 1000)
         gateway = usage.pop("_gateway", None)

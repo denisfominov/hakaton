@@ -30,10 +30,10 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_API_FORMAT = os.getenv("LLM_API_FORMAT") or "chat_completions"
 LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER") or "Authorization"
 LLM_AUTH_SCHEME = os.getenv("LLM_AUTH_SCHEME", "Bearer")
-LLM_MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT") or "Qwen3.6 35B A3B"
-LLM_MODEL_FAST = os.getenv("LLM_MODEL_FAST") or "Gemma 4 26B A4B"
-LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "GLM-5.3-Flash"
-LLM_MODEL_VISION = os.getenv("LLM_MODEL_VISION") or "Qwen3-VL-30B-A3B-Instruct"
+LLM_MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT") or "qwen/qwen3.6-35b-a3b"
+LLM_MODEL_FAST = os.getenv("LLM_MODEL_FAST") or "google/gemma-4-26b-a4b-it"
+LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "z-ai/glm-5.3-flash"
+LLM_MODEL_VISION = os.getenv("LLM_MODEL_VISION") or "qwen/qwen3-vl-30b-a3b-instruct"
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "60")
 LLM_RETRIES = int(os.getenv("LLM_RETRIES") or "2")
 LLM_BACKOFF = float(os.getenv("LLM_BACKOFF") or "1.0")
@@ -48,6 +48,8 @@ def daily_budget_from_env():
 
 DAILY_BUDGET_RUB = daily_budget_from_env()
 BUDGET_TZ = os.getenv("BUDGET_TZ") or "Europe/Moscow"
+# лимит шлюза сбрасывается в 03:00 МСК (ответ организаторов); бюджетный день — с 03:00 до 03:00
+BUDGET_RESET_HOUR = int(os.getenv("BUDGET_RESET_HOUR") or "3")
 # ответы настоящих моделей, полученные заранее (scripts/warm_cache.py): показываются без ключа с пометкой
 DEMO_CACHE_DIR = Path(os.getenv("DEMO_CACHE_DIR") or DATA_DIR / "demo_cache")
 LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")

@@ -1,12 +1,16 @@
 """Бюджет LLM: учёт токенов и стоимости по моделям и дням, жёсткий дневной лимит ниже 500 ₽ (кейс, слайд 12).
 
 Цены шлюза неизвестны (docs/GATEWAY_QUESTIONS.md), поэтому заданы в .env как допущение, ₽ за 1 млн токенов:
-LLM_PRICE_DEFAULT="60,180" (вход, выход), для отдельной модели — LLM_PRICE_GLM_5_3_FLASH="80,240" и т.п.
+LLM_PRICE_DEFAULT="60,180" (вход, выход), для отдельной модели — LLM_PRICE_GLM_5_3_FLASH="80,240" или по точному
+имени LLM_PRICE_Z_AI_GLM_5_3_FLASH=... и т.п.
 Перед вызовом считаем худший случай (вход + максимум выхода): если он не помещается в остаток дня — вызов не
 делаем, агент отвечает правилами или из кэша с пометкой. Учёт — таблица llm_calls (на диске, переживает перезапуск).
 
-День — по Москве (ответ организаторов: лимит 500 ₽ в день на команду, сброс в 00:00 МСК, остаток не переносится).
-Время вызовов в журнале — UTC; границы московского дня переводятся в UTC. Если шлюз сообщает остаток или расход
+Бюджетный день — с 03:00 до 03:00 по Москве (ответ организаторов: лимит 500 ₽ в день на ключ команды, общий на все
+модели, сброс в 03:00 МСК; в более раннем ответе было 00:00 — верным считаем 03:00; остаток не переносится). Час сброса —
+BUDGET_RESET_HOUR. Время вызовов в журнале — UTC; границы бюджетного дня переводятся в UTC.
+Когда общий лимит исчерпан, шлюз отвечает «Budget has been exceeded»: такой ответ записывается в журнал, и до
+следующего сброса вызовов не делаем (check) — агент отвечает правилами или из кэша с пометкой. Если шлюз сообщает остаток или расход
 (заголовки x-ratelimit-*, *budget*, *remaining*, поле usage.cost), они сохраняются в журнал и показываются на странице
 «Расход»; формат неизвестен (docs/GATEWAY_QUESTIONS.md), поэтому лимит считаем по своему учёту.
 """
@@ -16,19 +20,19 @@ import re
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import config
+from . import config, llm_router
 from .llm_errors import BudgetExceeded
 
 HARD_CAP_RUB = 499.0  # лимит кейса — эквивалент 500 ₽ в день; держим строго ниже
-
-
-def _env_key(model):
-    return "LLM_PRICE_" + re.sub(r"[^A-Z0-9]+", "_", model.upper()).strip("_")
+# текст ошибки в журнале llm_calls, когда шлюз ответил «Budget has been exceeded» (по нему check узнаёт исчерпание)
+GATEWAY_EXHAUSTED = "общий дневной лимит шлюза исчерпан (Budget has been exceeded), сброс в 03:00 МСК"
 
 
 def prices(model):
-    """(вход, выход) в ₽ за 1 млн токенов; второе значение — признак допущения."""
-    raw = os.getenv(_env_key(model)) or config.LLM_PRICE_DEFAULT
+    """(вход, выход) в ₽ за 1 млн токенов: LLM_PRICE_<модель> (точное имя или название кейса) или по умолчанию."""
+    model = llm_router.resolve(model) or model
+    raw = next((os.getenv(k) for k in llm_router.env_names("LLM_PRICE_", model) if os.getenv(k)),
+               None) or config.LLM_PRICE_DEFAULT
     try:
         p_in, p_out = (float(x) for x in raw.split(","))
     except ValueError:
@@ -49,15 +53,24 @@ def tz():
     return ZoneInfo(config.BUDGET_TZ)
 
 
+def _reset_hour():
+    return int(config.BUDGET_RESET_HOUR) % 24
+
+
+def _budget_day(now=None):
+    """Бюджетный день: до 03:00 МСК ещё идёт вчерашний."""
+    local = (now or datetime.now(timezone.utc)).astimezone(tz())
+    return (local - timedelta(hours=_reset_hour())).date()
+
+
 def today(now=None):
-    """Дата бюджетного дня по Москве."""
-    return (now or datetime.now(timezone.utc)).astimezone(tz()).date().isoformat()
+    """Дата бюджетного дня по Москве (день начинается в 03:00 МСК)."""
+    return _budget_day(now).isoformat()
 
 
 def day_bounds(now=None):
-    """Начало и конец бюджетного дня (00:00 МСК) в UTC — в формате ts журнала llm_calls."""
-    day = (now or datetime.now(timezone.utc)).astimezone(tz()).date()
-    start = datetime.combine(day, time(0), tz())
+    """Начало и конец бюджетного дня (03:00 МСК) в UTC — в формате ts журнала llm_calls."""
+    start = datetime.combine(_budget_day(now), time(_reset_hour()), tz())
     fmt = lambda d: d.astimezone(timezone.utc).isoformat(timespec="seconds")  # noqa: E731
     return fmt(start), fmt(start + timedelta(days=1))
 
@@ -67,8 +80,8 @@ def resets_at(now=None):
 
 
 def _day_sql():
-    """Выражение SQLite: московская дата по ts в UTC (смещение берётся из часового пояса на сегодня)."""
-    hours = int(datetime.now(tz()).utcoffset().total_seconds() // 3600)
+    """Выражение SQLite: дата бюджетного дня по ts в UTC (смещение пояса на сегодня минус час сброса)."""
+    hours = int(datetime.now(tz()).utcoffset().total_seconds() // 3600) - _reset_hour()
     return f"date(ts, '{hours:+d} hours')"
 
 
@@ -97,10 +110,19 @@ def estimate_tokens(text):
     return int(len(text) / 3.5) + 1
 
 
+def gateway_exhausted(conn, now=None):
+    """Шлюз уже ответил «Budget has been exceeded» в этот бюджетный день — до сброса не вызываем."""
+    start, end = day_bounds(now)
+    return conn.execute("SELECT 1 FROM llm_calls WHERE ts >= ? AND ts < ? AND ok = 0 AND error = ? LIMIT 1",
+                        (start, end, GATEWAY_EXHAUSTED)).fetchone() is not None
+
+
 def check(conn, model, prompt_text, max_tokens):
     """Хватит ли остатка дня на худший случай вызова. Иначе — BudgetExceeded (вызов не делается)."""
     if conn is None:
         return
+    if gateway_exhausted(conn):
+        raise BudgetExceeded(GATEWAY_EXHAUSTED)
     rub, tokens = spent_today(conn)
     worst = cost(model, estimate_tokens(prompt_text), max_tokens)
     if rub + worst > daily_limit():
@@ -133,6 +155,7 @@ def usage(conn, days=14):
     gw = conn.execute("SELECT ts, gateway_meta FROM llm_calls WHERE gateway_meta IS NOT NULL ORDER BY id DESC "
                       "LIMIT 1").fetchone()
     return {"today": today(), "timezone": config.BUDGET_TZ, "resets_at": resets_at(), "limit_rub": daily_limit(),
+            "gateway_exhausted": gateway_exhausted(conn),
             "gateway_reported": {"ts": gw["ts"], **json.loads(gw["gateway_meta"])} if gw else None, "spent_rub": round(rub, 4), "tokens": tokens,
             "remaining_rub": round(max(0.0, daily_limit() - rub), 4), "token_limit": config.LLM_DAILY_TOKEN_LIMIT,
             "by_day": by_day, "by_model": by_model, "by_purpose": by_task, "errors": errors,

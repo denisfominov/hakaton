@@ -130,5 +130,5 @@ def test_chat_calls_gateway_with_allowed_model(monkeypatch):
                                          "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})
     monkeypatch.setattr(llm_client.httpx, "post", fake_post)
     data, usage = llm_client.chat_json([{"role": "user", "content": "почта a@b.ru"}], role="fast", purpose="test")
-    assert data == {"ok": True} and seen["model"] == "Gemma 4 26B A4B"
+    assert data == {"ok": True} and seen["model"] == "google/gemma-4-26b-a4b-it"
     assert seen["url"].endswith("/chat/completions") and "a@b.ru" not in seen["content"]
