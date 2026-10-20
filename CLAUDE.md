@@ -1,105 +1,90 @@
 # CLAUDE.md
 
-Alpha Intelligence — новостная аналитика для бизнес-решений (хакатон, трек «Новостная аналитика», КИБ).
-Backend на FastAPI + SQLite, frontend на React + Vite + Tailwind. Подробности — в [README.md](README.md) и [docs/](docs/).
+Alpha Intelligence — агент новостной аналитики для руководителей крупного бизнеса (хакатон «Альфа Хак», трек
+«Новостная аналитика», КИБ). Backend — FastAPI + SQLite, frontend — React + Vite + Tailwind. Подробности — в
+[README.md](README.md), карта модулей — в [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), задачи — в
+[docs/TASKS.md](docs/TASKS.md).
 
 ## Запуск
 
-### Backend (Python 3.12, uv)
+### Docker (основной способ)
+
+```bash
+cp .env.example .env          # необязательно: без .env всё работает без LLM
+docker compose up --build
+```
+
+Открыть http://localhost:8000 — FastAPI отдаёт и API (`/api`, документация — `/docs`), и собранный фронтенд.
+База — в томе `alpha-data`. Клиенты — из данных кейса: `df_*_hack.csv` берутся из корня репозитория (другая папка —
+`CASE_DATA_DIR=/path docker compose up`); нет файлов — синтетический пример `backend/data/clients/sample`.
+Аналитика банка для RAG — `backend/data/bank` (PDF и распознанный текст в git не кладутся).
+
+### Для разработки (Python 3.12 + uv, Node.js 20+)
 
 ```bash
 cd backend
-uv venv --python 3.12
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-uv pip install -r requirements.txt
+uv venv --python 3.12 && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+uv pip install -r requirements.lock
 uvicorn app.main:app --port 8000 --reload
 ```
 
-- При первом запуске создаётся `backend/alpha.db` (профили пяти компаний + подборка новостей).
-  Для чистого старта удалить `backend/alpha.db`.
-- API-документация: http://127.0.0.1:8000/docs
-- Настройки — переменные окружения, пример в [.env.example](.env.example) (скопировать в `.env`).
-  Без `.env` всё работает: реальная подборка + анализ на правилах. `DATASET=synthetic` — тестовый набор.
-  `ANTHROPIC_API_KEY` включает LLM-разбор по кнопке.
-
-### Frontend (Node.js 20+)
-
 ```bash
 cd frontend
-npm install
-npm run dev
+npm ci
+npm run dev                   # http://127.0.0.1:5173, /api проксируется на :8000
 ```
 
-Открыть http://127.0.0.1:5173. Vite проксирует `/api` на backend (порт 8000).
-Проверка сборки и типов: `npm run build`.
+При первом запуске создаётся `backend/alpha.db`; для чистого старта — удалить его.
 
-### Docker (всё в одном контейнере)
+### Настройки
+
+Переменные окружения, шаблон — [.env.example](.env.example) (скопировать в `.env`). Без `.env`: клиенты кейса (или
+пример), подборка реальных новостей, анализ правилами и своими ML-моделями, без LLM. `DATASET=synthetic` — тестовый
+набор.
+
+LLM — `LLM_PROVIDER`:
+- `off` — без LLM (по умолчанию);
+- `mock` — ответы в формате шлюза без сети и ключа (разработка, тесты, показ без ключа);
+- `gateway` — шлюз организаторов (`LLM_BASE_URL`, `LLM_API_KEY`).
+
+Бюджет — 500 ₽ в день на ключ команды, день начинается в 03:00 МСК; сервис останавливается на `DAILY_BUDGET_RUB`
+(по умолчанию 100, не выше 499). Стоимость вызова берётся из ответа шлюза (`usage.cost`).
+
+### Тесты и сборка
 
 ```bash
-docker build -t alpha-intelligence .
-docker run -p 8000:8000 -v alpha-data:/data --env-file .env alpha-intelligence
+cd backend && python -m pytest -q
 ```
-
-Открыть http://localhost:8000: FastAPI отдаёт и API, и собранный фронтенд (`FRONTEND_DIST`), база — в томе `/data`.
-
-### Тесты
 
 ```bash
-cd backend
-python -m pytest -q
+cd frontend && npm run build
 ```
 
-Работают без интернета и без ключей (логика на синтетическом наборе + проверки реальной подборки).
-Внешние источники в тестах отключены фикстурой `no_network` (tests/conftest.py) — тест, которому нужен ответ
-источника, подменяет его своей фикстурой.
+Тесты работают без интернета и ключей. Внешние источники отключены фикстурой `no_network` (`tests/conftest.py`):
+тест, которому нужен ответ источника, подменяет его своей фикстурой.
 
-## Структура
+## Правила кейса
+
+- LLM — **только шесть моделей** из приложения 3, под точными именами шлюза: `google/gemma-4-26b-a4b-it`,
+  `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`,
+  `moonshotai/kimi-k2.6`.
+- Белый список — `ALLOWED_MODELS` в `backend/app/llm_client.py`; все вызовы моделей идут только через `llm_client`,
+  модель вне списка отклоняется до запроса.
+- Никаких SDK внешних AI-сервисов (openai, anthropic и т.п.) и готовых агентных фреймворков (LangChain, LlamaIndex,
+  AutoGen, CrewAI…): агент, ранжирование и выводы — свой код. Проверяется `tests/test_compliance.py`.
+- Ключ шлюза — только в `.env`: не в коде, README, логах, сообщениях коммитов и Docker-образе.
+
+Подробно — [docs/COMPLIANCE.md](docs/COMPLIANCE.md), факты о шлюзе — [docs/GATEWAY_QUESTIONS.md](docs/GATEWAY_QUESTIONS.md).
+
+## Где что
 
 ```
-backend/
-  app/
-    main.py        API (FastAPI)
-    config.py      настройки из окружения
-    db.py          SQLite
-    schemas.py     Pydantic-схемы
-    pipeline.py    конвейер: загрузка, нормализация, кластеры, анализ для профиля
-    sources.py     встроенные наборы, RSS, коннектор Альфа-Банка (заготовка, не работает)
-    nlp.py         токены, стемминг, словари категорий/отраслей/регионов/сигналов, защита от инъекций
-    matching.py    что из профиля упоминается в новости
-    analysis.py    правила: каналы влияния -> риски, возможности, действия
-    scoring.py     релевантность, влияние, срочность, уверенность, приоритет
-    dedup.py       склейка похожих публикаций (TF-IDF + общие числа)
-    llm.py         Claude: промпт, схема ответа, пост-проверка
-    model.py       своя модель: оценки пользователя + рыночные метки -> логистическая регрессия -> поправка релевантности
-    market.py      разметка новостей по реакции акций (котировки Мосбиржи)
-    lookup.py      данные о компании по ИНН (ЕГРЮЛ / DaData) и по сайту, сбор из всех источников
-    portals.py     Checko, «За честный бизнес», Википедия; разбор robots.txt
-    company.py     профиль новой компании из найденного
-    outlets.py     реестр изданий, репутация, достоверность новости
-    ner.py         леммы и организации (pymorphy3, natasha) для поиска названий
-    threads.py     сюжеты: события одной истории за 60 дней
-    store.py       готовый анализ в базе, отпечатки данных/модели/кода
-    jobs.py        фоновый пересчёт (в тестах выключен: ALPHA_BACKGROUND=0)
-    catalog.py     отраслевые шаблоны, варианты для списков профиля, автозаполнение новой компании
-    overview.py    агрегаты для главного экрана (pandas)
-  data/
-    real/          6 реальных компаний и подборка реальных новостей (по умолчанию)
-    synthetic/     вымышленные компании и события (для тестов)
-    history/       старые новости только для обучения модели
-    market/        снимок котировок Мосбиржи
-    sources.json   список RSS (18 изданий: 15 российских, 3 зарубежных)
-    outlets.json   реестр изданий: тип, страна, репутация, холдинг
-  scripts/         build_market_data, import_history
-  tests/           pytest
-frontend/
-  src/pages/       О сервисе, Выбор компании, Портфель, Обзор, Лента, Событие, Профиль, Решения
-  src/components/  общие компоненты (TagInput — поле со списком вариантов, FeedbackPanel, AnalyticsPanel)
-  src/api.ts       клиент API
-docs/
-  ARCHITECTURE.md  схема и решения
-  DATA.md          компании, список публикаций, как пополнять подборку
-  DEMO.md          сценарий показа жюри
-  REVIEW.md        самооценка, ограничения, что дальше
+backend/app/       API (main.py) и логика: конвейер новостей, правила, скоринг, агент, LLM-слой, RAG банка
+backend/scripts/   обучение и оценка своих моделей, распознавание PDF банка, smoke-тест шлюза, кэш ответов
+backend/tests/     pytest
+backend/data/      real/ (по умолчанию), synthetic/ (тесты), clients/sample/, bank/, market/, history/, …
+frontend/src/      pages/, components/, api.ts
+docs/              ARCHITECTURE, COMPLIANCE, GATEWAY_QUESTIONS, DATA, DEMO, TASKS, GAP_ANALYSIS и др.
 ```
 
 ## Рабочий процесс
@@ -107,19 +92,11 @@ docs/
 Команда работает через `main`: актуальная версия всегда в `main`, каждая задача — в своей ветке, в `main` она
 попадает через пулл-реквест, который создаёт и сливает человек.
 
-1. **Начало работы — свежий `main`:**
-   ```bash
-   git checkout main
-   git pull
-   ```
-2. **Новая задача — новая ветка от свежего `main`:**
-   ```bash
-   git checkout -b <тип>/<кратко-латиницей>
-   ```
+1. **Начало работы — свежий `main`:** `git checkout main && git pull`.
+2. **Новая задача — новая ветка от свежего `main`:** `git checkout -b <тип>/<кратко-латиницей>`.
    Тип: `feature` (новая возможность), `fix` (исправление), `docs` (документация). Примеры: `feature/bank-rag-e5`,
    `fix/feed-paging`, `docs/workflow`.
-3. **Небольшие логичные коммиты с понятными сообщениями.** Перед пушем прогнать тесты
-   (`cd backend && python -m pytest -q`) и сборку фронтенда (`cd frontend && npm run build`).
+3. **Небольшие логичные коммиты с понятными сообщениями.** Перед пушем прогнать тесты и сборку фронтенда (см. выше).
 4. **Пуш:** `git push -u origin <ветка>`.
 5. **Пулл-реквест создаёт человек в интерфейсе GitHub.** После пуша напиши ссылку
    `https://github.com/denisfominov/hakaton/pull/new/<ветка>` и готовое описание PR: что сделано, зачем, как проверить.
@@ -129,18 +106,13 @@ docs/
    явно; цепочки веток молча не строй.
 8. **Ветки `prompt-N`, теги `vN` и блоки «Версия N» в README больше не создаются.** Старые ветки (`первый-промпт`,
    `второй-промпт`, `третий-промпт-(пока-мертв)`, `prompt-4-(почка-от-prompt-2)`, `prompt-5`, `prompt-6`, `prompt-7`,
-   `docker`, `agent-llm`) — архив, основой для новой работы не служат. Для сдачи человек ставит тег на `main` и
-   записывает hash коммита в README.
+   `docker`, `agent-llm`) и теги `v1`, `v2`, `v4`–`v7` — архив, основой для новой работы не служат. Для сдачи человек
+   ставит тег на `main` и записывает hash коммита в README.
 9. **README описывает текущее состояние `main`.** История изменений — только в CHANGELOG.md: запись на каждый PR,
    новые сверху.
 
 ### Что не коммитить
 
-`.venv`, `node_modules`, `.env`, `alpha.db` (и `*.db-wal`, `*.db-shm`), `__pycache__`, сырые данные кейса
-(`df_*_hack.csv`), PDF, лекции. Секреты и ключи в код, README и сообщения коммитов не писать.
-
-### Архив веток (только для справки)
-
-v1 — `первый-промпт`, v2 — `второй-промпт`, v4 — `prompt-4-(почка-от-prompt-2)`, v5 — `prompt-5`, v6 — `prompt-6`,
-v7 — `prompt-7` (PR #1), v8 — `docker` (PR #2), v9 — `agent-llm`. Ветку `третий-промпт-(пока-мертв)` не использовать:
-кода в ней нет. Теги `v1`, `v2`, `v4`–`v7` остаются на соответствующих версиях; новых тегов `vN` не ставим.
+`.venv`, `node_modules`, `.env`, `alpha.db` (и `*.db-wal`, `*.db-shm`), `__pycache__`, данные кейса (`df_*_hack.csv`,
+PDF и распознанный текст аналитики банка), веса моделей (`backend/data/models`, `backend/data/embeddings`), лекции.
+Секреты и ключи в код, README и сообщения коммитов не писать.
