@@ -10,6 +10,7 @@ from tests.test_bank_rag import write_docs
 
 class Resp:
     status_code = 200
+    headers = {}
 
     def __init__(self, content):
         self._c = content

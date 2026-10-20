@@ -97,6 +97,7 @@ def test_agent_with_llm_plan_and_verified_bank_quotes(client, bank_docs, monkeyp
 
     class Resp:
         status_code = 200
+        headers = {}
 
         def __init__(self, content):
             self._c = content
