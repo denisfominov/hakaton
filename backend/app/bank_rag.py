@@ -23,6 +23,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from . import config, ner, nlp
 
 log = logging.getLogger("alpha.rag")
+logging.getLogger("pypdf").setLevel(logging.ERROR)  # PDF кейса — картинки страниц, pypdf шумит о структуре файла
 
 CHUNK_CHARS = 900
 MIN_SCORE = 0.08
@@ -55,77 +56,183 @@ def _files(folder=None):
     folder = Path(folder or config.BANK_DOCS_DIR)
     if not folder.exists():
         return []
-    return sorted(p for p in folder.iterdir() if p.suffix.lower() in EXTS and p.name.lower() != "readme.md")
+    # <имя>.ocr.txt — распознанный текст PDF без текстового слоя (scripts/ocr_bank_docs.py): индексируется вместе с PDF
+    return sorted(p for p in folder.iterdir() if p.suffix.lower() in EXTS and p.name.lower() != "readme.md"
+                  and not p.name.lower().endswith(".ocr.txt"))
+
+
+def _ocr_sibling(path):
+    p = path.with_name(path.stem + ".ocr.txt")
+    return p if p.exists() else None
 
 
 def _fingerprint(files):
     h = hashlib.md5()
-    for p in files:
+    for p in files + [o for f in files if (o := _ocr_sibling(f))]:
         st = p.stat()
         h.update(f"{p.name}|{st.st_size}|{int(st.st_mtime)}".encode())
     return h.hexdigest()
 
 
 def _pages(path):
-    """[(номер страницы, текст)]. Для текстовых файлов — одна «страница»."""
+    """[(номер страницы, текст)]. PDF без текстового слоя — из распознанного <имя>.ocr.txt (страницы через \\f)."""
     if path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
 
         try:
             reader = PdfReader(str(path))
-            return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
+            pages = [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
         except Exception as e:  # noqa: BLE001 — битый PDF не должен ронять индекс
             log.warning("pdf %s not read: %s", path.name, e)
-            return []
-    return [(1, path.read_text(encoding="utf-8", errors="ignore"))]
+            pages = []
+        if sum(len(t.strip()) for _n, t in pages) >= 200:
+            return pages
+        ocr = _ocr_sibling(path)
+        if ocr is None:
+            log.warning("pdf %s: нет текстового слоя и нет %s.ocr.txt (scripts/ocr_bank_docs.py)", path.name, path.stem)
+            return pages
+        path = ocr
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return [(i + 1, t) for i, t in enumerate(text.split("\f"))]
 
 
 def _title(path, first_text):
-    for line in (first_text or "").splitlines():
-        line = line.strip()
+    lines = [ln.strip() for ln in (first_text or "").splitlines() if not ln.startswith("@date ")]
+    if lines and lines[0].startswith("# "):
+        return lines[0][2:].strip()  # заголовок, найденный при распознавании (самый крупный шрифт)
+    for line in lines:
         if 10 <= len(line) <= 140:
             return line
     return path.stem.replace("_", " ")
 
 
 def topics(text):
+    """Темы по частоте: сколько раз в тексте встречаются корни темы (не просто есть ли они)."""
     toks = nlp.tokens(text)
-    scored = [(nlp.count_roots(toks, roots), key) for key, (_label, roots) in TOPICS.items()]
-    return [key for n, key in sorted(scored, reverse=True) if n > 0][:3]
+    scored = []
+    for key, (_label, roots) in TOPICS.items():
+        n = sum(sum(1 for t in toks if t.startswith(r)) if " " not in r else 3 * nlp.has_root(toks, r) for r in roots)
+        scored.append((n / max(1, len(toks)), key))
+    top = [(n, key) for n, key in sorted(scored, reverse=True) if n > 0]
+    return [key for n, key in top if n >= top[0][0] * 0.35][:3] if top else []
+
+
+MONTHS_EN = {"jan": "января", "feb": "февраля", "mar": "марта", "apr": "апреля", "may": "мая", "jun": "июня",
+             "jul": "июля", "aug": "августа", "sep": "сентября", "oct": "октября", "nov": "ноября", "dec": "декабря"}
+MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября",
+             "декабря"]
+
+
+def date_from_name(stem):
+    """Дата из имени файла: 14092026, 15Apr2021, August26, 11Sep, 7M26, 1H26."""
+    m = re.search(r"(?<!\d)(\d{2})(\d{2})(20\d\d)(?!\d)", stem)
+    if m and 1 <= int(m.group(2)) <= 12:
+        return f"{int(m.group(1))} {MONTHS_RU[int(m.group(2)) - 1]} {m.group(3)}"
+    for m in re.finditer(r"(\d{1,2})([A-Za-z]{3})[a-z]*(20\d\d)?", stem):
+        if m.group(2).lower() in MONTHS_EN:
+            return f"{int(m.group(1))} {MONTHS_EN[m.group(2).lower()]}" + (f" {m.group(3)}" if m.group(3) else "")
+    for m in re.finditer(r"([A-Za-z]{3})[a-z]*(\d{2})(?!\d)", stem):
+        if m.group(1).lower() in MONTHS_EN:
+            return f"{MONTHS_EN[m.group(1).lower()][:-1]}ь 20{m.group(2)}".replace("маь", "май").replace("августь", "август")
+    m = re.search(r"(\d{1,2})[MМ](\d{2})|(\d)[HП](\d{2})", stem)
+    if m:
+        return f"{m.group(1)} мес. 20{m.group(2)}" if m.group(1) else f"{m.group(3)}-е полугодие 20{m.group(4)}"
+    return None
+
+
+# направление прогноза банка: в аналитике оно сформулировано иначе, чем в новостях («ожидаем сохранения паузы»)
+STANCE_SIGNALS = {
+    "rate_hold": re.compile(r"(сохранени\w*|сохранит\w*|оставит\w*|оставлени\w*)\s.{0,40}(ставк|пауз)|"
+                            r"пауз\w*\s.{0,25}(ставк|цикл|заседани)|ставк\w*\s.{0,30}(без изменени|неизменн)"),
+    "rate_down": re.compile(r"(снижени\w*|снизит\w*|смягчени\w*)\s.{0,30}(ставк|дкп|денежно-кредитн)|"
+                            r"ставк\w*\s.{0,20}(снизит|снизят|снижени)"),
+    "rate_up": re.compile(r"(повышени\w*|повысит\w*)\s.{0,30}ставк|ставк\w*\s.{0,20}(повысит|повысят)"),
+    "rub_weak": re.compile(r"(ослаблени\w*|ослабнет|ослабеет|девальвац\w*)\s.{0,25}рубл|рубл\w*\s.{0,25}(ослабнет|ослабеет|ослаблени)"),
+    "rub_strong": re.compile(r"(укреплени\w*|укрепит\w*)\s.{0,25}рубл|рубл\w*\s.{0,25}(укрепит|укреплени)"),
+}
+
+
+DECISION = re.compile(r"решени|сохранил|оставил|снизил|повысил")
 
 
 def signals(text):
-    """Направление в тексте банка — те же сигналы, что у новостей (nlp.SIGNALS), только макро."""
+    """Направление в тексте банка: прогнозы («ожидаем», «полагаем») и сообщения о решении («ЦБ оставил ставку»).
+    Упоминания в прошлом («после десяти снижений ставки») и слова вроде «ужесточение риторики» направлением ставки
+    не считаем. Курс, цены и спрос без прогноза — по словарю сигналов новостей."""
+    stance = set()
+    for sent in re.split(r"(?<=[.!?])\s+", text.lower().replace("ё", "е")):
+        if STANCE.search(sent) or DECISION.search(sent):
+            stance.update(k for k, rx in STANCE_SIGNALS.items() if rx.search(sent))
     found = nlp.detect_signals(nlp.tokens(text), text)
-    return [k for k in found if k in MACRO_SIGNALS]
+    stance.update(k for k in found if k in MACRO_SIGNALS and not k.startswith("rate_"))
+    return sorted(stance)
+
+
+CAPTION = re.compile(r"^(рис\.|рисунок|источник|примечание|таблица|табл\.|\d{1,2}:\s)|\b(рис|табл)\.\s*\d", re.IGNORECASE)
+AXIS = re.compile(r"\b(янв|февр?|март?|апр|май|июнь?|июль?|авг|сент?|окт|нояб?|дек|[1-4]к\d\d)\b\.?", re.IGNORECASE)
+
+
+def quote(hit, query="", limit=360):
+    """Цитата для ответа: предложения фрагмента, где банк высказывает позицию и которые ближе всего к запросу."""
+    q = {w[:5] for w in ner.lemmas(query) if len(w) > 3}
+    scored = []
+    for i, sent in enumerate(re.split(r"(?<=[.!?])\s+", CONTACT.sub("", hit["text"]))):
+        sent = " ".join(sent.split())
+        if len(sent) < 40 or CAPTION.search(sent) or len(AXIS.findall(sent)) >= 3 or nlp.looks_like_injection(sent):
+            continue  # подписи к графикам: «Рис. 6: …», подписи осей «Февр Март Апр…»
+        letters = sum(ch.isalpha() for ch in sent) / len(sent)
+        if letters < 0.6:  # подписи осей и таблицы
+            continue
+        overlap = len(q & {w[:5] for w in ner.lemmas(sent) if len(w) > 3}) if q else 0
+        score = 3 * bool(OWN_VIEW.search(sent)) + bool(STANCE.search(sent)) + overlap + bool(re.search(r"\d", sent))
+        scored.append((score, -i, sent))
+    if not scored or max(scored)[0] < 2:  # нет ни позиции банка, ни связи с запросом — не цитируем
+        return None
+    best = [x for x in sorted(scored, reverse=True)[:2] if x[0] >= 2]
+    text = " ".join(sent for _s, _i, sent in sorted(best, key=lambda x: -x[1]))
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "…"
 
 
 MACRO_SIGNALS = {"rate_up", "rate_hold", "rate_down", "rub_strong", "rub_weak", "price_up", "price_down",
                  "demand_up", "demand_down"}
 
 
+OWN_VIEW = re.compile(r"\bмы (?:\w+ )?(?:ожида\w*|полага\w*|считаем|прогнозиру\w*|ждём|ждем|допуска\w*|сохраня\w*|"
+                      r"меняем|ориентиру\w*)|\bнаш\w* (?:прогноз|взгляд|ожидани|оценк|базов)|\bожидаем\b", re.IGNORECASE)
+CONTACT = re.compile(r"\+7[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}|[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
 def theses(chunks, limit=5):
-    """Ключевые тезисы банка: предложения с прогнозом или оценкой, с цифрами — первыми."""
+    """Ключевые тезисы банка: собственный взгляд («мы ожидаем», «наш прогноз») выше общих оценок, с цифрами — выше."""
     out, seen = [], set()
     for c in chunks:
-        for sent in re.split(r"(?<=[.!?])\s+", c["text"]):
-            sent = sent.strip()
+        for sent in re.split(r"(?<=[.!?])\s+", CONTACT.sub("", c["text"])):
+            sent = " ".join(sent.split())
             if not (40 <= len(sent) <= 400) or not STANCE.search(sent) or nlp.looks_like_injection(sent):
                 continue
             key = sent[:60].lower()
             if key in seen:
                 continue
             seen.add(key)
-            out.append({"text": sent, "page": c["page"], "chunk": c["id"], "numbers": bool(re.search(r"\d", sent))})
-    out.sort(key=lambda t: not t["numbers"])
-    return [{k: v for k, v in t.items() if k != "numbers"} for t in out[:limit]]
+            rank = 2 * bool(OWN_VIEW.search(sent)) + bool(re.search(r"\d", sent))
+            out.append({"text": sent, "page": c["page"], "chunk": c["id"], "rank": rank})
+    out.sort(key=lambda t: -t["rank"])  # sort стабильная: при равном весе — порядок в документе
+    return [{k: v for k, v in t.items() if k != "rank"} for t in out[:limit]]
 
 
 def _chunks(path):
     pages = _pages(path)
-    title = _title(path, pages[0][1] if pages else "")
+    first = pages[0][1] if pages else ""
+    title = _title(path, first)
+    m = re.search(r"^@date (.+)$", first, re.MULTILINE)
+    head_date = DATE_RE.search(title + " " + first[:300])
+    by_name = date_from_name(path.stem)
+    # дата в имени файла с годом надёжнее распознанной шапки (в шапке бывают даты погашения облигаций)
+    date = (by_name if by_name and re.search(r"20\d\d", by_name) else None) or (m.group(1).strip() if m else None) \
+        or by_name or (head_date.group(0) if head_date else None)
     out = []
     for page_no, text in pages:
+        text = re.sub(r"^(?:# .*\n)?(?:@date .*\n)?", "", text) if page_no == 1 else text
         text = re.sub(r"[ \t]+", " ", text)
         paras = [p.strip() for p in re.split(r"\n\s*\n|\n(?=[А-ЯA-Z•\-—])", text) if len(p.strip()) > 40]
         buf = ""
@@ -136,7 +243,7 @@ def _chunks(path):
             buf += " " + para.replace("\n", " ")
         if buf.strip():
             out.append((page_no, buf.strip()))
-    return [{"id": f"{path.stem}#{i}", "doc": path.name, "title": title, "page": page, "text": text,
+    return [{"id": f"{path.stem}#{i}", "doc": path.name, "title": title, "date": date, "page": page, "text": text,
              "topics": topics(text), "signals": signals(text)}
             for i, (page, text) in enumerate(out)]
 
@@ -148,9 +255,7 @@ def _documents(chunks):
         by_doc.setdefault(c["doc"], []).append(c)
     docs = []
     for name, cs in sorted(by_doc.items()):
-        head = cs[0]["title"] + " " + " ".join(c["text"] for c in cs[:2])
-        m = DATE_RE.search(head)
-        docs.append({"file": name, "title": cs[0]["title"], "date": m.group(0) if m else None,
+        docs.append({"file": name, "title": cs[0]["title"], "date": cs[0].get("date"),
                      "topics": topics(" ".join([cs[0]["title"]] * 3 + [c["text"] for c in cs])),
                      "pages": max(c["page"] for c in cs), "chunks": len(cs), "theses": theses(cs)})
     return docs

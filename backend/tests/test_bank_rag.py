@@ -54,3 +54,44 @@ def test_documents_are_classified_with_key_theses(tmp_path):
     assert rates["theses"] and "ожидаем" in rates["theses"][0]["text"].lower()
     hit = bank_rag.search("ключевая ставка", folder=tmp_path)[0]
     assert "rate_hold" in hit["signals"] and "rate" in hit["topics"]
+
+
+def test_image_pdf_uses_ocr_text_and_cites_pdf(tmp_path):
+    """PDF без текстового слоя (страницы-картинки, как в материалах кейса) читается из <имя>.ocr.txt."""
+    from pypdf import PdfWriter
+
+    w = PdfWriter()
+    w.add_blank_page(width=200, height=200)
+    w.add_blank_page(width=200, height=200)
+    with open(tmp_path / "Policy_Rate_11092026.pdf", "wb") as f:
+        w.write(f)
+    (tmp_path / "Policy_Rate_11092026.ocr.txt").write_text(
+        "# Ключевая ставка ЦБ РФ: Ставка без изменения на 14,0%\n@date 11 сентября 2026\n"
+        "ЦБ РФ принял решение оставить ставку неизменной на уровне 14,0%.\f"
+        "Рис. 6: Динамика депозитов, Февр Март Апр Май Июнь Июл Авг Сент.\n"
+        "Мы ожидаем сохранения паузы на заседании 23 октября, ставка останется 14,0% до конца года.",
+        encoding="utf-8")
+    docs = bank_rag.status(folder=tmp_path)["documents"]
+    assert [d["file"] for d in docs] == ["Policy_Rate_11092026.pdf"], ".ocr.txt не индексируется отдельным документом"
+    d = docs[0]
+    assert d["title"].startswith("Ключевая ставка ЦБ РФ") and d["date"] == "11 сентября 2026"
+    assert d["theses"][0]["text"].startswith("Мы ожидаем сохранения паузы") and d["theses"][0]["page"] == 2
+    hit = next(h for h in bank_rag.search("ожидаем сохранения паузы ключевая ставка", folder=tmp_path) if h["page"] == 2)
+    assert hit["doc"] == "Policy_Rate_11092026.pdf"
+    assert "rate_hold" in hit["signals"]
+    q = bank_rag.quote(hit, "ключевая ставка")
+    assert q.startswith("Мы ожидаем") and "Рис." not in q
+
+
+def test_date_from_file_name():
+    assert bank_rag.date_from_name("Бонд_Бриф_14092026") == "14 сентября 2026"
+    assert bank_rag.date_from_name("Steels_1К21PreviewUpdate_15Apr2021") == "15 апреля 2021"
+    assert bank_rag.date_from_name("Gold_digest_August26") == "август 2026"
+    assert bank_rag.date_from_name("ALFA-7M26") == "7 мес. 2026"
+    assert bank_rag.date_from_name("ALFA-consumption") is None
+
+
+def test_rate_direction_only_from_forecasts_and_decisions():
+    assert bank_rag.signals("Риторика стала жестче, тон ужесточился.") == []
+    assert bank_rag.signals("После десяти последовательных снижений ставки рынок замер.") == []
+    assert bank_rag.signals("Мы ожидаем снижения ставки до 12% к концу 2027 года.") == ["rate_down"]

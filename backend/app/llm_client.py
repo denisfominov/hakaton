@@ -71,9 +71,9 @@ def canonical(model_id):
 
 
 def model_for(role):
-    """Модель провайдера для роли (fast / reasoning / default / research / text)."""
+    """Модель провайдера для роли (fast / reasoning / default / vision)."""
     configured = {"fast": config.LLM_MODEL_FAST, "reasoning": config.LLM_MODEL_REASONING,
-                  "default": config.LLM_MODEL_DEFAULT}.get(role) or config.LLM_MODEL_DEFAULT
+                  "default": config.LLM_MODEL_DEFAULT, "vision": config.LLM_MODEL_VISION}.get(role) or config.LLM_MODEL_DEFAULT
     if not canonical(configured):
         raise LLMError(f"модель «{configured}» не входит в список разрешённых кейсом")
     return configured
@@ -132,16 +132,20 @@ def _log_call(conn, model, purpose, usage, ms, ok, error, run_id):
 # ---------- вызов ----------
 
 def chat(messages, role="default", purpose="", json_mode=False, max_tokens=1500, temperature=0.2, conn=None,
-         run_id=None):
-    """Один вызов разрешённой модели. Возвращает (текст, usage). Ошибки — LLMError с понятным текстом."""
+         run_id=None, model=None):
+    """Один вызов разрешённой модели. Возвращает (текст, usage). Ошибки — LLMError с понятным текстом.
+    model — явная модель (сравнение моделей, scripts/compare_models.py); тоже проверяется по списку кейса."""
     if not enabled():
         raise LLMError("LLM не подключена (LLM_PROVIDER=off или не задан LLM_BASE_URL)")
-    model = model_for(role)
+    if model is not None and not canonical(model):
+        raise LLMError(f"модель «{model}» не входит в список разрешённых кейсом")
+    model = model or model_for(role)
     if conn is not None and config.LLM_PROVIDER == "gateway" and config.LLM_DAILY_TOKEN_LIMIT:
         if tokens_today(conn) >= config.LLM_DAILY_TOKEN_LIMIT:
             raise LLMError("исчерпан дневной лимит токенов шлюза — работаем на правилах")
     if config.LLM_PROVIDER == "gateway":
-        messages = [{**m, "content": redact(m["content"])} for m in messages]
+        messages = [{**m, "content": redact(m["content"]) if isinstance(m["content"], str) else m["content"]}
+                    for m in messages]
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
@@ -171,6 +175,14 @@ def chat(messages, role="default", purpose="", json_mode=False, max_tokens=1500,
     _log_call(conn, model, purpose, usage, ms, True, None, run_id)
     log.info("llm %s %s %sms tokens=%s", model, purpose, ms, usage.get("total_tokens"))
     return text, {**usage, "model": model, "ms": ms}
+
+
+def vision(image_b64, prompt, purpose="vision", conn=None, max_tokens=3000):
+    """Картинка + инструкция мультимодальной модели из списка кейса (Qwen3-VL): распознавание страниц PDF банка."""
+    messages = [{"role": "user", "content": [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}]}]
+    return chat(messages, role="vision", purpose=purpose, max_tokens=max_tokens, temperature=0.0, conn=conn)
 
 
 def parse_json(text):

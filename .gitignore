@@ -43,3 +43,11 @@ df_*_hack.csv
 !backend/data/clients/sample/*.csv
 # датасеты для дообучения (scripts/export_sft.py)
 sft*.jsonl
+# материалы банка (приложение 2) и их распознанный текст — данные кейса, в git не кладём
+backend/data/bank/*
+!backend/data/bank/README.md
+данные из слайда 17/
+# учебные материалы (лекции) — только для чтения командой
+лекции по Машинному обучению/
+# датасеты для дообучения своей LLM из данных кейса (scripts/build_case_dataset.py)
+backend/data/sft/

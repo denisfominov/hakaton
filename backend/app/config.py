@@ -29,6 +29,7 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT") or "Qwen3.6 35B A3B"
 LLM_MODEL_FAST = os.getenv("LLM_MODEL_FAST") or "Gemma 4 26B A4B"
 LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "GLM-5.3-Flash"
+LLM_MODEL_VISION = os.getenv("LLM_MODEL_VISION") or "Qwen3-VL-30B-A3B-Instruct"
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "90")
 LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")
 LLM_MODEL = LLM_MODEL_DEFAULT  # для совместимости со старым кодом

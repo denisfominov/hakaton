@@ -13,7 +13,8 @@ import re
 
 from . import nlp
 
-OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rate_hold", "rate_up"), ("rub_strong", "rub_weak"),
+# «ставку сохранили, риторика жёстче» (hold + up) противоречием не считаем ни в новости, ни против банка
+OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rub_strong", "rub_weak"),
             ("price_up", "price_down"), ("demand_up", "demand_down")]
 # внутри одной новости противоречием считаем только ставку и курс: рост и снижение цен или спроса в одном тексте
 # обычно относятся к разным товарам. «Сохранили ставку, риторика жёстче» (hold + up) — не противоречие
@@ -162,9 +163,10 @@ def consistency(r, bank_hits):
             continue
         seen.add(h["id"])
         ev_dir = ", ".join(SIGNAL_LABELS[e] for e in ev_signals if e in SIGNAL_LABELS)
-        issues.append({"type": "bank", "text": f"Материал банка «{h['title']}» (стр. {h['page']}) говорит о "
-                       f"«{SIGNAL_LABELS.get(s, s)}», а новость — о «{ev_dir}». Если материал — прогноз, он относится к "
-                       "другому сроку или не оправдался: проверьте дату материала.", "sources": [f"bank:{h['id']}"]})
+        dated = f" от {h['date']}" if h.get("date") else ""
+        issues.append({"type": "bank", "text": f"Материал банка «{h['title']}»{dated} (стр. {h['page']}) говорит о "
+                       f"«{SIGNAL_LABELS.get(s, s)}», а новость — о «{ev_dir}». Если материал — более ранний прогноз, "
+                       "он относится к другому сроку или не оправдался: сверьте даты.", "sources": [f"bank:{h['id']}"]})
     fb = r.get("feedback") or {}
     if fb.get("relevant") == 0 and r["score"]["priority"] >= 50:
         issues.append({"type": "feedback", "text": "Вы отметили событие как не относящееся к компании, а правила считают "
