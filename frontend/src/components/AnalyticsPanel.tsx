@@ -212,11 +212,12 @@ export default function AnalyticsPanel({ onClose }: { onClose: () => void }) {
         </Layer>
 
         <Layer icon={Bot} title="3. LLM — по кнопке, для текста разбора"
-          state={status?.llm.enabled ? `Подключена (${status.llm.model})` : "Не подключена"}
-          tone={status?.llm.enabled ? "bg-emerald-50 text-emerald-700" : "bg-ink-100 text-ink-500"}>
+          state={!status ? "…" : status.llm.state === "gateway" ? `${status.llm.label} (${status.llm.model})` : status.llm.label}
+          tone={status?.llm.state === "gateway" ? "bg-emerald-50 text-emerald-700"
+            : status?.llm.state === "budget" || status?.llm.state === "mock" ? "bg-amber-50 text-amber-800" : "bg-ink-100 text-ink-500"}>
           <p>Языковая модель (только разрешённые кейсом: Qwen3.6, GLM-5.3, Gemma 4 и др. — через шлюз организаторов) переписывает разбор понятным языком по структурированной схеме, а факты
             сверяются с текстом источника. Баллы и ранжирование она не меняет. Вызывается вручную на странице события,
-            без ключа сервис полностью работает на слоях 1–2.</p>
+            без языковой модели сервис полностью работает на слоях 1–2.</p>
         </Layer>
       </div>
       <p className="mt-4 text-xs text-ink-400">

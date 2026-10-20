@@ -126,6 +126,14 @@ def gateway_exhausted(conn, now=None):
                         (start, end, GATEWAY_EXHAUSTED)).fetchone() is not None
 
 
+def exhausted(conn, now=None):
+    """Дневной лимит уже исчерпан: шлюз отказал по бюджету, потрачен лимит в рублях или в токенах."""
+    if gateway_exhausted(conn, now):
+        return True
+    rub, tokens = spent_today(conn, now)
+    return rub >= daily_limit() or bool(config.LLM_DAILY_TOKEN_LIMIT and tokens >= config.LLM_DAILY_TOKEN_LIMIT)
+
+
 def check(conn, model, prompt_text, max_tokens):
     """Хватит ли остатка дня на худший случай вызова. Иначе — BudgetExceeded (вызов не делается)."""
     if conn is None:

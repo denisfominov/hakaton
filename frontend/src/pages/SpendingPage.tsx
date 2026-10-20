@@ -6,9 +6,9 @@ import { useLoad } from "../context";
 const rub = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 const num = (v: number) => v.toLocaleString("ru-RU");
 const PROVIDER: Record<string, string> = {
-  off: "LLM выключена — работают правила и свои ML-модели",
-  mock: "мок-режим шлюза: ответы без модели и без сети",
-  gateway: "шлюз организаторов",
+  off: "языковая модель выключена — работают правила и свои ML-модели",
+  mock: "тестовый режим (ответы-заглушки): без модели и без сети",
+  gateway: "модель подключена (шлюз организаторов)",
 };
 
 // расход LLM: дневной лимит кейса (500 ₽), токены и стоимость по моделям, маршруты моделей, версии промптов
@@ -32,9 +32,14 @@ export default function SpendingPage() {
 
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="rounded-md bg-ink-100 px-2 py-1 text-ink-700">Режим: {PROVIDER[data.provider] || data.provider}</span>
+        {data.state === "budget" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-amber-800">
+            <AlertTriangle size={12} /> {data.label}
+          </span>
+        )}
         {!data.verified && (
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-amber-800">
-            <AlertTriangle size={12} /> Реальные вызовы шлюза не проверялись: ключа пока нет
+            <AlertTriangle size={12} /> Реальные вызовы шлюза не проверялись
           </span>
         )}
         {data.prices_assumed && <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-800">Цены моделей — допущение (LLM_PRICE_*)</span>}

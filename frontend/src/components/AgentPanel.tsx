@@ -172,7 +172,8 @@ function Features({ r }: { r: AgentResult }) {
 }
 
 // «Инсайт для руководителя»: агент сам планирует шаги, вызывает инструменты и отвечает на 6 вопросов кейса
-export default function AgentPanel({ profileId, eventId, llmEnabled }: { profileId: string; eventId: string; llmEnabled: boolean }) {
+export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
+  { profileId: string; eventId: string; llmEnabled: boolean; llmLabel: string }) {
   const [run, setRun] = useState<AgentRun | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +218,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
           <div className="text-sm font-semibold">Инсайт для руководителя</div>
           <div className="text-xs text-ink-500">
             {run
-              ? `Агент: ${tools} вызовов инструментов, ${r!.mode === "llm" ? `модели ${(r!.llm?.models || [r!.model]).join(", ")}${r!.llm?.mock ? " (мок)" : ""}` : "без LLM, на правилах и поиске"}`
+              ? `Агент: ${tools} вызовов инструментов, ${r!.mode === "llm" ? `модели ${(r!.llm?.models || [r!.model]).join(", ")}${r!.llm?.mock ? " (тестовый режим)" : ""}` : "без LLM, на правилах и поиске"}`
                 + (r!.from_cache ? " · ответ из кэша" : run.cached ? " · сохранённый запуск" : "")
               : "Агент планирует, какие данные нужны, вызывает инструменты, проверяет полноту и отвечает на 6 вопросов"}
           </div>
@@ -240,30 +241,29 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
           <span>
             <b>Ответ из кэша</b>, получен ранее моделью {r.from_cache.model || "—"}
             {r.from_cache.obtained_at ? `, ${new Date(r.from_cache.obtained_at).toLocaleDateString("ru-RU")}` : ""}
-            {r.from_cache.prompts.length ? ` (промпты ${r.from_cache.prompts.join(", ")})` : ""}. Языковая модель сейчас
-            не подключена: перезапуск и новые события разбираются правилами и своими ML-моделями.
+            {r.from_cache.prompts.length ? ` (промпты ${r.from_cache.prompts.join(", ")})` : ""}. Сейчас: {llmLabel.toLowerCase()} —
+            перезапуск и новые события разбираются правилами и своими ML-моделями.
           </span>
         </div>
       )}
       {r && r.mode === "rules" && !r.llm && !r.from_cache && (
         <div className="flex gap-2 border-b border-ink-100 bg-ink-50 px-5 py-2 text-xs text-ink-600">
           <Info size={14} className="mt-0.5 shrink-0" />
-          Языковая модель не подключена (нет ключа шлюза): разбор собран правилами, своими ML-моделями и поиском по
-          источникам — это не ответ LLM.
+          {llmLabel}: разбор собран правилами, своими ML-моделями и поиском по источникам — это не ответ LLM.
         </div>
       )}
       {r?.llm?.degraded && (
         <div className="flex gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-900">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           {r.llm.degraded.reason === "budget"
-            ? "Дневной лимит бюджета LLM исчерпан — ответ собран правилами и своими моделями без языковой модели."
+            ? "Дневной лимит исчерпан: ответы из правил и кэша. Этот разбор собран правилами и своими моделями."
             : "Модели недоступны (ошибка или таймаут у основной и запасной) — ответ собран правилами."}
         </div>
       )}
       {r?.llm && !r.llm.degraded && (r.llm.mock || r.llm.cached) && (
         <div className="flex gap-2 border-b border-ink-100 bg-ink-50 px-5 py-2 text-xs text-ink-600">
           <Info size={14} className="mt-0.5 shrink-0" />
-          {r.llm.mock ? "Мок-режим шлюза: формулировки построены из собранных данных без языковой модели (ключа шлюза пока нет). " : ""}
+          {r.llm.mock ? "Тестовый режим (ответы-заглушки): формулировки построены из собранных данных без настоящей языковой модели. " : ""}
           {r.llm.cached ? "Ответ модели взят из кэша — бюджет не тратился." : ""}
         </div>
       )}
@@ -278,7 +278,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
             </div>
             {r.ai_conclusion && (
               <p className="mt-1 text-xs text-ink-500">
-                {r.ai_conclusion.model ? `Сформулировала модель ${r.ai_conclusion.model}${r.llm?.mock ? " (мок)" : ""}, промпт ${r.ai_conclusion.prompt}` : `Без языковой модели: ${r.ai_conclusion.engine}`}
+                {r.ai_conclusion.model ? `Сформулировала модель ${r.ai_conclusion.model}${r.llm?.mock ? " (тестовый режим)" : ""}, промпт ${r.ai_conclusion.prompt}` : `Без языковой модели: ${r.ai_conclusion.engine}`}
               </p>
             )}
             {r.question && <p className="mt-1 text-xs text-ink-500">Вопрос: {r.question}</p>}

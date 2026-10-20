@@ -77,11 +77,13 @@ function EngineBadge() {
   if (!status) return null;
   const parts = ["Правила"];
   if (status.model?.active) parts.push("своя модель");
-  if (status.llm.enabled) parts.push("LLM");
+  if (status.llm.state === "gateway") parts.push("LLM");
+  if (status.llm.state === "mock") parts.push("LLM в тестовом режиме");
   const text = parts.length > 1 ? `Аналитика: ${parts.join(" + ")}` : "Аналитика: правила";
-  const tip = status.model?.active
+  const tip = (status.model?.active
     ? `Своя модель обучена на ${status.model.labels} оценках. Нажмите, чтобы посмотреть подробности`
-    : `Своя модель копит оценки (${status.model?.labels ?? 0} из ${status.model?.min_labels ?? 6}). Нажмите, чтобы узнать, как устроена аналитика`;
+    : `Своя модель копит оценки (${status.model?.labels ?? 0} из ${status.model?.min_labels ?? 6}). Нажмите, чтобы узнать, как устроена аналитика`)
+    + `. ${status.llm.label}`;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} title={tip}
