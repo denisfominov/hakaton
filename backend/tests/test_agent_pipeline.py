@@ -81,7 +81,7 @@ def test_ai_conclusion_records_model_and_prompt(conn, profiles, bank_docs, monke
     ai = res["result"]["ai_conclusion"]
     from app import prompts
 
-    assert ai["engine"] == "llm" and ai["model"] == "GLM-5.3-Flash" and ai["prompt"] == prompts.get("agent_answer").id
+    assert ai["engine"] == "llm" and ai["model"] == "z-ai/glm-5.3-flash" and ai["prompt"] == prompts.get("agent_answer").id
 
 
 def test_untrusted_text_is_tagged_and_instructions_dropped():

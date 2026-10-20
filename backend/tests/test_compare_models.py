@@ -26,10 +26,10 @@ def fake_gateway(url, json=None, headers=None, timeout=None):  # noqa: A002
                     '"args": {"query": "ключевая ставка"}, "why": "банк"}]}')
     bank_id = next((ln.split("]")[0][1:] for ln in json["messages"][1]["content"].splitlines() if ln.startswith("[bank:")),
                    "bank:none")
-    if model == "Gemma 4 26B A4B":
+    if model == "google/gemma-4-26b-a4b-it":
         return Resp("не JSON, а рассуждение")
     risks = ["Рост ставки удорожает обслуживание кредитов компании"]
-    if model == "Qwen3.6 35B A3B":
+    if model == "qwen/qwen3.6-35b-a3b":
         risks.append("Марсианские колонии сократят спрос на космический туризм")  # без опоры на данные
     return Resp(__import__("json").dumps({"summary": "Ставка удорожает долг", "risks": risks,
                                           "bank_view": [{"text": "Банк ждёт высокую ставку", "source": bank_id}]},
@@ -56,7 +56,7 @@ def test_models_are_measured_and_ranked(conn, profiles, gateway, tmp_path):
     per_model = {}
     for m in ["GLM-5.3-Flash", "Qwen3.6 35B A3B", "Gemma 4 26B A4B"]:
         res = agent.run(conn, profiles["uralmet"], "demo-03", models={"fast": m, "reasoning": m}, save=False)
-        assert res["usage"]["calls"] >= 1 and res["result"]["model"] in (m, None)
+        assert res["usage"]["calls"] >= 1 and res["result"]["model"] in (llm_client.canonical(m), None)
         per_model[m] = [compare_models.measure(res)]
     res = agent.run(conn, profiles["uralmet"], "demo-03", use_llm=False, save=False)
     per_model["rules"] = [compare_models.measure(res)]

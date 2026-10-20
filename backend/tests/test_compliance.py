@@ -28,5 +28,9 @@ def test_no_forbidden_imports_in_code():
 def test_allow_list_is_exactly_the_case_list():
     from app import llm_client
 
-    assert set(llm_client.ALLOWED_MODELS) == {"Gemma 4 26B A4B", "GLM-5.3-Flash", "Qwen3.6 35B A3B",
-                                              "DeepSeek-V4.1-Flash", "Qwen3-VL-30B-A3B-Instruct", "Kimi-K2.6"}
+    assert set(llm_client.ALLOWED_MODELS) == {"google/gemma-4-26b-a4b-it", "z-ai/glm-5.3-flash",
+                                              "qwen/qwen3.6-35b-a3b", "deepseek/deepseek-v4.1-flash",
+                                              "qwen/qwen3-vl-30b-a3b-instruct", "moonshotai/kimi-k2.6"}
+    assert {v["label"] for v in llm_client.ALLOWED_MODELS.values()} == {
+        "Gemma 4 26B A4B", "GLM-5.3-Flash", "Qwen3.6 35B A3B", "DeepSeek-V4.1-Flash", "Qwen3-VL-30B-A3B-Instruct",
+        "Kimi-K2.6"}, "названия кейса остаются подписями и псевдонимами"

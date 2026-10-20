@@ -12,8 +12,8 @@
 ML-модели + смысловая близость e5), агент с ответом на 6 вопросов кейса и трассировкой, поиск по аналитике банка
 (гибрид e5 + TF-IDF со ссылками на страницы), живые RSS (18 изданий, проверены 2026-10-20), Docker.
 
-**Не проверено:** реальные вызовы языковых моделей — ключа шлюза у команды ещё нет; LLM-слой проверен в мок-режиме
-и тестами с подменой HTTP. Кэш ответов моделей для показа без ключа пуст (`backend/data/demo_cache`).
+**Шлюз организаторов** проверен smoke-тестом: все шесть моделей отвечают ([docs/GATEWAY_QUESTIONS.md](docs/GATEWAY_QUESTIONS.md)).
+**Не проверено:** качество ответов моделей на реальных промптах (сравнение моделей — задача C6). Кэш ответов моделей для показа без ключа пуст (`backend/data/demo_cache`).
 Свои ML-модели — черновые (нет ручной разметки). Сервис нигде не развёрнут (подготовка — [docs/DEPLOY.md](docs/DEPLOY.md)).
 Открытые вопросы и принятые без ответа решения — [docs/QUESTIONS.md](docs/QUESTIONS.md),
 разбор пробелов по критериям кейса — [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md).
@@ -106,7 +106,7 @@ docker compose up --build
 
 ```bash
 cp .env.example .env
-# в .env: LLM_PROVIDER=gateway, LLM_BASE_URL=<адрес из письма>, LLM_API_KEY=<ключ>, DAILY_BUDGET_RUB=100
+# в .env: LLM_PROVIDER=gateway, LLM_BASE_URL=https://changellenge.up.railway.app/v1, LLM_API_KEY=<ключ>, DAILY_BUDGET_RUB=100
 docker compose up --build
 ```
 
@@ -172,7 +172,7 @@ python -m pytest -q
 | `LLM_PROVIDER` | `off` | `off` — без LLM; `mock` — мок-режим шлюза без сети; `gateway` — шлюз организаторов |
 | `LLM_BASE_URL`, `LLM_API_KEY` | — | адрес и ключ шлюза (ключ — только в `.env`) |
 | `LLM_API_FORMAT`, `LLM_AUTH_HEADER`, `LLM_AUTH_SCHEME` | `chat_completions`, `Authorization`, `Bearer` | формат запроса (допущение) |
-| `LLM_NAME_<МОДЕЛЬ>` | каноническое имя | имя модели у шлюза; должно узнаваться как та же разрешённая модель |
+| `LLM_NAME_<МОДЕЛЬ>` | точное имя шлюза | переопределение имени модели у шлюза (`google/gemma-4-26b-a4b-it` и т.д.); должно узнаваться как та же разрешённая модель |
 | `LLM_ROUTE_<ЗАДАЧА>` | см. «Расход» | основная и запасная модель для типа задачи |
 | `LLM_MODEL_FAST`, `LLM_MODEL_REASONING`, `LLM_MODEL_DEFAULT`, `LLM_MODEL_VISION` | Gemma 4, GLM-5.3-Flash, Qwen3.6, Qwen3-VL | основная модель плана, ответа, общих задач, картинок |
 | `DAILY_BUDGET_RUB` | `100` | дневной лимит в ₽ на этот запуск (бюджет команды общий: 500 ₽/день; жёстко не выше 499); старое имя `LLM_DAILY_BUDGET_RUB` тоже читается |

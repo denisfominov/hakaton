@@ -5,13 +5,15 @@
 фрагменты банка), поэтому проверки обоснованности агента его пропускают. Качество текста — не как у модели:
 в интерфейсе и журнале такой ответ помечен «мок».
 
-Сбой для проверки запасной модели: LLM_MOCK_FAIL="GLM-5.3-Flash:429;Gemma 4 26B A4B:timeout".
+Сбой для проверки запасной модели: LLM_MOCK_FAIL="GLM-5.3-Flash:429;Gemma 4 26B A4B:timeout" (точные имена
+шлюза и названия кейса равноценны); «:budget» — ответ шлюза при исчерпанном лимите («Budget has been exceeded»).
 """
 import json
 import os
 import re
 
 from .llm_budget import estimate_tokens
+from .llm_router import resolve
 
 
 class MockTimeout(Exception):
@@ -80,9 +82,11 @@ def respond(model, messages, purpose="", max_tokens=1500):
     """Ответ в формате Chat Completions, как его вернул бы шлюз."""
     for rule in filter(None, (os.getenv("LLM_MOCK_FAIL") or "").split(";")):
         name, _, kind = rule.rpartition(":")
-        if name.strip() == model:
+        if resolve(name.strip()) == resolve(model):
             if kind == "timeout":
                 raise MockTimeout(model)
+            if kind == "budget":
+                return {"_status": 400, "error": {"message": "Budget has been exceeded", "type": "budget_exceeded"}}
             return {"_status": int(kind) if kind.isdigit() else 500}
     system = next((m["content"] for m in messages if m["role"] == "system" and isinstance(m["content"], str)), "")
     user = next((m["content"] for m in messages if m["role"] == "user" and isinstance(m["content"], str)), "")

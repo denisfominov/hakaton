@@ -1,6 +1,7 @@
 """Роутер моделей: тип задачи -> основная и запасная модель из списка кейса (приложение 3).
 
 Назначение моделей — по описанию в кейсе:
+Имена — точные идентификаторы шлюза (google/gemma-4-26b-a4b-it и т.д.); названия из кейса — псевдонимы (LABELS).
 - Gemma 4 26B A4B — классификация, извлечение информации, простые преобразования: план агента, классификация
   события, извлечение фактов, нормализация;
 - GLM-5.3-Flash — задачи повышенной сложности, анализ и рассуждения: ответ агента на 6 вопросов, разбор события;
@@ -8,12 +9,41 @@
 - Qwen3-VL-30B-A3B-Instruct — изображения: страницы-картинки аналитики банка;
 - Qwen3.6 35B A3B и Kimi-K2.6 — запасные (универсальная и текстовая).
 Запасная модель берётся при ошибке, таймауте или лимите основной. Маршрут можно переопределить в .env:
-LLM_ROUTE_ANALYSIS="GLM-5.3-Flash,Qwen3.6 35B A3B" — имена всё равно проверяются по списку кейса.
+LLM_ROUTE_ANALYSIS="z-ai/glm-5.3-flash,qwen/qwen3.6-35b-a3b" (прежние названия тоже узнаются) — имена всё равно проверяются по списку кейса.
 """
 import os
+import re
 
-GEMMA, GLM, QWEN, DEEPSEEK, QWEN_VL, KIMI = ("Gemma 4 26B A4B", "GLM-5.3-Flash", "Qwen3.6 35B A3B",
-                                            "DeepSeek-V4.1-Flash", "Qwen3-VL-30B-A3B-Instruct", "Kimi-K2.6")
+# точные имена моделей у шлюза организаторов (ответ организаторов) — они же канонические имена в решении
+GEMMA, GLM, QWEN, DEEPSEEK, QWEN_VL, KIMI = ("google/gemma-4-26b-a4b-it", "z-ai/glm-5.3-flash", "qwen/qwen3.6-35b-a3b",
+                                            "deepseek/deepseek-v4.1-flash", "qwen/qwen3-vl-30b-a3b-instruct",
+                                            "moonshotai/kimi-k2.6")
+# названия из приложения 3 кейса: подписи в интерфейсе и прежние имена (псевдонимы в .env, журнале, кэше)
+LABELS = {GEMMA: "Gemma 4 26B A4B", GLM: "GLM-5.3-Flash", QWEN: "Qwen3.6 35B A3B", DEEPSEEK: "DeepSeek-V4.1-Flash",
+          QWEN_VL: "Qwen3-VL-30B-A3B-Instruct", KIMI: "Kimi-K2.6"}
+
+
+def compact(name):
+    """«Qwen/Qwen3.6-35B-A3B», «qwen3.6:35b-a3b», «Qwen3.6 35B A3B» -> одно и то же."""
+    name = (name or "").lower().split("/")[-1]
+    return re.sub(r"[^a-z0-9.]", "", name)
+
+
+# точное имя, прежнее название кейса и их сокращённые формы -> точное имя у шлюза
+_ALIASES = {}
+for _exact, _label in LABELS.items():
+    _ALIASES.update({compact(_exact): _exact, compact(_label): _exact})
+
+
+def resolve(name):
+    """Точное имя разрешённой модели у шлюза или None, если модель не из списка кейса."""
+    return _ALIASES.get(compact(name))
+
+
+def env_names(prefix, model):
+    """Имена переменных .env для модели: по точному имени и по прежнему названию (LLM_PRICE_GLM_5_3_FLASH)."""
+    norm = lambda s: prefix + re.sub(r"[^A-Z0-9]+", "_", s.upper()).strip("_")  # noqa: E731
+    return [norm(model)] + ([norm(LABELS[model])] if model in LABELS else [])
 
 TASKS = {
     "classify": ("классификация события", [GEMMA, QWEN]),
@@ -40,13 +70,14 @@ def route(task):
     task = task_of(task)
     override = os.getenv(f"LLM_ROUTE_{task.upper()}")
     if override:
-        return [m.strip() for m in override.split(",") if m.strip()]
+        return [resolve(m) or m.strip() for m in override.split(",") if m.strip()]
     from . import config
 
     models = list(TASKS[task][1])
     # прежние настройки моделей по ролям остаются в силе как основная модель задачи
     legacy = {"plan": config.LLM_MODEL_FAST, "analysis": config.LLM_MODEL_REASONING,
               "general": config.LLM_MODEL_DEFAULT, "vision": config.LLM_MODEL_VISION}.get(task)
+    legacy = (resolve(legacy) or legacy) if legacy else legacy  # имя не из списка остаётся как есть — клиент его отклонит
     if legacy and legacy not in models:
         models = [legacy] + models
     elif legacy:
