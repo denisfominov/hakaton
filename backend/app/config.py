@@ -41,6 +41,10 @@ BACKGROUND_JOBS = os.getenv("ALPHA_BACKGROUND", "1") != "0"
 # DaData: необязательный ключ для поиска компании по ИНН с ОКВЭД (без него — публичный поиск ЕГРЮЛ)
 DADATA_API_KEY = os.getenv("DADATA_API_KEY", "")
 
+# собранный фронтенд (npm run build): если папка задана и существует, backend отдаёт его на «/» — так работает
+# Docker-образ, где всё в одном контейнере. В разработке пусто: фронтенд отдаёт Vite на :5173
+FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", "")) if os.getenv("FRONTEND_DIST") else None
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 

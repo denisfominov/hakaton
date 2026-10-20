@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 import httpx
 
@@ -813,3 +814,23 @@ def action_history(action_id: int):
         _action(conn, action_id)
         rows = conn.execute("SELECT * FROM action_history WHERE action_id = ? ORDER BY id DESC", (action_id,))
         return [{**dict(r), "what_label": FIELD_NAMES.get(r["what"], "Создание")} for r in rows]
+
+
+# ---------- собранный фронтенд (Docker) ----------
+# Регистрируется последним: все /api/* выше. Остальные пути — файлы сборки или index.html (маршруты React).
+
+def mount_frontend(application, dist):
+    dist = dist.resolve()
+
+    @application.get("/{full_path:path}", include_in_schema=False)
+    def frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "Нет такого метода API")
+        target = (dist / full_path).resolve()
+        if full_path and target.is_file() and dist in target.parents:
+            return FileResponse(target)
+        return FileResponse(dist / "index.html")
+
+
+if config.FRONTEND_DIST and (config.FRONTEND_DIST / "index.html").exists():
+    mount_frontend(app, config.FRONTEND_DIST)
