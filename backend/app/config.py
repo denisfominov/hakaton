@@ -40,7 +40,7 @@ LLM_BACKOFF = float(os.getenv("LLM_BACKOFF") or "1.0")
 LLM_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS") or "24000")
 LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS") or "2000")
 # бюджет: дневной лимит в ₽ (жёстко не выше 499 — лимит кейса 500 ₽) и в токенах; цены — допущение, ₽ за 1 млн токенов
-# Дневной бюджет LLM в ₽ — на всю команду (один общий ключ, 500 ₽/день, сброс в 00:00 МСК, остаток не переносится).
+# Дневной бюджет LLM в ₽ — на всю команду (один общий ключ, 500 ₽/день, сброс в 03:00 МСК, остаток не переносится).
 # По умолчанию консервативно 100 ₽: ключ общий, бюджет делят все разработчики. LLM_DAILY_BUDGET_RUB — старое имя.
 def daily_budget_from_env():
     return float(os.getenv("DAILY_BUDGET_RUB") or os.getenv("LLM_DAILY_BUDGET_RUB") or "100")

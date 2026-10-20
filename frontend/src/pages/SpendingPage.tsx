@@ -25,7 +25,7 @@ export default function SpendingPage() {
         <h1 className="text-2xl font-semibold">Расход</h1>
         <p className="mt-1 text-sm text-ink-500">
           Токены и стоимость вызовов LLM за день. Лимит кейса — 500 ₽ в день на команду (один общий ключ), сброс в
-          00:00 по Москве, остаток не переносится. Бюджет общий для всех разработчиков, поэтому сервис по умолчанию
+          03:00 по Москве, остаток не переносится. Бюджет общий для всех разработчиков, поэтому сервис по умолчанию
           тратит не больше 100 ₽ в день (DAILY_BUDGET_RUB) и при исчерпании отвечает правилами или из кэша с пометкой.
         </p>
       </div>
@@ -43,7 +43,7 @@ export default function SpendingPage() {
       <section className="card p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <div className="text-xs text-ink-500">Сегодня по Москве, {data.today} · сброс в 00:00 МСК</div>
+            <div className="text-xs text-ink-500">Бюджетный день {data.today} · сброс в {data.resets_at.slice(11, 16)} МСК</div>
             <div className="text-2xl font-semibold tabular-nums">{rub(data.spent_rub)} <span className="text-base font-normal text-ink-500">из {rub(data.limit_rub)}</span></div>
           </div>
           <div className="text-right text-sm text-ink-600">
