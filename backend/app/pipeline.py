@@ -144,6 +144,7 @@ def ingest_dataset(conn):
     refresh_nlp(conn)
     recluster(conn)
     log_fetch(conn, f"dataset:{config.DATASET}", True, added)
+    conn.commit()  # сначала зафиксировать: фоновый пересчёт читает базу своим соединением
     bump_version()
     return added
 
@@ -215,6 +216,9 @@ def ingest_live(conn):
                    1 for r in report if not r.get("ok") and not r.get("skipped"))}
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_live', ?)", (dumps(summary),))
     recluster(conn)
+    # сначала зафиксировать, потом сбросить отпечаток: иначе фоновый поток успевает посчитать анализ по старым
+    # данным, запоминает старый отпечаток — и новые новости не видны в ленте до перезапуска
+    conn.commit()
     bump_version()
     return report
 
