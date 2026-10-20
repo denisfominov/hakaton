@@ -559,7 +559,7 @@ export default function EventPage() {
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <AgentPanel profileId={profileId} eventId={ev.id} llmEnabled={ev.llm.enabled} />
+          <AgentPanel profileId={profileId} eventId={ev.id} llmEnabled={ev.llm.enabled} llmLabel={ev.llm.label} />
           <div className="card overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-ink-100 bg-ink-50/60 px-5 py-3">
               <Bot size={16} className="text-ink-500" />
@@ -575,14 +575,18 @@ export default function EventPage() {
                   {showRules ? "Показать анализ LLM" : "Показать вариант правил"}
                 </button>
               )}
-              <button className="btn-secondary !py-1.5 text-xs" onClick={runLlm} disabled={!ev.llm.enabled || llmBusy}
-                title={ev.llm.enabled ? "Запросить разбор у языковой модели" : "LLM не подключена: укажите LLM_PROVIDER и LLM_BASE_URL в .env (только разрешённые модели)"}>
+              <button className="btn-secondary !py-1.5 text-xs" onClick={runLlm}
+                disabled={!ev.llm.enabled || ev.llm.state === "off" || ev.llm.state === "budget" || llmBusy}
+                title={ev.llm.state === "gateway" || ev.llm.state === "mock" ? `Запросить разбор у языковой модели · ${ev.llm.label}` : ev.llm.label}>
                 {llmBusy ? "Анализируем…" : ev.llm.cached ? "Обновить анализ LLM" : "Углублённый анализ LLM"}
               </button>
             </div>
-            {!ev.llm.enabled && (
+            {ev.llm.state !== "gateway" && (
               <div className="flex gap-2 border-b border-ink-100 px-5 py-2 text-xs text-ink-500">
-                <Info size={14} className="shrink-0" /> LLM не подключён — работает базовый движок правил. Это не имитация LLM: выводы собраны из шаблонов по найденным связям с профилем.
+                <Info size={14} className="shrink-0" />
+                {ev.llm.state === "mock"
+                  ? `${ev.llm.label}: «Углублённый анализ» собирается из данных без настоящей языковой модели.`
+                  : `${ev.llm.label} — работает базовый движок правил. Это не имитация LLM: выводы собраны из шаблонов по найденным связям с профилем.`}
               </div>
             )}
             {ev.llm.stale && (

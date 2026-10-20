@@ -265,3 +265,42 @@ def test_cost_from_gateway_usage(gateway, monkeypatch):
     monkeypatch.setattr(llm_client.httpx, "post", lambda *a, **k: Resp(200, OK))
     _text, usage = llm_client.chat([{"role": "user", "content": "x"}], task="classify")
     assert usage["cost_rub"] == llm_budget.cost(GEMMA, 10, 5)
+
+
+def test_ui_state_labels_match_real_mode(client, monkeypatch):
+    """Подпись в интерфейсе — по фактическому режиму; «нет ключа» не пишем, когда ключ задан."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    llm_client.init(conn)
+
+    def state():
+        api = client.get("/api/status").json()["llm"]
+        text = f"{api['label']} {api['note'] or ''}".lower()
+        assert "нет ключа" not in text and "ключа шлюза" not in text and "без ключа" not in text
+        return llm_client.ui_state(conn), api
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "off")
+    s, api = state()
+    assert s["label"] == api["label"] == "Языковая модель выключена" and api["state"] == "off"
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "mock")
+    s, api = state()
+    assert s["label"] == api["label"] == "Тестовый режим (ответы-заглушки)" and api["state"] == "mock"
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gateway")
+    monkeypatch.setattr(config, "LLM_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setattr(config, "LLM_API_KEY", SECRET)
+    s, api = state()
+    assert s == {"state": "gateway", "label": "Модель подключена"}
+    # в общей базе тестов шлюз мог уже «исчерпать» лимит в соседнем тесте — тогда честно «лимит исчерпан»
+    assert api["state"] in ("gateway", "budget") and api["label"] == llm_client.STATE_LABELS[api["state"]]
+
+    llm_client._log_call(conn, GLM, "analysis", {}, 1, False, llm_budget.GATEWAY_EXHAUSTED, None)
+    assert llm_client.ui_state(conn) == {"state": "budget", "label": "Дневной лимит исчерпан: ответы из правил и кэша"}
+    conn2 = sqlite3.connect(":memory:")
+    conn2.row_factory = sqlite3.Row
+    llm_client.init(conn2)
+    monkeypatch.setattr(config, "DAILY_BUDGET_RUB", 0.0)
+    assert llm_client.ui_state(conn2)["state"] == "budget", "свой дневной лимит в рублях тоже считается"

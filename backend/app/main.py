@@ -39,10 +39,8 @@ def preset_profiles():
 
 
 def presets_wanted():
-    """Встроенные публичные компании нужны только тестовому набору или когда данных кейса нет (config.PRESET_PROFILES)."""
-    if config.PRESET_PROFILES in ("1", "0"):
-        return config.PRESET_PROFILES == "1"
-    return config.DATASET == "synthetic" or clients.source_kind() is None
+    """Встроенные публичные компании — только по явному PRESET_PROFILES=1 (тесты); по умолчанию — клиенты кейса."""
+    return config.PRESET_PROFILES in ("1", "true", "yes", "on")
 
 
 def seed_demo_clients(conn):
@@ -269,6 +267,7 @@ def status():
             "SELECT profile_id, computed_at, n, seconds FROM analysis_snapshots ORDER BY profile_id")]
         live_outlets = conn.execute("SELECT COUNT(DISTINCT source) AS n FROM events "
                                     "WHERE source_type IN ('rss', 'alfa')").fetchone()["n"]
+        llm_state = llm_client.ui_state(conn)
     model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
                    "labels": ms["labels"]["relevance"], "min_labels": ms["min_labels"]}
     curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
@@ -290,8 +289,9 @@ def status():
         "llm": {
             "enabled": config.llm_enabled(),
             "model": llm_client.model_for("reasoning") if config.llm_enabled() else None,
-            "note": None if config.llm_enabled() else
-            "LLM не подключена: аналитика строится правилами. Задайте LLM_PROVIDER и LLM_BASE_URL (разрешённые модели).",
+            **llm_state,
+            "note": None if llm_state["state"] in ("gateway", "mock") else
+            f"{llm_state['label']}: аналитика строится правилами, своими моделями и кэшем ответов.",
         },
         "model": model_short,
         "clients": {"source": clients.source_kind(), "demo": [clients.profile_id(u) for u in clients.demo_client_ids()]
@@ -569,10 +569,11 @@ def event_detail(event_id: str, profile_id: str):
                  "current": x["event"]["id"] == r["event"]["id"]}
                 for x in sorted(members, key=lambda x: x["event"]["published_at"])]}
         reaction = market.event_reaction(conn, [c["id"] for c in r["cluster"]], profile_id)
+        llm_ui = llm_client.ui_state(conn)
 
     ev = r["event"]
     insight = r["insight"]
-    llm_state = {"enabled": config.llm_enabled(), "cached": False, "stale": False}
+    llm_state = {"enabled": config.llm_enabled(), "cached": False, "stale": False, **llm_ui}
     if llm_cached and llm_cached["insight"]:
         llm_state.update(cached=True, stale=llm_cached["stale"], created_at=llm_cached["created_at"])
         if not llm_cached["stale"]:
@@ -753,8 +754,9 @@ def llm_usage(days: int = Query(14, ge=1, le=90)):
     """Страница «Расход»: токены и стоимость по дням и моделям, лимит, маршруты моделей, версии промптов."""
     with get_db() as conn:
         u = llm_budget.usage(conn, days)
+        ui = llm_client.ui_state(conn)
     st = llm_client.status()
-    return {**u, "provider": st["provider"], "enabled": st["enabled"], "mock": st["mock"], "verified": st["verified"],
+    return {**u, **ui, "provider": st["provider"], "enabled": st["enabled"], "mock": st["mock"], "verified": st["verified"],
             "key": st["key"], "routes": llm_router.table(), "prompts": prompts.catalog(),
             "prices": {m: dict(zip(("input", "output"), llm_budget.prices(m))) for m in llm_client.ALLOWED_MODELS}}
 

@@ -329,7 +329,7 @@ export interface EventDetail extends EventCard {
   score: Score;
   insight: Insight;
   rules_insight: Insight;
-  llm: { enabled: boolean; cached: boolean; stale: boolean; created_at?: string };
+  llm: { enabled: boolean; cached: boolean; stale: boolean; created_at?: string } & LlmUiState;
   linked_actions: number;
   linked_action_titles: string[];
   related: { id: string; title: string; source: string; url: string | null; published_at: string }[];
@@ -416,7 +416,7 @@ export interface Status {
   dataset: "real" | "synthetic";
   curated_period: { from: string; to: string } | null;
   events: { curated: number; demo: number; live: number; total: number };
-  llm: { enabled: boolean; model: string | null; note: string | null };
+  llm: { enabled: boolean; model: string | null; note: string | null } & LlmUiState;
   model: { active: boolean; trained: boolean; enabled: boolean; weight: number; labels: number; min_labels: number };
   deleted_presets: { id: string; name: string }[];
   alfa: { configured: boolean; status: string };
@@ -590,6 +590,10 @@ export interface AgentResult {
   } | null;
 }
 
+// состояние языковой модели для подписей: выключена / тестовый режим / подключена / дневной лимит исчерпан
+export type LlmState = "off" | "mock" | "gateway" | "budget";
+export interface LlmUiState { state: LlmState; label: string }
+
 export interface LlmUsage {
   today: string;
   timezone: string;
@@ -605,6 +609,8 @@ export interface LlmUsage {
   mock: boolean;
   verified: boolean;
   key: string;
+  state: LlmState;
+  label: string;
   prices_assumed: boolean;
   by_day: { day: string; rub: number; tokens: number; calls: number; cache_hits: number; errors: number }[];
   by_model: { model: string; rub: number; prompt_tokens: number; completion_tokens: number; calls: number; cache_hits: number; errors: number }[];

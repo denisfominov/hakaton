@@ -1,5 +1,9 @@
 """Ответы организаторов: компании из базы кейса, файл платежей, порог выручки, вход из Альфа-Бизнеса, роли."""
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -39,10 +43,15 @@ def test_company_label_and_stable_ids():
     assert demo and demo == clients.demo_client_ids(), "демо-клиенты детерминированы"
 
 
-def test_public_companies_not_loaded_with_case_data(monkeypatch):
-    monkeypatch.setattr(config, "DATASET", "real")
-    monkeypatch.setattr(config, "PRESET_PROFILES", "auto")
-    assert main.presets_wanted() is False, "Северстали, X5 и других нет в базе кейса — в выбор не попадают"
+def test_public_companies_off_by_default(monkeypatch):
+    env = {k: v for k, v in os.environ.items() if k != "PRESET_PROFILES"}
+    out = subprocess.run([sys.executable, "-c", "from app import config; print(config.PRESET_PROFILES)"],
+                         cwd=Path(__file__).resolve().parent.parent, env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "0", "по умолчанию — только компании кейса"
+    for dataset in ("real", "synthetic"):
+        monkeypatch.setattr(config, "DATASET", dataset)
+        monkeypatch.setattr(config, "PRESET_PROFILES", "0")
+        assert main.presets_wanted() is False, "Северстали, X5 и других нет в базе кейса — в выбор не попадают"
     monkeypatch.setattr(config, "PRESET_PROFILES", "1")
     assert main.presets_wanted() is True
 

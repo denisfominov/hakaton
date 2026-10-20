@@ -131,6 +131,29 @@ def enabled():
     return p == "mock" or (p == "gateway" and bool(config.LLM_BASE_URL))
 
 
+STATE_LABELS = {
+    "off": "Языковая модель выключена",
+    "mock": "Тестовый режим (ответы-заглушки)",
+    "gateway": "Модель подключена",
+    "budget": "Дневной лимит исчерпан: ответы из правил и кэша",
+}
+
+
+def ui_state(conn=None):
+    """Состояние языковой модели для интерфейса: off / mock / gateway / budget и подпись к нему.
+    Шлюз без адреса или ключа — «выключена»: настоящих вызовов не будет."""
+    p = provider()
+    if p == "mock":
+        state = "mock"
+    elif not enabled() or not (config.LLM_API_KEY or (config.LLM_PROVIDER or "").lower() == "local"):
+        state = "off"
+    elif conn is not None and llm_budget.exhausted(conn):
+        state = "budget"
+    else:
+        state = "gateway"
+    return {"state": state, "label": STATE_LABELS[state]}
+
+
 def status():
     p = provider()
     routes = []
