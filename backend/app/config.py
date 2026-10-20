@@ -49,6 +49,9 @@ CLIENT_DATA_DIR = os.getenv("CLIENT_DATA_DIR", "")
 # аналитические материалы Альфа-Банка (PDF/текст) для RAG
 BANK_DOCS_DIR = Path(os.getenv("BANK_DOCS_DIR") or DATA_DIR / "bank")
 
+# свои ML-модели (scripts/train_models.py); не в git — производные от данных кейса
+CASE_MODELS_PATH = Path(os.getenv("CASE_MODELS_PATH") or DATA_DIR / "models" / "case_models.pkl")
+
 # NER natasha (небольшая модель распознавания организаций, не LLM): можно выключить, тогда поиск названий — по корням
 NER_ENABLED = os.getenv("NER_ENABLED", "1") != "0"
 

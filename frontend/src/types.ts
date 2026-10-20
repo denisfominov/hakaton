@@ -299,8 +299,26 @@ export interface Insight {
   confidence: number;
 }
 
+export interface CaseContribution {
+  feature: string;
+  label: string;
+  contribution: number;
+  value: number;
+}
+
+export interface CaseMl {
+  draft: boolean;
+  trained_at: string | null;
+  relevance: { probability: number; model: string; contributions: CaseContribution[] };
+  impact?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
+  urgency?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
+  category?: { label: string; probability: number; model: string };
+  company_features: string[];
+}
+
 export interface EventDetail extends EventCard {
   body: string;
+  case_ml?: CaseMl | null;
   rules_relevance: number;
   verification_detail: VerificationDetail;
   thread_detail: ThreadDetail | null;

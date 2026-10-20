@@ -8,6 +8,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api";
 import AgentPanel from "../components/AgentPanel";
 import ActionForm from "../components/ActionForm";
+import CaseModelPanel from "../components/CaseModelPanel";
 import FeedbackPanel from "../components/FeedbackPanel";
 import type { ActionDraft } from "../components/ActionForm";
 import { DemoBadge, ImpactBadge, LevelBadge, PriorityScore, UrgencyBadge, VerificationBadge } from "../components/Badges";
@@ -597,6 +598,7 @@ export default function EventPage() {
         </div>
         <aside className="space-y-5 lg:self-start">
           <ScorePanel score={ev.score} profileName={profile?.name} />
+          {ev.case_ml && <CaseModelPanel m={ev.case_ml} />}
           {ev.verification_detail && <VerificationPanel v={ev.verification_detail} />}
           <FeedbackPanel ev={ev} />
         </aside>

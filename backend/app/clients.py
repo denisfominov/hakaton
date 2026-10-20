@@ -80,6 +80,21 @@ def _load(path_key):
     return companies, payments, links
 
 
+_pay_index = {}
+
+
+def payment_index(side):
+    """Строки платежей по компании (позиции в таблице): out — по плательщику, in — по получателю. Строится один раз."""
+    companies, payments, _ = load()
+    if payments is None:
+        return {}
+    key = (id(payments), side)
+    if key not in _pay_index:
+        col = "PAYER" if side == "out" else "BENEFICIARY"
+        _pay_index[key] = payments.reset_index(drop=True).groupby(col).indices
+    return _pay_index[key]
+
+
 def load():
     d = data_dir()
     if d is None:

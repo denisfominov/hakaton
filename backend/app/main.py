@@ -549,6 +549,7 @@ def event_detail(event_id: str, profile_id: str):
         "market": reaction,
         "feedback": r["feedback"],
         "ml": r["ml"],
+        "case_ml": r.get("case_ml"),
         "linked_actions": len(linked),
         "linked_action_titles": linked,
         "related": [{"id": c["id"], "title": c["title"], "source": c["source"], "url": c["url"],
@@ -651,6 +652,14 @@ def agent_run(run_id: str):
     if not out:
         raise HTTPException(404, "Запуск агента не найден")
     return out
+
+
+@app.get("/api/ml/status")
+def ml_status():
+    """Свои ML-модели (не LLM): обучены ли, какие выбраны, метрики (черновые, пока нет ручной разметки)."""
+    from . import ml_models
+
+    return ml_models.status()
 
 
 @app.get("/api/llm/usage")

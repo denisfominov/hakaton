@@ -1,5 +1,6 @@
 import json
 import os
+import warnings
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,8 @@ os.environ["LLM_PROVIDER"] = "off"
 os.environ["LLM_BACKOFF"] = "0"  # повторы без пауз
 # аналитика банка — пустая временная папка; тесты RAG кладут туда свои документы
 os.environ["BANK_DOCS_DIR"] = os.path.join(_tmp, "bank")
+# свои ML-модели: тесты не зависят от локально обученных весов; тест модели подставляет свои
+os.environ["CASE_MODELS_PATH"] = os.path.join(_tmp, "models", "case_models.pkl")
 # логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.
 # реальная подборка проверяется отдельно в test_real_dataset.py
 os.environ["DATASET"] = "synthetic"
@@ -23,6 +26,8 @@ os.environ["ALPHA_BACKGROUND"] = "0"
 os.environ["CLIENT_DATA_DIR"] = str(Path(__file__).resolve().parent.parent / "data" / "clients" / "sample")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# шум scipy/sklearn при обучении логистической регрессии — на результат не влияет
+warnings.filterwarnings("ignore", message="Unknown solver options")
 
 from app import config, db, pipeline  # noqa: E402
 

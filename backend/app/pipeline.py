@@ -10,7 +10,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import threading
 import time
 
-from . import analysis, config, dedup, jobs, matching, model, ner, nlp, outlets, scoring, sources, store, threads
+from . import (analysis, company_features, config, dedup, jobs, matching, ml_models, model, ner, nlp, outlets, scoring,
+               sources, store, threads)
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
@@ -333,6 +334,8 @@ def analyze_events(events, profile, ml=None):
     """
     pidx = matching.profile_index(profile)
     sem = semantic_scores(events, profile)
+    # свои ML-модели по данным кейса — только для профилей клиентов кейса и если модели обучены
+    case_f = company_features.features(profile["client_id"]) if profile.get("client_id") and ml_models.available() else None
 
     clusters = {}
     for ev in events:
@@ -349,6 +352,9 @@ def analyze_events(events, profile, ml=None):
         rules_score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources)
         feats = model.features(ev, m, channels, rules_score, pidx)
         extra, adjust, fb, info = model.adjust_score(ml, feats, [x["id"] for x in members], rules_score)
+        case_pred = ml_models.predict(ev, case_f) if case_f else None
+        if case_pred:
+            extra = (extra or []) + [ml_models.relevance_factor(case_pred)]
         score = rules_score
         if extra or adjust:
             score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
@@ -370,6 +376,7 @@ def analyze_events(events, profile, ml=None):
             "insight": insight,
             "verification": verif,
             "fact_status": fact_status(ev, members, verif),
+            "case_ml": case_pred,
         })
 
     results.sort(key=lambda r: -r["score"]["priority"])

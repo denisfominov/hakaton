@@ -55,3 +55,7 @@ backend/data/sft/
 # служебные файлы SQLite в режиме WAL
 *.db-wal
 *.db-shm
+# свои ML-модели (производные от данных кейса) и ручная разметка с признаками клиентов
+backend/data/models/
+backend/data/gold/*.csv
+!backend/data/gold/gold_template.csv
