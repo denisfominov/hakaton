@@ -396,6 +396,10 @@ def role_note(role, consequences, actions):
         parts.append(f"главное — {first[0].lower() + first[1:]}")
     if act:
         parts.append(f"ваше действие — {act[0].lower() + act[1:]}")
+    elif not first:
+        # честно: событие не про эту роль — сказать, у кого задачи, а не придумывать действие
+        owners = list(dict.fromkeys(a["owner"] for a in actions if a.get("owner")))[:3]
+        parts.append("прямых задач для вашей роли нет" + (f"; действия — у: {', '.join(owners)}" if owners else ""))
     return {"key": role["key"], "label": role["label"], "focus": role["focus"], "note": "; ".join(parts) + "."}
 
 

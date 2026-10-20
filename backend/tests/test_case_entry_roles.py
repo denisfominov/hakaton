@@ -105,3 +105,13 @@ def test_health_is_cheap_and_warns_about_dev_secret(monkeypatch):
         assert any("ENTRY_SECRET" in w for w in h["warnings"])
         monkeypatch.setattr(config, "ENTRY_SECRET", "x" * 32)
         assert c.get("/api/health").json()["warnings"] == []
+
+
+def test_role_note_is_honest_when_event_is_not_for_role():
+    from app import agent, roles
+
+    acts = [{"title": "Пересмотреть план продаж", "owner": "коммерческий директор", "for_role": False}]
+    note = agent.role_note(roles.get("accountant"), {"risks": [], "opportunities": []}, acts)["note"]
+    assert "прямых задач для вашей роли нет" in note and "коммерческий директор" in note
+    own = agent.role_note(roles.get("ceo"), {"risks": [], "opportunities": []}, [{**acts[0], "for_role": True}])["note"]
+    assert "ваше действие — пересмотреть план продаж" in own
