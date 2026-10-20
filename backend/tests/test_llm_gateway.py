@@ -56,12 +56,40 @@ def test_fallback_model_on_error_and_timeout(client, mock, monkeypatch):
 
 
 def test_budget_hard_limit_degrades_to_rules(client, mock, monkeypatch):
-    monkeypatch.setattr(config, "LLM_DAILY_BUDGET_RUB", 0.0001)
+    monkeypatch.setattr(config, "DAILY_BUDGET_RUB", 0.0001)
     r = run_agent(client, event="demo-07", question="бюджет")["result"]
     assert r["mode"] == "rules"
     assert r["llm"]["degraded"]["reason"] == "budget"
-    monkeypatch.setattr(config, "LLM_DAILY_BUDGET_RUB", 10_000)
+    monkeypatch.setattr(config, "DAILY_BUDGET_RUB", 10_000)
     assert llm_budget.daily_limit() == 499.0, "лимит кейса 500 ₽: держим строго ниже"
+
+
+def test_budget_day_is_moscow_and_resets_at_midnight_msk():
+    import sqlite3
+    from datetime import datetime, timezone
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    llm_client.init(conn)
+    for ts, rub in (("2026-10-20T20:59:00+00:00", 7.0), ("2026-10-20T21:01:00+00:00", 2.5)):
+        conn.execute("INSERT INTO llm_calls (ts, model, prompt_tokens, completion_tokens, ok, cost_rub, cached) "
+                     "VALUES (?, 'GLM-5.3-Flash', 10, 10, 1, ?, 0)", (ts, rub))
+    late = datetime(2026, 10, 20, 21, 30, tzinfo=timezone.utc)  # 00:30 МСК 21 октября
+    assert llm_budget.today(late) == "2026-10-21"
+    assert llm_budget.day_bounds(late) == ("2026-10-20T21:00:00+00:00", "2026-10-21T21:00:00+00:00")
+    assert llm_budget.spent_today(conn, late)[0] == 2.5, "расход до 00:00 МСК — вчерашний, не переносится"
+    assert llm_budget.spent_today(conn, datetime(2026, 10, 20, 20, 0, tzinfo=timezone.utc))[0] == 7.0
+    assert llm_budget.resets_at(late) == "2026-10-22T00:00+03:00"
+
+
+def test_default_budget_is_conservative(monkeypatch):
+    monkeypatch.delenv("DAILY_BUDGET_RUB", raising=False)
+    monkeypatch.delenv("LLM_DAILY_BUDGET_RUB", raising=False)
+    assert config.daily_budget_from_env() == 100, "ключ общий на команду: по умолчанию 100 ₽"
+    monkeypatch.setenv("LLM_DAILY_BUDGET_RUB", "250")
+    assert config.daily_budget_from_env() == 250, "старое имя переменной тоже работает"
+    monkeypatch.setenv("DAILY_BUDGET_RUB", "80")
+    assert config.daily_budget_from_env() == 80
 
 
 def test_usage_page_data(client, mock):
@@ -73,11 +101,12 @@ def test_usage_page_data(client, mock):
     assert route["classify"]["primary"] == "Gemma 4 26B A4B" and route["analysis"]["primary"] == "GLM-5.3-Flash"
     assert route["relations"]["primary"] == "DeepSeek-V4.1-Flash" and route["vision"]["primary"] == "Qwen3-VL-30B-A3B-Instruct"
     assert u["verified"] is False
+    assert u["timezone"] == "Europe/Moscow" and u["resets_at"].endswith("00:00+03:00")
 
 
 class Resp:
-    def __init__(self, status, payload=None):
-        self.status_code, self._p = status, payload
+    def __init__(self, status, payload=None, headers=None):
+        self.status_code, self._p, self.headers = status, payload, headers or {}
 
     def json(self):
         if self._p is None:
@@ -152,3 +181,20 @@ def test_prompts_are_versioned_files(monkeypatch):
     assert prompts.get("agent_answer").id == "agent_answer@v1", "версию можно закрепить в .env"
     assert prompts.get("agent_plan").render(tools="- get_event: факты").endswith("- get_event: факты")
     assert {"agent_plan", "agent_answer", "event_rewrite", "vision_ocr"} <= {x["name"] for x in prompts.catalog()}
+
+
+def test_gateway_reported_limits_are_saved(gateway, monkeypatch):
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    llm_client.init(conn)
+    payload = {**OK, "usage": {**OK["usage"], "cost": 0.012}}
+    headers = {"X-RateLimit-Remaining-Tokens": "99000", "X-Budget-Remaining": "321.5", "Content-Type": "application/json"}
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *a, **k: Resp(200, payload, headers))
+    text, usage = llm_client.chat([{"role": "user", "content": "x"}], task="classify", conn=conn)
+    assert "_gateway" not in usage
+    u = llm_budget.usage(conn)
+    rep = u["gateway_reported"]
+    assert rep["x-ratelimit-remaining-tokens"] == "99000" and rep["x-budget-remaining"] == "321.5"
+    assert rep["usage"] == {"cost": 0.012} and "content-type" not in rep

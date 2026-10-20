@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS llm_cache (
 );
 """
 EXTRA_COLUMNS = {"cost_rub": "REAL DEFAULT 0", "cached": "INTEGER DEFAULT 0", "task": "TEXT", "prompt_version": "TEXT",
-                 "event_id": "TEXT", "profile_id": "TEXT", "attempts": "INTEGER DEFAULT 1", "fallback_from": "TEXT"}
+                 "event_id": "TEXT", "profile_id": "TEXT", "attempts": "INTEGER DEFAULT 1", "fallback_from": "TEXT",
+                 "gateway_meta": "TEXT"}
 
 
 def init(conn):
@@ -191,13 +192,14 @@ def _log_call(conn, model, purpose, usage, ms, ok, error, run_id, **extra):
     if conn is None:
         return
     conn.execute("INSERT INTO llm_calls (ts, provider, model, purpose, prompt_tokens, completion_tokens, ms, ok, error, "
-                 "run_id, cost_rub, cached, task, prompt_version, event_id, profile_id, attempts, fallback_from) "
-                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 "run_id, cost_rub, cached, task, prompt_version, event_id, profile_id, attempts, fallback_from, "
+                 "gateway_meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (datetime.now(timezone.utc).isoformat(timespec="seconds"), provider(), model, purpose,
                   usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), ms, int(ok), error, run_id,
                   usage.get("cost_rub", 0.0), int(bool(extra.get("cached"))), extra.get("task"),
                   extra.get("prompt_version"), extra.get("event_id"), extra.get("profile_id"),
-                  extra.get("attempts", 1), extra.get("fallback_from")))
+                  extra.get("attempts", 1), extra.get("fallback_from"),
+                  json.dumps(extra["gateway"], ensure_ascii=False) if extra.get("gateway") else None))
 
 
 def _cache_key(cache, model, messages):
@@ -253,6 +255,9 @@ def _transport(model, messages, purpose, json_mode, max_tokens, temperature):
         data = r.json()
     except ValueError:
         data = None
+    if isinstance(data, dict):
+        # остаток и расход, если шлюз их сообщает: формат неизвестен — сохраняем как есть (llm_budget.gateway_meta)
+        data["_gateway"] = llm_budget.gateway_meta(r.headers, data.get("usage"))
     return r.status_code, data
 
 
@@ -268,7 +273,10 @@ def _call_model(model, messages, purpose, json_mode, max_tokens, temperature):
                 text = data["choices"][0]["message"]["content"] or ""
             except (KeyError, IndexError, TypeError):
                 raise LLMError("ответ шлюза не в ожидаемом формате (docs/GATEWAY_QUESTIONS.md)")
-            return text, dict(data.get("usage") or {}), attempt + 1
+            usage = dict(data.get("usage") or {})
+            if data.get("_gateway"):
+                usage["_gateway"] = data["_gateway"]
+            return text, usage, attempt + 1
         if status not in RETRYABLE:
             raise LLMError(f"ошибка модели: HTTP {status}")
         if attempt < config.LLM_RETRIES:
@@ -322,10 +330,11 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
                 raise  # неверный ключ — запасная модель через тот же шлюз не поможет
             continue
         ms = int((time.time() - started) * 1000)
+        gateway = usage.pop("_gateway", None)
         usage["cost_rub"] = llm_budget.cost(name, int(usage.get("prompt_tokens") or 0),
                                             int(usage.get("completion_tokens") or 0))
         _log_call(conn, name, purpose, usage, ms, True, None, run_id, attempts=attempts, fallback_from=fallback_from,
-                  **meta)
+                  gateway=gateway, **meta)
         if key:
             cache_put(conn, key, meta, name, purpose, text, usage)
         log.info("llm %s %s %s %sms tokens=%s cost=%.4f₽%s", provider(), name, purpose, ms, usage.get("total_tokens"),

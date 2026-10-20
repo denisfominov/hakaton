@@ -24,8 +24,9 @@ export default function SpendingPage() {
       <div>
         <h1 className="text-2xl font-semibold">Расход</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Токены и стоимость вызовов LLM за день. Лимит кейса — эквивалент 500 ₽ в день на общий ключ; сервис держит
-          жёсткий лимит ниже и при его исчерпании отвечает правилами или из кэша с пометкой.
+          Токены и стоимость вызовов LLM за день. Лимит кейса — 500 ₽ в день на команду (один общий ключ), сброс в
+          00:00 по Москве, остаток не переносится. Бюджет общий для всех разработчиков, поэтому сервис по умолчанию
+          тратит не больше 100 ₽ в день (DAILY_BUDGET_RUB) и при исчерпании отвечает правилами или из кэша с пометкой.
         </p>
       </div>
 
@@ -42,7 +43,7 @@ export default function SpendingPage() {
       <section className="card p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <div className="text-xs text-ink-500">Сегодня, {data.today}</div>
+            <div className="text-xs text-ink-500">Сегодня по Москве, {data.today} · сброс в 00:00 МСК</div>
             <div className="text-2xl font-semibold tabular-nums">{rub(data.spent_rub)} <span className="text-base font-normal text-ink-500">из {rub(data.limit_rub)}</span></div>
           </div>
           <div className="text-right text-sm text-ink-600">
@@ -52,6 +53,13 @@ export default function SpendingPage() {
         <div className="mt-3 h-2 rounded-full bg-ink-100">
           <div className={`h-2 rounded-full ${share >= 90 ? "bg-rose-600" : share >= 70 ? "bg-amber-500" : "bg-emerald-600"}`} style={{ width: `${share}%` }} />
         </div>
+        <p className="mt-2 flex items-start gap-1 text-xs text-ink-500">
+          <Info size={12} className="mt-0.5 shrink-0" />
+          {data.gateway_reported
+            ? <>Шлюз сообщил ({data.gateway_reported.ts}): {Object.entries(data.gateway_reported).filter(([k]) => k !== "ts")
+                .map(([k, v]) => `${k} = ${typeof v === "object" ? JSON.stringify(v) : String(v)}`).join("; ")}. Лимит считаем по своему учёту.</>
+            : <>Шлюз пока не сообщал остаток или расход — счёт ведётся по своему учёту и ценам-допущениям.</>}
+        </p>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">

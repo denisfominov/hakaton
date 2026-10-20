@@ -589,6 +589,9 @@ export interface AgentResult {
 
 export interface LlmUsage {
   today: string;
+  timezone: string;
+  resets_at: string;
+  gateway_reported: ({ ts: string } & Record<string, unknown>) | null;
   limit_rub: number;
   spent_rub: number;
   remaining_rub: number;
