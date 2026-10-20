@@ -171,12 +171,13 @@ function CaseClients({ onOpen }: { onOpen: (id: string) => void }) {
         </div>
       </div>
       <div className="mt-3 max-h-[420px] overflow-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[800px] text-sm">
           <thead className="sticky top-0 bg-white">
             <tr className="border-b border-ink-200 text-left text-xs text-ink-500">
               <th className="py-2 pr-3 font-medium">Клиент</th>
               <th className="py-2 pr-3 font-medium">Вид деятельности</th>
               <th className="py-2 pr-3 text-right font-medium">Выручка, млрд ₽</th>
+              <th className="py-2 pr-3 text-right font-medium" title="Место по выручке среди компаний того же класса ОКВЭД в наборе данных кейса">Место в отрасли</th>
               <th className="py-2 pr-3 font-medium">Продукты банка</th>
               <th className="py-2 font-medium" />
             </tr>
@@ -190,6 +191,9 @@ function CaseClients({ onOpen }: { onOpen: (id: string) => void }) {
                 </td>
                 <td className="max-w-[260px] py-2 pr-3 text-xs text-ink-700">{c.okved_code} {c.okved_name}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{c.revenue_bn}</td>
+                <td className="py-2 pr-3 text-right text-xs tabular-nums text-ink-600">
+                  {c.okved_class_rank ? `${c.okved_class_rank} из ${c.okved_class_companies}` : "—"}
+                </td>
                 <td className="max-w-[220px] py-2 pr-3 text-xs text-ink-600">{c.products.join(", ") || "—"}</td>
                 <td className="py-2 text-right">
                   <button className={added.has(c.id) ? "btn-secondary !py-1 text-xs" : "btn-primary !py-1 text-xs"}

@@ -1,6 +1,7 @@
 import type {
   Action,
   AgentRun,
+  BankDoc,
   CaseClient,
   CompanyLookup,
   CompareRow,
@@ -122,6 +123,7 @@ export const api = {
     }),
   clients: (q = "") =>
     request<{ source: "case" | "sample" | null; segment_revenue: number; items: CaseClient[] }>(`/clients?${qs({ q, limit: 200 })}`),
+  bankDocs: () => request<{ documents: BankDoc[]; chunks: number; topics: Record<string, string> }>("/bank-docs"),
   clientProfile: (uid: string) => request<Profile>(`/clients/${uid}/profile`, { method: "POST" }),
   runLlm: (profileId: string, id: string) =>
     request<{ insight: Insight }>(`/events/${id}/llm?${qs({ profile_id: profileId })}`, { method: "POST" }),

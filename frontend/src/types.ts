@@ -431,6 +431,22 @@ export interface Claim {
   text: string;
   kind: ClaimKind;
   sources: string[];
+  confirmed?: boolean | null;
+}
+
+export interface Scenario {
+  title: string;
+  text: string;
+  direction?: string | null;
+  bank_view?: string | null;
+  kind: ClaimKind;
+  sources: string[];
+}
+
+export interface AgentIssue {
+  type: "signals" | "numbers" | "bank" | "feedback";
+  text: string;
+  sources: string[];
 }
 
 export interface AgentSource {
@@ -465,6 +481,7 @@ export interface AgentStep {
   ms?: number;
   model?: string;
   gaps?: string[];
+  issues?: string[];
   extra?: string[];
   plan?: { tool: string; why: string }[];
 }
@@ -473,12 +490,26 @@ export interface AgentResult {
   summary: string;
   answers: {
     what_happened: Claim[];
+    event: {
+      participants: string[];
+      dates: string[];
+      confirmation: { status: "official" | "confirmed" | "single"; label: string; outlets: number };
+      category?: string | null;
+    };
     why_important: Claim[];
-    consequences: { risks: Claim[]; opportunities: Claim[]; horizon?: string };
+    consequences: { risks: Claim[]; opportunities: Claim[]; bank_adjusted: Claim[]; horizon?: string };
     actions: AgentAction[];
-    bank_view: { found: boolean; items: Claim[]; note: string | null };
+    follow_up: { questions: string[]; indicators: string[]; scenarios: Scenario[] };
+    bank_view: { found: boolean; items: Claim[]; note: string | null; agreement: "agree" | "conflict" | "none"; topics: string[] };
     basis: { sources: AgentSource[]; client_features: string[]; market: { ticker: string; ar: number; horizon: number } | null };
+    question: { text: string; items: Claim[]; note: string | null } | null;
   };
+  checks: {
+    completeness: string[];
+    consistency: AgentIssue[];
+    grounding: { claims: number; dropped: number; llm_dropped: number };
+  };
+  scores: { relevance: number; impact: number; urgency: number; confidence: number; priority: number };
   data_gaps: string[];
   confidence: number;
   priority: number;
@@ -508,4 +539,16 @@ export interface CaseClient {
   fts_countries: string[];
   workers: string;
   group_id: string;
+  okved_class_rank?: number | null;
+  okved_class_companies?: number | null;
+}
+
+export interface BankDoc {
+  file: string;
+  title: string;
+  date: string | null;
+  topics: string[];
+  pages: number;
+  chunks: number;
+  theses: { text: string; page: number; chunk: string }[];
 }

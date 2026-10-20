@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ExternalLink, Info, RefreshCw, Send, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, Info, RefreshCw, Send, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
@@ -41,7 +41,10 @@ function Claims({ items, index, empty }: { items: Claim[]; index: Map<string, nu
       {items.map((c, i) => (
         <li key={i} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-start sm:gap-2">
           <KindBadge kind={c.kind} />
-          <span className="text-ink-800">{c.text}<Refs ids={c.sources} index={index} /></span>
+          <span className="text-ink-800">
+            {c.text}<Refs ids={c.sources} index={index} />
+            {c.confirmed === false && <span className="ml-1.5 whitespace-nowrap rounded bg-amber-50 px-1 text-[11px] text-amber-800">не подтверждено</span>}
+          </span>
         </li>
       ))}
     </ul>
@@ -93,10 +96,11 @@ function Trace({ steps, ms }: { steps: AgentStep[]; ms: number }) {
               <span className="text-ink-400"> ({Object.entries(s.args).map(([k, v]) => `${k}: «${v}»`).join(", ")})</span>
             )}
             {s.result && <span className="text-ink-500"> → {s.result}</span>}
-            {s.kind === "check" && (
-              <span className="text-ink-500"> → {s.gaps?.length ? `не хватает: ${s.gaps.join("; ")}` : "данных достаточно"}
+            {s.kind === "check" && s.gaps && (
+              <span className="text-ink-500"> → {s.gaps.length ? `не хватает: ${s.gaps.join("; ")}` : "данных достаточно"}
                 {s.extra?.length ? `; доп. шаги: ${s.extra.join(", ")}` : ""}</span>
             )}
+            {s.issues && s.issues.length > 0 && <span className="text-amber-700"> · противоречия: {s.issues.join(" ")}</span>}
             {s.plan && <span className="text-ink-500"> → {s.plan.map((p) => p.tool).join(" → ")}</span>}
             {s.model && <span className="text-ink-400"> · {s.model}</span>}
             {s.ms !== undefined && s.ms > 0 && <span className="text-ink-400"> · {s.ms} мс</span>}
@@ -180,8 +184,24 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
             <div className="mt-2 flex flex-wrap gap-1.5">{(Object.keys(KIND) as ClaimKind[]).map((k) => <KindBadge key={k} kind={k} />)}</div>
           </div>
 
+          {a.question && (
+            <section className="border-b border-ink-100 bg-sky-50/40 px-5 py-4">
+              <h3 className="mb-2 text-sm font-semibold text-ink-900">Ответ на вопрос: «{a.question.text}»</h3>
+              <Claims items={a.question.items} index={index} empty="Прямого ответа в собранных данных нет" />
+              {a.question.note && <p className="mt-2 text-xs text-ink-500">{a.question.note}</p>}
+            </section>
+          )}
+
           <Block n={1} title="Что произошло?">
+            <div className="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+              <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${a.event.confirmation.status === "single" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
+                {a.event.confirmation.status === "single" ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+                {a.event.confirmation.label}
+              </span>
+              {a.event.participants.length > 0 && <span className="text-ink-600"><b className="font-medium">Участники:</b> {a.event.participants.join(", ")}</span>}
+            </div>
             <Claims items={a.what_happened} index={index} empty="В тексте новости нет проверяемых фактов" />
+            {a.event.dates.length > 0 && <p className="mt-2 text-xs text-ink-600"><b className="font-medium">Сроки и даты:</b> {a.event.dates.join(" · ")}</p>}
           </Block>
           <Block n={2} title="Почему это важно для компании?">
             <Claims items={a.why_important} index={index} />
@@ -197,6 +217,12 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
                 <Claims items={a.consequences.opportunities} index={index} empty="Возможностей не выявлено" />
               </div>
             </div>
+            {a.consequences.bank_adjusted.length > 0 && (
+              <div className="mt-3">
+                <div className="mb-1.5 text-xs font-medium text-rose-700">С учётом аналитики банка</div>
+                <Claims items={a.consequences.bank_adjusted} index={index} />
+              </div>
+            )}
             {a.consequences.horizon && <p className="mt-2 text-xs text-ink-500">Горизонт влияния: {a.consequences.horizon}</p>}
           </Block>
           <Block n={4} title="Какие действия актуальны?">
@@ -219,8 +245,39 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
                 ))}
               </ul>
             ) : <p className="text-sm text-ink-400">Действий не требуется — достаточно мониторинга</p>}
+            {a.follow_up.scenarios.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-1.5 text-xs font-medium text-ink-700">Сценарии развития</div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {a.follow_up.scenarios.map((sc, i) => (
+                    <div key={i} className={`rounded-lg border px-3 py-2 text-xs ${sc.bank_view ? "border-rose-200 bg-rose-50/40" : "border-ink-100"}`}>
+                      <div className="flex items-center gap-1.5 font-medium text-ink-900"><KindBadge kind={sc.kind} /> {sc.title}</div>
+                      <p className="mt-1 text-ink-700">{sc.text}<Refs ids={sc.sources} index={index} /></p>
+                      {sc.bank_view && <p className="mt-1 font-medium text-rose-700">{sc.bank_view}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {a.follow_up.questions.length > 0 && (
+              <div className="mt-4 text-xs text-ink-700">
+                <div className="mb-1 font-medium">Вопросы для дополнительного анализа</div>
+                <ul className="list-disc space-y-0.5 pl-4">{a.follow_up.questions.map((q, i) => <li key={i}>{q}</li>)}</ul>
+              </div>
+            )}
+            {a.follow_up.indicators.length > 0 && (
+              <p className="mt-3 text-xs text-ink-600"><b className="font-medium">Что отслеживать:</b> {a.follow_up.indicators.join(" · ")}</p>
+            )}
           </Block>
           <Block n={5} title="Как это оценивает банк?">
+            {a.bank_view.found && (
+              <div className="mb-2 flex flex-wrap gap-1.5 text-xs">
+                <span className={`rounded px-1.5 py-0.5 ${a.bank_view.agreement === "conflict" ? "bg-amber-50 text-amber-800" : a.bank_view.agreement === "agree" ? "bg-emerald-50 text-emerald-800" : "bg-ink-100 text-ink-600"}`}>
+                  {a.bank_view.agreement === "conflict" ? "Расходится с новостью" : a.bank_view.agreement === "agree" ? "Совпадает с направлением новости" : "Дополняет картину"}
+                </span>
+                {a.bank_view.topics.map((t) => <span key={t} className="rounded bg-ink-100 px-1.5 py-0.5 text-ink-600">{t}</span>)}
+              </div>
+            )}
             <Claims items={a.bank_view.items} index={index} empty={a.bank_view.note || "Нет позиции банка"} />
             {!a.bank_view.found && (
               <p className="mt-2 flex gap-1.5 text-xs text-ink-500">
@@ -237,6 +294,18 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
               <p className="mb-2 text-xs text-ink-600"><b className="font-medium">Рынок:</b> {a.basis.market.ticker} {a.basis.market.ar}% к индексу за {a.basis.market.horizon} дн.</p>
             )}
             <ol className="space-y-1">{a.basis.sources.map((s, i) => <SourceRow key={s.id} s={s} n={i + 1} />)}</ol>
+            <div className="mt-3 space-y-1 text-xs">
+              <p className="text-ink-600">
+                <b className="font-medium">Проверка обоснованности:</b> утверждений {r.checks.grounding.claims}, без источника
+                отброшено {r.checks.grounding.dropped}{r.checks.grounding.llm_dropped ? `, выводов модели без опоры на данные — ${r.checks.grounding.llm_dropped}` : ""}.
+              </p>
+              {r.checks.consistency.length > 0 ? (
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+                  <b className="font-medium">Противоречия в данных (уверенность снижена):</b>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">{r.checks.consistency.map((x, i) => <li key={i}>{x.text}<Refs ids={x.sources} index={index} /></li>)}</ul>
+                </div>
+              ) : <p className="text-ink-600"><b className="font-medium">Проверка на противоречия:</b> расхождений между источниками не найдено.</p>}
+            </div>
             {r.data_gaps.length > 0 && (
               <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
                 <b className="font-medium">Ограничения и чего не хватило агенту:</b>
