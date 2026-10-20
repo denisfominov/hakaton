@@ -354,10 +354,11 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
                          prompt_version=prompt_version)
             _log_call(conn, name, purpose, {}, 0, True, None, run_id, cached=True, **meta)
             return text, usage
-        llm_budget.check(conn, name, prompt_text, max_tokens)  # BudgetExceeded — вызова нет, запасная не поможет
+        room = llm_router.output_tokens(name, max_tokens)  # + запас на рассуждение (пустые ответы при малом лимите)
+        llm_budget.check(conn, name, prompt_text, room)  # BudgetExceeded — вызова нет, запасная не поможет
         started = time.time()
         try:
-            text, usage, attempts = _call_model(name, messages, purpose, json_mode, max_tokens, temperature)
+            text, usage, attempts = _call_model(name, messages, purpose, json_mode, room, temperature)
         except LLMError as e:
             ms = int((time.time() - started) * 1000)
             _log_call(conn, name, purpose, {}, ms, False, str(e), run_id, fallback_from=fallback_from, **meta)
