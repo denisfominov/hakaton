@@ -74,12 +74,28 @@ CATEGORY_TOPICS = {"economy": "макроэкономика ВВП инфляц�
 class Ctx:
     """Контекст запуска: профиль, событие, результаты инструментов, трассировка."""
 
-    def __init__(self, conn, profile, result, question=""):
+    def __init__(self, conn, profile, result, question="", models=None):
         self.conn, self.profile, self.r, self.question = conn, profile, result, question
         self.ev = result["event"]
         self.data = {}
         self.trace = []
         self.sources = {}
+        self.models = models or {}  # явные модели по ролям (сравнение моделей); иначе — из настроек
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "llm_ms": 0, "errors": []}
+
+    def llm(self, messages, role, purpose, max_tokens):
+        """Вызов разрешённой модели с учётом токенов и времени — для журнала и сравнения моделей."""
+        try:
+            data, usage = llm_client.chat_json(messages, role=role, purpose=purpose, max_tokens=max_tokens,
+                                               conn=self.conn, model=self.models.get(role))
+        except llm_client.LLMError as e:
+            self.usage["errors"].append(f"{purpose}: {e}")
+            raise
+        self.usage["calls"] += 1
+        self.usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+        self.usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+        self.usage["llm_ms"] += int(usage.get("ms") or 0)
+        return data, usage
 
     def step(self, kind, title, **kw):
         item = {"n": len(self.trace) + 1, "kind": kind, "title": title, **kw}
@@ -138,10 +154,11 @@ def tool_impact(ctx, **_):
 def tool_search_bank(ctx, query="", k=4):
     hits = bank_rag.search(query, k=int(k))
     for h in hits:
-        ctx.source(f"bank:{h['id']}", type="bank", title=h["title"], detail=f"{h['doc']}, стр. {h['page']}")
+        ctx.source(f"bank:{h['id']}", type="bank", title=h["title"],
+                   detail=f"{h['doc']}, стр. {h['page']}" + (f", {h['date']}" if h.get("date") else ""))
     found = ctx.data.setdefault("bank_hits", {})
     for h in hits:
-        found[h["id"]] = h
+        found.setdefault(h["id"], {**h, "query": query})
     return hits, (f"найдено фрагментов: {len(hits)} ({', '.join(sorted({h['title'][:40] for h in hits}))})"
                   if hits else "в аналитике банка ничего по запросу")
 
@@ -248,7 +265,7 @@ def llm_plan(ctx):
            {"role": "user", "content": f"Событие: {ctx.ev['title']}\nКомпания: {ctx.profile.get('name')}, "
             f"отрасль: {ctx.profile.get('industry')}, продукты банка: {', '.join(ctx.profile.get('bank_products') or []) or 'нет данных'}"
             + (f"\nВопрос пользователя: {ctx.question}" if ctx.question else "")}]
-    data, usage = llm_client.chat_json(msg, role="fast", purpose="agent_plan", max_tokens=600, conn=ctx.conn)
+    data, usage = ctx.llm(msg, "fast", "agent_plan", 600)
     plan = [(s.get("tool"), s.get("args") or {}, s.get("why") or "")
             for s in (data.get("plan") or []) if isinstance(s, dict)][:MAX_STEPS]
     return plan, usage
@@ -355,7 +372,12 @@ def compose(ctx, gaps):
     for sc in follow["scenarios"]:
         sc.update(kind="ai", sources=["rules:analysis"] + ([f"bank:{hits[0]['id']}"] if sc.get("bank_view") and hits else []))
 
-    bank_items = [_item(_sentence(h["text"]), "bank", [f"bank:{h['id']}"]) for h in hits[:3]]
+    # цитата — предложение, где банк высказывает позицию; фрагменты из подписей к графикам пропускаем
+    bank_items = []
+    for h in hits:
+        q = bank_rag.quote(h, h.get("query", ""))
+        if q and len(bank_items) < 3:
+            bank_items.append(_item(q, "bank", [f"bank:{h['id']}"]))
     bank_view = {"found": bool(bank_items), "items": bank_items, "agreement": agreement,
                  "topics": sorted({bank_rag.topic_label(t) for h in hits[:3] for t in h.get("topics") or []}),
                  "note": None if bank_items else "В загруженных аналитических материалах банка нет позиции по этой теме."}
@@ -378,7 +400,7 @@ def compose(ctx, gaps):
                     "bank_view": bank_view, "basis": basis, "question": None},
         "checks": {"completeness": gaps, "consistency": issues, "grounding": {"claims": 0, "dropped": 0}},
         "scores": {k: score.get(k) for k in ("relevance", "impact", "urgency", "confidence", "priority")},
-        "data_gaps": gaps + insight.get("data_gaps", []),
+        "data_gaps": gaps + insight.get("data_gaps", []) + ((card or {}).get("data_notes") or []),
         "confidence": confidence,
         "priority": score["priority"],
     }
@@ -425,8 +447,8 @@ def llm_rewrite(ctx, draft):
     """Разрешённая модель переписывает черновик; факты и позиция банка проверяются по источникам."""
     bank = bank_texts(ctx)
     payload = llm_payload(ctx, draft)
-    data, usage = llm_client.chat_json([{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": payload}],
-                                       role="reasoning", purpose="agent_answer", max_tokens=1800, conn=ctx.conn)
+    data, usage = ctx.llm([{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": payload}],
+                          "reasoning", "agent_answer", 1800)
     out = json.loads(json.dumps(draft))
     roots = agent_rules.context_roots(payload)
     dropped = 0
@@ -463,17 +485,21 @@ def llm_rewrite(ctx, draft):
     if ctx.question and data.get("answer"):
         out["llm_answer"] = str(data["answer"])[:1200]
     out["checks"]["grounding"]["llm_dropped"] = dropped
+    out["checks"]["grounding"]["llm_proposed"] = sum(len(data.get(k) or []) for k in
+                                                     ("why_important", "risks", "opportunities", "bank_view"))
     return out, usage
 
 
 # ---------- запуск ----------
 
-def run(conn, profile, event_id, question="", use_llm=True):
+def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True):
+    """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/compare_models.py);
+    save=False — не писать в agent_runs (сборка датасета на копии базы)."""
     started = time.time()
     r = pipeline.find_result(conn, profile, event_id)
     if r is None:
         return None
-    ctx = Ctx(conn, profile, r, question.strip())
+    ctx = Ctx(conn, profile, r, question.strip(), models)
     mode, model = "rules", None
     plan = None
     if use_llm and llm_client.enabled():
@@ -507,6 +533,7 @@ def run(conn, profile, event_id, question="", use_llm=True):
     if mode == "llm":
         try:
             result, usage = llm_rewrite(ctx, result)
+            model = usage.get("model") or model
             ctx.step("synthesis", "ответ сформулировала модель, факты и позиция банка проверены по источникам",
                      model=usage.get("model"))
         except llm_client.LLMError as e:
@@ -532,13 +559,14 @@ def run(conn, profile, event_id, question="", use_llm=True):
     ms = int((time.time() - started) * 1000)
     result.update(mode=mode, model=model, question=ctx.question or None)
     result = AgentResultOut.model_validate(result).model_dump()  # ответ строго по JSON-схеме
-    conn.execute("INSERT INTO agent_runs (id, profile_id, event_id, question, created_at, mode, model, ms, plan, trace, "
-                 "result, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                 (run_id, profile["id"], r["event"]["id"], ctx.question, now_iso(), mode, model, ms,
-                  dumps([{"tool": t, "why": w} for t, _a, w in plan]), dumps(ctx.trace), dumps(result), context))
-    log.info("agent run %s profile=%s event=%s mode=%s steps=%s %sms", run_id, profile["id"], r["event"]["id"], mode,
-             len(ctx.trace), ms)
-    return {"run_id": run_id, "ms": ms, "result": result, "trace": ctx.trace}
+    if save:
+        conn.execute("INSERT INTO agent_runs (id, profile_id, event_id, question, created_at, mode, model, ms, plan, "
+                     "trace, result, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     (run_id, profile["id"], r["event"]["id"], ctx.question, now_iso(), mode, model, ms,
+                      dumps([{"tool": t, "why": w} for t, _a, w in plan]), dumps(ctx.trace), dumps(result), context))
+    log.info("agent run %s profile=%s event=%s mode=%s steps=%s %sms tokens=%s", run_id, profile["id"],
+             r["event"]["id"], mode, len(ctx.trace), ms, ctx.usage["prompt_tokens"] + ctx.usage["completion_tokens"])
+    return {"run_id": run_id, "ms": ms, "result": result, "trace": ctx.trace, "usage": ctx.usage, "context": context}
 
 
 def get_run(conn, run_id):
@@ -560,9 +588,14 @@ def latest_run(conn, profile_id, event_id, question=""):
 def training_target(result):
     """Ответ в схеме LLM_SYSTEM — целевой выход примера для дообучения."""
     a = result["answers"]
-    return {"summary": result["summary"],
-            "why_important": [x["text"] for x in a["why_important"]],
-            "risks": [x["text"] for x in a["consequences"]["risks"]],
-            "opportunities": [x["text"] for x in a["consequences"]["opportunities"]],
-            "bank_view": [{"text": x["text"], "source": x["sources"][0]} for x in a["bank_view"]["items"] if x["sources"]],
-            "actions": [{"title": x["title"], "why": x.get("why") or ""} for x in a["actions"]]}
+    out = {"summary": result["summary"],
+           "why_important": [x["text"] for x in a["why_important"]],
+           "risks": [x["text"] for x in a["consequences"]["risks"]],
+           "opportunities": [x["text"] for x in a["consequences"]["opportunities"]],
+           "bank_view": [{"text": x["text"], "source": x["sources"][0]} for x in a["bank_view"]["items"] if x["sources"]],
+           "actions": [{"title": x["title"], "why": x.get("why") or ""} for x in a["actions"]],
+           "scenarios": [{"title": x["title"], "text": x["text"]} for x in (a.get("follow_up") or {}).get("scenarios", [])]}
+    q = a.get("question")
+    if q and q.get("items"):
+        out["answer"] = " ".join(x["text"] for x in q["items"][:3])
+    return out

@@ -632,6 +632,7 @@ def agent_insight(body: AgentIn):
         out = agent.run(conn, profile, body.event_id, body.question)
     if out is None:
         raise HTTPException(404, "Событие не найдено")
+    out.pop("context", None)  # вход модели хранится в agent_runs для датасета, в интерфейс не отдаём
     return {**out, "cached": False}
 
 

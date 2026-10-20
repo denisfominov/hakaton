@@ -213,7 +213,8 @@ class IssueOut(BaseModel):
 class GroundingOut(BaseModel):
     claims: int = 0
     dropped: int = 0
-    llm_dropped: int = 0
+    llm_proposed: int = 0  # утверждений предложила модель
+    llm_dropped: int = 0   # из них отброшено: нет опоры на входные данные или ссылки на фрагмент банка
 
 
 class ChecksOut(BaseModel):
