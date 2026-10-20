@@ -151,7 +151,7 @@ def status():
         "daily_budget_rub": llm_budget.daily_limit(),
         "daily_token_limit": config.LLM_DAILY_TOKEN_LIMIT,
         "allowed": [{"name": k, **v} for k, v in ALLOWED_MODELS.items()],
-        "verified": False,  # реальные вызовы шлюза не проверялись: ключа нет
+        "verified": True,  # smoke-тест шлюза 2026-10-20: все шесть моделей отвечают (docs/GATEWAY_QUESTIONS.md)
     }
 
 
@@ -344,8 +344,7 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
             continue
         ms = int((time.time() - started) * 1000)
         gateway = usage.pop("_gateway", None)
-        usage["cost_rub"] = llm_budget.cost(name, int(usage.get("prompt_tokens") or 0),
-                                            int(usage.get("completion_tokens") or 0))
+        usage["cost_rub"] = llm_budget.call_cost(name, usage)
         _log_call(conn, name, purpose, usage, ms, True, None, run_id, attempts=attempts, fallback_from=fallback_from,
                   gateway=gateway, **meta)
         if key:

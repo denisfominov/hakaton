@@ -1,6 +1,7 @@
 """Бюджет LLM: учёт токенов и стоимости по моделям и дням, жёсткий дневной лимит ниже 500 ₽ (кейс, слайд 12).
 
-Цены шлюза неизвестны (docs/GATEWAY_QUESTIONS.md), поэтому заданы в .env как допущение, ₽ за 1 млн токенов:
+Стоимость вызова шлюз сообщает сам (usage.cost и заголовок x-litellm-response-cost, в единицах лимита ключа — ₽):
+её и пишем в журнал. Цены в .env — запасной вариант (мок, ответ без cost) и оценка худшего случая до вызова, ₽ за 1 млн:
 LLM_PRICE_DEFAULT="60,180" (вход, выход), для отдельной модели — LLM_PRICE_GLM_5_3_FLASH="80,240" или по точному
 имени LLM_PRICE_Z_AI_GLM_5_3_FLASH=... и т.п.
 Перед вызовом считаем худший случай (вход + максимум выхода): если он не помещается в остаток дня — вызов не
@@ -43,6 +44,14 @@ def prices(model):
 def cost(model, prompt_tokens, completion_tokens):
     p_in, p_out = prices(model)
     return round((prompt_tokens * p_in + completion_tokens * p_out) / 1_000_000, 4)
+
+
+def call_cost(model, usage):
+    """Стоимость вызова: usage.cost от шлюза (LiteLLM, в единицах лимита ключа — ₽), иначе — по ценам-допущениям."""
+    reported = (usage or {}).get("cost")
+    if isinstance(reported, (int, float)) and not isinstance(reported, bool) and reported >= 0:
+        return round(float(reported), 6)
+    return cost(model, int((usage or {}).get("prompt_tokens") or 0), int((usage or {}).get("completion_tokens") or 0))
 
 
 def daily_limit():

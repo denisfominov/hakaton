@@ -108,7 +108,7 @@ def test_usage_page_data(client, mock):
     assert route["classify"]["primary"] == GEMMA and route["analysis"]["primary"] == GLM
     assert route["relations"]["primary"] == "deepseek/deepseek-v4.1-flash"
     assert route["vision"]["primary"] == "qwen/qwen3-vl-30b-a3b-instruct"
-    assert u["verified"] is False
+    assert u["verified"] is True
     assert u["timezone"] == "Europe/Moscow" and u["resets_at"].endswith("03:00+03:00")
 
 
@@ -255,3 +255,13 @@ def test_exact_gateway_names_and_old_aliases(gateway, monkeypatch):
         assert sent[-1] == exact, "в шлюз уходит точное имя, даже если задано прежнее название"
     monkeypatch.setenv("LLM_PRICE_GLM_5_3_FLASH", "80,240")
     assert llm_budget.prices("z-ai/glm-5.3-flash") == (80.0, 240.0), "цена по прежнему имени переменной"
+
+
+def test_cost_from_gateway_usage(gateway, monkeypatch):
+    payload = {**OK, "usage": {**OK["usage"], "cost": 0.009041878404}}
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *a, **k: Resp(200, payload))
+    _text, usage = llm_client.chat([{"role": "user", "content": "x"}], task="classify")
+    assert usage["cost_rub"] == 0.009042, "стоимость — как сообщил шлюз, а не по ценам-допущениям"
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *a, **k: Resp(200, OK))
+    _text, usage = llm_client.chat([{"role": "user", "content": "x"}], task="classify")
+    assert usage["cost_rub"] == llm_budget.cost(GEMMA, 10, 5)

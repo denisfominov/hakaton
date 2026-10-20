@@ -56,11 +56,12 @@ def call(conn, model, max_tokens):
     if ok:
         msg = data["choices"][0].get("message") or {}
         content = (msg.get("content") or "").strip()[:60]
-    cost = llm_budget.cost(model, int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
+    assumed = llm_budget.cost(model, int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
+    cost = llm_budget.call_cost(model, usage)
     llm_client._log_call(conn, model, "smoke", {**usage, "cost_rub": cost} if ok else {}, ms, ok, error, "smoke",
                          task="smoke", gateway=gateway)
     conn.commit()
-    return {"model": model, "status": status, "ms": ms, "usage": usage, "cost_rub_assumed": cost,
+    return {"model": model, "status": status, "ms": ms, "usage": usage, "cost_rub": cost, "cost_rub_assumed": assumed,
             "gateway_meta": gateway, "content": content, "error": error, "budget_exhausted": exhausted,
             "returned_model": data.get("model"), "finish_reason": (data.get("choices") or [{}])[0].get("finish_reason")}
 
