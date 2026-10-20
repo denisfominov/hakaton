@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
+import { useApp } from "../context";
 import type { AgentResult, AgentRun, AgentSource, AgentStep, Claim, ClaimKind } from "../types";
 
 // разделение, которого требует кейс: факт, позиция банка, вывод ИИ (и данные о компании, на которых он основан)
@@ -44,6 +45,7 @@ function Claims({ items, index, empty }: { items: Claim[]; index: Map<string, nu
         <li key={i} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-start sm:gap-2">
           <KindBadge kind={c.kind} />
           <span className="text-ink-800">
+            {c.for_role && <span className="mr-1.5 rounded bg-ink-900 px-1 text-[10px] font-medium text-white">для вас</span>}
             {c.text}<Refs ids={c.sources} index={index} />
             {c.confirmed === false && <span className="ml-1.5 whitespace-nowrap rounded bg-amber-50 px-1 text-[11px] text-amber-800">не подтверждено</span>}
             {c.link && (
@@ -176,12 +178,13 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [showTrace, setShowTrace] = useState(false);
+  const { role } = useApp();
 
   const go = async (q = "", refresh = false) => {
     setBusy(true);
     setError(null);
     try {
-      setRun(await api.agentInsight(profileId, eventId, q, refresh));
+      setRun(await api.agentInsight(profileId, eventId, q, refresh, role));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -194,7 +197,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
     setRun(null);
     if (!llmEnabled) go();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, eventId, llmEnabled]);
+  }, [profileId, eventId, llmEnabled, role]);
 
   const ask = (e: FormEvent) => {
     e.preventDefault();
@@ -261,6 +264,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
               </p>
             )}
             {r.question && <p className="mt-1 text-xs text-ink-500">Вопрос: {r.question}</p>}
+            {r.role && <p className="mt-1.5 rounded bg-ink-50 px-2 py-1 text-xs text-ink-700"><b className="font-medium">{r.role.label}:</b> {r.role.note}</p>}
             <div className="mt-2 flex flex-wrap gap-1.5">{(Object.keys(KIND) as ClaimKind[]).map((k) => <KindBadge key={k} kind={k} />)}</div>
           </div>
 
@@ -312,7 +316,9 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
                   <li key={i} className="text-sm">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-2">
                       <KindBadge kind={x.kind} />
-                      <span className="font-medium text-ink-900">{x.title}
+                      <span className="font-medium text-ink-900">
+                        {x.for_role && <span className="mr-1.5 rounded bg-ink-900 px-1 text-[10px] font-medium text-white">для вас</span>}
+                        {x.title}
                         {x.owner && <span className="font-normal text-ink-500"> · {x.owner}{x.due_days ? `, ${x.due_days} дн.` : ""}</span>}
                       </span>
                     </div>

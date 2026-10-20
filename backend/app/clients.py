@@ -15,6 +15,7 @@ df_Fid_Uid_link_hack.csv (связанные физлица). Все данны�
   (это доля в выборке кейса, а не рыночная доля — в интерфейсе так и подписано);
 - связи через физлиц (df_Fid_Uid_link_hack.csv): компании, у которых есть общие связанные лица.
 """
+import re
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -24,7 +25,7 @@ import pandas as pd
 from . import config
 
 FILES = {"companies": "df_Uid_data_hack.csv", "payments": "df_Uid_payment_hack.csv", "links": "df_Fid_Uid_link_hack.csv"}
-SEGMENT_REVENUE = 15e9  # крупный бизнес по условию кейса
+SEGMENT_REVENUE = 15e9  # крупный бизнес по условию кейса: выручка СВЫШЕ 15 млрд ₽ (REVENUE_COMPANY — число в рублях)
 PRODUCTS = {
     "CL_PRODUCT_LOA_MARK": "Кредиты",
     "CL_PRODUCT_LEA_MARK": "Лизинг",
@@ -135,7 +136,7 @@ def brief(row):
         "okved_name": _str(row.get("MAINOKVED_NAME")),
         "revenue": rev,
         "revenue_bn": round(rev / 1e9, 1),
-        "segment": rev >= SEGMENT_REVENUE,
+        "segment": rev > SEGMENT_REVENUE,
         "city": city(row),
         "region": _str(row.get("REGION")),
         "client_type": CL_TYPES.get(_str(row.get("CL_TYPE")), _str(row.get("CL_TYPE"))),
@@ -151,13 +152,49 @@ def brief(row):
     }
 
 
+def label(b):
+    """Подпись компании: «Компания <id>: ОКВЭД, регион, выручка, число сотрудников, продукты банка»."""
+    parts = [f"ОКВЭД {b['okved_code']} {b['okved_name'][:60]}{'…' if len(b['okved_name']) > 60 else ''}",
+             b["region"] or b["city"], f"выручка {b['revenue_bn']} млрд ₽",
+             f"сотрудников {b['workers']}" if b["workers"] else "",
+             "продукты банка: " + (", ".join(p.lower() for p in b["products"]) if b["products"] else "нет")]
+    return f"Компания {b['id']}: " + ", ".join(x for x in parts if x)
+
+
+def demo_client_ids(n=5):
+    """Демонстрационные клиенты: в каждой из n отраслей — крупнейший действующий клиент с продуктами банка.
+    Детерминированно (по выручке), чтобы кэш ответов и ссылки входа были одинаковыми у всей команды."""
+    from . import company_features, config
+
+    if config.DEMO_CLIENTS:
+        return [x.strip() for x in config.DEMO_CLIENTS.split(",") if x.strip()]
+    picked, seen = [], set()
+    for b in list_clients(segment_only=True, limit=10_000):
+        if b["client_type"] != CL_TYPES["CLIENT"] or not b["products"]:
+            continue
+        f = company_features.features(b["id"])
+        ind = (f or {}).get("industry") or "other"
+        if ind in seen:
+            continue
+        seen.add(ind)
+        picked.append(b["id"])
+        if len(picked) >= n:
+            break
+    return picked
+
+
+def profile_id(uid):
+    """Постоянный id профиля клиента кейса: одинаковый у всех, нужен для ссылок входа и кэша ответов."""
+    return "case-" + re.sub(r"[^a-z0-9]+", "-", uid.lower()).strip("-")
+
+
 def list_clients(segment_only=True, q="", limit=60):
     companies, _, _ = load()
     if companies is None:
         return []
     df = companies
     if segment_only:
-        df = df[df["REVENUE_COMPANY"] >= SEGMENT_REVENUE]
+        df = df[df["REVENUE_COMPANY"] > SEGMENT_REVENUE]
     if q:
         ql = q.lower()
         df = df[df["SYNTHETIC_U"].str.lower().str.contains(ql, regex=False)
@@ -325,8 +362,7 @@ def profile_from_client(uid):
     if c is None:
         return None
     industry = lookup.template_by_okved(c["okved_code"]) or ""
-    short_okved = c["okved_name"][:60] + ("…" if len(c["okved_name"]) > 60 else "")
-    name = f"Клиент {uid} · {short_okved}"
+    name = f"Компания {uid}"
     desc = (f"Обезличенный клиент из данных кейса. Основной вид деятельности: {c['okved_name']} (ОКВЭД {c['okved_code']}). "
             f"Выручка — {c['revenue_bn']} млрд ₽, сотрудников — {c['workers'] or 'нет данных'}, {c['city']}. "
             + (f"Продукты банка: {', '.join(p.lower() for p in c['products'])}. " if c["products"] else "")
@@ -360,6 +396,7 @@ def profile_from_client(uid):
     for f in catalog.LIST_FIELDS + ["aliases"]:
         p[f] = catalog.sort_values(list(dict.fromkeys(p[f])))
     p["client_id"] = uid
+    p["label"] = label(c)
     p["bank_products"] = c["products"]
     p["client_signals"] = [x["key"] for x in c["signals"]]
     p["autofill_info"] = {"template": s["template"], "from_description": s["from_description"],

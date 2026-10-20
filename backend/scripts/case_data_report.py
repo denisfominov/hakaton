@@ -37,7 +37,7 @@ def main():
     links = pd.read_csv(d / clients.FILES["links"], sep=";", dtype=str)
     companies, _, _ = clients.load()
     rev = raw["REVENUE_COMPANY"]
-    seg = raw[rev >= clients.SEGMENT_REVENUE]
+    seg = raw[rev > clients.SEGMENT_REVENUE]
     dup_ids = raw["SYNTHETIC_U"][raw["SYNTHETIC_U"].duplicated(keep=False)]
     code = raw["MAINOKVED_CODE"].fillna("")
     lr = np.log10(rev[rev > 0])
@@ -49,7 +49,7 @@ def main():
         f"Источник: `{d.name}` ({'данные кейса' if clients.source_kind() == 'case' else 'синтетический пример'}). "
         "Отчёт строит `python -m scripts.case_data_report`; здесь только агрегаты.", "",
         "## Компании (`df_Uid_data_hack.csv`)", "",
-        f"- Строк: {n(len(raw))}, столбцов: {raw.shape[1]}. Сегмент кейса (выручка от 15 млрд ₽): {len(seg)}.",
+        f"- Строк: {n(len(raw))}, столбцов: {raw.shape[1]}. Сегмент кейса (выручка свыше 15 млрд ₽): {len(seg)}.",
         f"- Коллизии идентификатора: {dup_ids.nunique()} SYNTHETIC_U у {len(dup_ids)} строк с разными ОКВЭД, выручкой и "
         "регионом — это разные компании под одним id. **Исключены** из анализа (их нельзя различить).",
         f"- Формат ОКВЭД: {int(code.str.fullmatch(r'\\d{2}\\.\\d').sum())} кодов вида «41.2» (без учёта коллизий) "
@@ -81,7 +81,7 @@ def main():
         "по ним строятся связанные компании.",
         f"- Компаний вне справочника: {pct((~links.SYNTHETIC_U.isin(raw.SYNTHETIC_U)).mean())}.", "",
         "## После предобработки", "",
-        f"- Компаний в анализе: {n(len(companies))}; сегмент: {int((companies['REVENUE_COMPANY'] >= clients.SEGMENT_REVENUE).sum())}.",
+        f"- Компаний в анализе: {n(len(companies))}; сегмент: {int((companies['REVENUE_COMPANY'] > clients.SEGMENT_REVENUE).sum())}.",
     ]
     text = "\n".join(lines) + "\n"
     Path(args.out).write_text(text, encoding="utf-8")

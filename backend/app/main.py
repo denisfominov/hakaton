@@ -11,10 +11,10 @@ from fastapi.responses import FileResponse
 
 import httpx
 
-from . import (agent, bank_rag, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
+from . import (agent, bank_rag, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
                market, model, nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -30,10 +30,37 @@ def preset_profiles():
     Если не редактировал — при изменении файла обновляем профиль в базе автоматически.
     """
     out = []
+    if not presets_wanted():
+        return out
     for p in sources.load_profiles():
         h = pipeline.profile_hash(p)
         out.append({**p, "preset_hash": h})
     return out
+
+
+def presets_wanted():
+    """Встроенные публичные компании нужны только тестовому набору или когда данных кейса нет (config.PRESET_PROFILES)."""
+    if config.PRESET_PROFILES in ("1", "0"):
+        return config.PRESET_PROFILES == "1"
+    return config.DATASET == "synthetic" or clients.source_kind() is None
+
+
+def seed_demo_clients(conn):
+    """Демо-клиенты кейса — встроенные профили с постоянными id (ссылки входа, кэш ответов модели)."""
+    ids = []
+    for uid in clients.demo_client_ids():
+        pid = clients.profile_id(uid)
+        ids.append(pid)
+        if conn.execute("SELECT 1 FROM profiles WHERE id = ?", (pid,)).fetchone():
+            continue
+        p = clients.profile_from_client(uid)
+        if not p:
+            continue
+        data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
+        data["id"] = pid
+        conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
+                     (pid, dumps(data), now_iso()))
+    return ids
 
 
 def deleted_presets(conn):
@@ -51,11 +78,11 @@ async def lifespan(_app):
     init_db()
     with get_db() as conn:
         presets = preset_profiles()
-        ids = [p["id"] for p in presets]
+        ids = [p["id"] for p in presets] + seed_demo_clients(conn)
         deleted = deleted_presets(conn)
-        # при смене набора данных убираем встроенные профили и события другого набора;
-        # профили, созданные пользователем, и план действий не трогаем
-        conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids))})", ids)
+        # при смене набора данных убираем встроенные профили и события другого набора (в том числе публичные компании,
+        # которых нет в базе кейса); профили, созданные пользователем, и план действий не трогаем
+        conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids)) or 'NULL'})", ids)
         other = "demo" if config.DATASET == "real" else "curated"
         conn.execute("DELETE FROM events WHERE source_type = ?", (other,))
         for p in presets:
@@ -254,7 +281,8 @@ def status():
             "LLM не подключена: аналитика строится правилами. Задайте LLM_PROVIDER и LLM_BASE_URL (разрешённые модели).",
         },
         "model": model_short,
-        "clients": {"source": clients.source_kind()},
+        "clients": {"source": clients.source_kind(), "demo": [clients.profile_id(u) for u in clients.demo_client_ids()]
+                    if clients.source_kind() else []},
         "bank_docs": {k: v for k, v in bank_rag.status().items() if k != "folder"},
         "llm_provider": llm_client.status(),
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
@@ -627,10 +655,10 @@ def agent_insight(body: AgentIn):
     with get_db() as conn:
         profile = get_profile(conn, body.profile_id)
         if not body.refresh:
-            prev = agent.latest_run(conn, profile["id"], body.event_id, body.question.strip())
+            prev = agent.latest_run(conn, profile["id"], body.event_id, body.question.strip(), body.role)
             if prev:
                 return {**prev, "cached": True}
-        out = agent.run(conn, profile, body.event_id, body.question)
+        out = agent.run(conn, profile, body.event_id, body.question, role=body.role or None)
     if out is None:
         raise HTTPException(404, "Событие не найдено")
     out.pop("context", None)  # вход модели хранится в agent_runs для датасета, в интерфейс не отдаём
@@ -643,6 +671,36 @@ def agent_schema():
     from .schemas import AgentResultOut
 
     return AgentResultOut.model_json_schema()
+
+
+@app.get("/api/roles")
+def list_roles():
+    """Роли пользователя: от роли зависят акценты интерпретации и действий."""
+    return roles.catalog()
+
+
+@app.post("/api/entry/mock-token")
+def entry_mock_token(body: EntryTokenIn):
+    """СМОДЕЛИРОВАНО: токен входа, который в продукте выпускает интернет-банк Альфа-Бизнес (docs/ALFA_BUSINESS_ENTRY.md)."""
+    if not clients.card(body.client_id):
+        raise HTTPException(404, "Компании нет в данных кейса")
+    token = entry.issue(body.client_id, body.role)
+    return {"token": token, "url": f"/?entry={token}", "expires_in": entry.TTL_SECONDS, "simulated": True}
+
+
+@app.post("/api/entry/verify")
+def entry_verify(body: EntryVerifyIn):
+    """Вход по токену из Альфа-Бизнеса: проверка подписи, срока и одноразовости, журнал, профиль компании и роль."""
+    error = None
+    with get_db() as conn:
+        try:
+            payload = entry.verify(conn, body.token)
+        except entry.EntryError as e:
+            error = str(e)  # исключение — после выхода из транзакции, иначе запись журнала откатится
+    if error:
+        raise HTTPException(401, f"Вход не выполнен: {error}")
+    profile = client_profile(payload["client_id"])
+    return {"profile": profile, "role": payload["role"], "client_id": payload["client_id"]}
 
 
 @app.get("/api/agent/runs/{run_id}")
@@ -724,7 +782,13 @@ def client_profile(uid: str):
     p = clients.profile_from_client(uid)
     if not p:
         raise HTTPException(404, "Клиент не найден в данных")
-    return create_profile(ProfileIn(**{**p, "autofilled": True}))
+    data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
+    data["id"] = clients.profile_id(uid)  # постоянный id: одинаковый у всей команды
+    with get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
+                     (data["id"], dumps(data), now_iso()))
+        jobs.request(data["id"])
+        return get_profile(conn, data["id"])
 
 
 # ---------- портфель: все компании сразу ----------

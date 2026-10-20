@@ -79,7 +79,9 @@ def test_ai_conclusion_records_model_and_prompt(conn, profiles, bank_docs, monke
     res = agent.run(conn, profiles["uralmet"], "demo-11", save=False)
     conn.commit()
     ai = res["result"]["ai_conclusion"]
-    assert ai["engine"] == "llm" and ai["model"] == "GLM-5.3-Flash" and ai["prompt"] == "agent_answer@v2"
+    from app import prompts
+
+    assert ai["engine"] == "llm" and ai["model"] == "GLM-5.3-Flash" and ai["prompt"] == prompts.get("agent_answer").id
 
 
 def test_untrusted_text_is_tagged_and_instructions_dropped():

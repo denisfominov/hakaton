@@ -117,10 +117,19 @@ export const api = {
   compare: (id: string) => request<CompareRow[]>(`/events/${id}/compare`),
   toggleFavorite: (profileId: string, id: string) =>
     request<{ favorite: boolean }>(`/events/${id}/favorite?${qs({ profile_id: profileId })}`, { method: "POST" }),
-  agentInsight: (profileId: string, eventId: string, question = "", refresh = false) =>
+  agentInsight: (profileId: string, eventId: string, question = "", refresh = false, role = "") =>
     request<AgentRun>("/agent/insight", {
       method: "POST",
-      body: JSON.stringify({ profile_id: profileId, event_id: eventId, question, refresh }),
+      body: JSON.stringify({ profile_id: profileId, event_id: eventId, question, refresh, role }),
+    }),
+  roles: () => request<{ key: string; label: string; focus: string }[]>("/roles"),
+  entryMockToken: (clientId: string, role: string) =>
+    request<{ token: string; url: string; expires_in: number; simulated: boolean }>("/entry/mock-token", {
+      method: "POST", body: JSON.stringify({ client_id: clientId, role }),
+    }),
+  entryVerify: (token: string) =>
+    request<{ profile: Profile; role: string; client_id: string }>("/entry/verify", {
+      method: "POST", body: JSON.stringify({ token }),
     }),
   clients: (q = "") =>
     request<{ source: "case" | "sample" | null; segment_revenue: number; items: CaseClient[] }>(`/clients?${qs({ q, limit: 200 })}`),

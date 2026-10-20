@@ -1,4 +1,4 @@
-import { Building2, Check, Globe, Hash, LineChart, Plus, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
+import { Building2, Check, Globe, Hash, LineChart, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -161,8 +161,9 @@ function CaseClients({ onOpen }: { onOpen: (id: string) => void }) {
         <div>
           <h2 className="section-title flex items-center gap-2"><Building2 size={16} /> Клиенты банка: крупный бизнес</h2>
           <p className="text-xs text-ink-500">
-            Обезличенные данные кейса{source === "sample" ? " (синтетический пример — положите CSV кейса в CLIENT_DATA_DIR)" : ""}:
-            ОКВЭД, выручка от 15 млрд ₽, продукты банка, ВЭД, контрагенты по платежам. Профиль для анализа собирается автоматически.
+            Обезличенные данные кейса{source === "sample" ? " (синтетический пример — положите CSV кейса в CLIENT_DATA_DIR)" : ""}
+            (df_Uid_data_hack.csv): выручка свыше 15 млрд ₽ (REVENUE_COMPANY — сумма в рублях), ОКВЭД, регион, продукты банка,
+            ВЭД; контрагенты — по платежам (df_Uid_payment_hack.csv).
           </p>
         </div>
         <div className="relative w-full sm:max-w-xs">
@@ -264,10 +265,13 @@ export default function CompaniesPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Выбор компании</h1>
-          <p className="mt-1 text-sm text-ink-500">Для какой компании анализировать новости. Можно добавить свою по сайту или ИНН</p>
+          <p className="mt-1 text-sm text-ink-500">Компании из базы кейса: выберите клиента — профиль соберётся из данных банка автоматически</p>
         </div>
-        <button className="btn-primary self-start whitespace-nowrap" onClick={() => setAdding(true)}><Plus size={15} /> Добавить компанию</button>
       </div>
+
+      <CaseClients onOpen={(id) => open(id, "/")} />
+
+      <h2 className="section-title">Открытые компании</h2>
 
       {deleted.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-200 bg-white px-4 py-3 text-sm">
@@ -291,7 +295,7 @@ export default function CompaniesPage() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-semibold leading-snug">{p.name}</div>
-                  <div className="mt-0.5 text-sm text-ink-500">{p.industry || "Отрасль не указана"}</div>
+                  <div className="mt-0.5 text-sm text-ink-500">{p.label ? p.label.replace(/^Компания [^:]+: /, "") : p.industry || "Отрасль не указана"}</div>
                 </div>
                 {current && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-ink-900 px-2 py-0.5 text-xs font-medium text-white">
@@ -300,7 +304,7 @@ export default function CompaniesPage() {
                 )}
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
-                <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">{p.is_demo ? "Встроенная" : "Добавлена вами"}</span>
+                <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">{p.client_id ? (p.is_demo ? "Демо-клиент кейса" : "Клиент из базы кейса") : p.is_demo ? "Встроенная" : "Добавлена вручную"}</span>
                 {p.ticker && (
                   <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-sky-800" title="Публичная компания: новости размечаются по реакции акций">
                     <LineChart size={11} /> {p.ticker}
@@ -323,7 +327,9 @@ export default function CompaniesPage() {
         })}
       </div>
 
-      <CaseClients onOpen={(id) => open(id, "/")} />
+      <button className="text-xs text-ink-500 underline-offset-2 hover:underline" onClick={() => setAdding(true)}>
+        Добавить компанию вручную по ИНН или сайту (необязательно: основной источник — база кейса)
+      </button>
 
       {adding && (
         <Modal title="Добавить компанию" onClose={closeAdd} wide>

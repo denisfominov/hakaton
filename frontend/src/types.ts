@@ -27,6 +27,7 @@ export interface Profile {
   // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
   client_id?: string;
+  label?: string;
   bank_products?: string[];
   autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[];
     sources_log?: SourceLogItem[] };
@@ -468,6 +469,7 @@ export interface Claim {
   kind: ClaimKind;
   sources: string[];
   confirmed?: boolean | null;
+  for_role?: boolean | null;
   link?: { doc: string; title: string; page: number; date: string | null; url: string } | null;
 }
 
@@ -502,6 +504,7 @@ export interface AgentSource {
 }
 
 export interface AgentAction {
+  for_role?: boolean | null;
   title: string;
   description: string;
   why?: string;
@@ -543,6 +546,7 @@ export interface AgentResult {
   features?: { label: string; contribution: number | null; value: number | null; source: "case_model" | "rules" }[];
   contradictions?: Contradiction[];
   plan?: { goal: string; by: string; sources: string[]; steps: { tool: string; why: string }[] } | null;
+  role?: { key: string; label: string; focus: string; note: string } | null;
   answers: {
     what_happened: Claim[];
     event: {

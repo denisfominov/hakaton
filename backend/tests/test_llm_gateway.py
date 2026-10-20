@@ -146,7 +146,8 @@ def test_unknown_api_format_is_refused(gateway, monkeypatch):
 
 def test_prompts_are_versioned_files(monkeypatch):
     p = prompts.get("agent_answer")
-    assert p.id == "agent_answer@v2" and "JSON" in p.text and "untrusted" in p.text, "используется последняя версия"
+    assert p.id == "agent_answer@v3" and "JSON" in p.text and "untrusted" in p.text and "РОЛЬ" in p.text, \
+        "используется последняя версия"
     monkeypatch.setenv("PROMPT_AGENT_ANSWER", "v1")
     assert prompts.get("agent_answer").id == "agent_answer@v1", "версию можно закрепить в .env"
     assert prompts.get("agent_plan").render(tools="- get_event: факты").endswith("- get_event: факты")

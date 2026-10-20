@@ -49,6 +49,16 @@ CLIENT_DATA_DIR = os.getenv("CLIENT_DATA_DIR", "")
 # аналитические материалы Альфа-Банка (PDF/текст) для RAG
 BANK_DOCS_DIR = Path(os.getenv("BANK_DOCS_DIR") or DATA_DIR / "bank")
 
+# список клиентов — компании из данных кейса; встроенные публичные компании (Северсталь, X5…) в базе кейса отсутствуют:
+# auto — загружать их только для тестового набора (DATASET=synthetic) или если данных кейса нет; 1 — всегда; 0 — никогда
+PRESET_PROFILES = (os.getenv("PRESET_PROFILES") or "auto").lower()
+# демонстрационные клиенты кейса (через запятую, например U_9250,U_57706); пусто — 5 разных отраслей автоматически
+DEMO_CLIENTS = os.getenv("DEMO_CLIENTS", "")
+
+# вход из Альфа-Бизнеса (смоделирован): секрет подписи токена. В продукте — секрет, общий с интернет-банком,
+# только из переменных окружения хостинга. Значение по умолчанию годится лишь для локальной демонстрации.
+ENTRY_SECRET = os.getenv("ENTRY_SECRET") or "dev-only-entry-secret-change-me"
+
 # свои ML-модели (scripts/train_models.py); не в git — производные от данных кейса
 CASE_MODELS_PATH = Path(os.getenv("CASE_MODELS_PATH") or DATA_DIR / "models" / "case_models.pkl")
 

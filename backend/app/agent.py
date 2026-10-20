@@ -21,7 +21,7 @@ import logging
 import time
 import uuid
 
-from . import agent_rules, agent_tools, bank_rag, clients, llm_client, ner, pipeline, prompts
+from . import agent_rules, agent_tools, bank_rag, clients, llm_client, ner, pipeline, prompts, roles
 from .agent_tools import TOOLS, run_tool  # noqa: F401 — реестр инструментов (agent_tools.py)
 from .db import dumps, loads, now_iso
 from .schemas import AgentResultOut
@@ -52,8 +52,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_runs_pair ON agent_runs(profile_id, event_i
 def init(conn):
     conn.executescript(SCHEMA)
     # с версии 9: вход модели (контекст) — для датасета дообучения своей LLM (scripts/export_sft.py)
-    if "context" not in [r["name"] for r in conn.execute("PRAGMA table_info(agent_runs)")]:
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(agent_runs)")]
+    if "context" not in cols:
         conn.execute("ALTER TABLE agent_runs ADD COLUMN context TEXT")
+    if "role" not in cols:  # с версии 10: роль пользователя меняет акценты ответа
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN role TEXT")
 
 
 # ---------- инструменты ----------
@@ -298,10 +301,20 @@ def compose(ctx, gaps):
     pred = ctx.data.get("score_with_models")
     issues, agreement = agent_rules.consistency(r, hits, pred)
     bank_signals = {s for h in hits for s in h.get("signals") or []}
+    role = getattr(ctx, "role", None)
+
+    def by_role(items):
+        """Акценты роли: риски и возможности её областей — первыми и с пометкой «для вас»."""
+        out = [{**_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"]),
+                "for_role": bool(role) and x.get("area") in role["areas"][:2]} for x in items]
+        if role:
+            ranks = [roles.area_rank(role, x.get("area")) for x in items]
+            out = [o for _r, _i, o in sorted(zip(ranks, range(len(out)), out))]
+        return out
+
     consequences = {
-        "risks": [_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"]) for x in insight["risks"]],
-        "opportunities": [_item(f"{x['title']}. {x['description']}", "ai", ["rules:analysis"])
-                          for x in insight["opportunities"]],
+        "risks": by_role(insight["risks"]),
+        "opportunities": by_role(insight["opportunities"]),
         "bank_adjusted": [],
         "horizon": insight.get("horizon_label"),
     }
@@ -314,7 +327,11 @@ def compose(ctx, gaps):
         consequences["bank_adjusted"].append(_item(f"С учётом аналитики банка: {insight['summary_line']} — {tail}.", "ai", src))
     actions = [{"title": a["title"], "description": a["description"], "why": a.get("why"), "if_done": a.get("if_done"),
                 "if_ignored": a.get("if_ignored"), "owner": a.get("owner"), "due_days": a.get("due_days"), "kind": "ai",
-                "sources": ["rules:analysis"]} for a in insight["actions"][:4]]
+                "sources": ["rules:analysis"], "for_role": bool(role) and roles.owner_matches(role, a.get("owner"))}
+               for a in insight["actions"]]
+    if role:  # действия этой роли — первыми; остальные остаются (их делают коллеги)
+        actions.sort(key=lambda a: not a["for_role"])
+    actions = actions[:4]
     follow = agent_rules.follow_up(r, card, event.get("facts") or [], bank_signals)
     for sc in follow["scenarios"]:
         sc.update(kind="ai", sources=["rules:analysis"] + ([f"bank:{hits[0]['id']}"] if sc.get("bank_view") and hits else []))
@@ -357,6 +374,7 @@ def compose(ctx, gaps):
         "features": features,
         "contradictions": [{**i["pair"], "note": i["text"]} for i in issues if i.get("pair")],
         "plan": getattr(ctx, "plan_json", None),
+        "role": role_note(role, consequences, actions) if role else None,
         "answers": {"what_happened": what, "event": {**details, "category": ctx.ev.get("category")},
                     "why_important": why, "consequences": consequences, "actions": actions, "follow_up": follow,
                     "bank_view": bank_view, "basis": basis, "question": None},
@@ -366,6 +384,19 @@ def compose(ctx, gaps):
         "confidence": confidence,
         "priority": score["priority"],
     }
+
+
+def role_note(role, consequences, actions):
+    """Кому и что важнее всего: первая пометка «для вас» среди рисков, возможностей и действий."""
+    first = next((x["text"].split(". ")[0] for x in consequences["risks"] + consequences["opportunities"]
+                  if x.get("for_role")), None)
+    act = next((a["title"] for a in actions if a.get("for_role")), None)
+    parts = [f"для роли «{role['label']}» в фокусе {role['focus']}"]
+    if first:
+        parts.append(f"главное — {first[0].lower() + first[1:]}")
+    if act:
+        parts.append(f"ваше действие — {act[0].lower() + act[1:]}")
+    return {"key": role["key"], "label": role["label"], "focus": role["focus"], "note": "; ".join(parts) + "."}
 
 
 def _sentence(text, limit=360):
@@ -394,6 +425,7 @@ def llm_payload(ctx, draft):
             + "\nRULES:\n" + "\n".join(f"- {x['text']}" for x in a["consequences"]["risks"] + a["consequences"]["opportunities"])
             + "\n" + untrusted("untrusted_bank", "BANK:\n" + ("\n".join(f"[{k}] {v}" for k, v in bank.items())
                                                                  or "нет материалов"))
+            + (f"\nРОЛЬ: {ctx.role['label']} — акцент: {ctx.role['focus']}" if getattr(ctx, "role", None) else "")
             + (f"\nВОПРОС: {ctx.question}" if ctx.question else ""))
 
 
@@ -457,7 +489,7 @@ def _llm_step(usage):
             "fallback_from": usage.get("fallback_from")}
 
 
-def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True, permissions=None):
+def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True, permissions=None, role=None):
     """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/compare_models.py);
     save=False — не писать в agent_runs (сборка датасета на копии базы)."""
     started = time.time()
@@ -465,6 +497,7 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     if r is None:
         return None
     ctx = Ctx(conn, profile, r, question.strip(), models, permissions)
+    ctx.role = roles.get(role)
     mode, model = "rules", None
     plan = None
     if use_llm and llm_client.enabled():
@@ -539,9 +572,10 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     result = AgentResultOut.model_validate(result).model_dump()  # ответ строго по JSON-схеме
     if save:
         conn.execute("INSERT INTO agent_runs (id, profile_id, event_id, question, created_at, mode, model, ms, plan, "
-                     "trace, result, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     "trace, result, context, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (run_id, profile["id"], r["event"]["id"], ctx.question, now_iso(), mode, model, ms,
-                      dumps([{"tool": t, "why": w} for t, _a, w in plan]), dumps(ctx.trace), dumps(result), context))
+                      dumps([{"tool": t, "why": w} for t, _a, w in plan]), dumps(ctx.trace), dumps(result), context,
+                      role or ""))
     log.info("agent run %s profile=%s event=%s mode=%s steps=%s %sms tokens=%s", run_id, profile["id"],
              r["event"]["id"], mode, len(ctx.trace), ms, ctx.usage["prompt_tokens"] + ctx.usage["completion_tokens"])
     return {"run_id": run_id, "ms": ms, "result": result, "trace": ctx.trace, "usage": ctx.usage, "context": context}
@@ -555,9 +589,10 @@ def get_run(conn, run_id):
             "created_at": row["created_at"], "result": loads(row["result"], {}), "trace": loads(row["trace"], [])}
 
 
-def latest_run(conn, profile_id, event_id, question=""):
+def latest_run(conn, profile_id, event_id, question="", role=""):
     row = conn.execute("SELECT id FROM agent_runs WHERE profile_id = ? AND event_id = ? AND IFNULL(question, '') = ? "
-                       "ORDER BY created_at DESC LIMIT 1", (profile_id, event_id, question or "")).fetchone()
+                       "AND IFNULL(role, '') = ? ORDER BY created_at DESC LIMIT 1",
+                       (profile_id, event_id, question or "", role or "")).fetchone()
     return get_run(conn, row["id"]) if row else None
 
 

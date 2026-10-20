@@ -26,6 +26,7 @@ class ProfileIn(BaseModel):
     inn: str = Field("", max_length=12)
     # клиент из данных кейса (clients.py): обезличенный SYNTHETIC_U, продукты банка и сигналы для анализа
     client_id: str = Field("", max_length=40)
+    label: str = Field("", max_length=400)
     bank_products: list[str] = []
     client_signals: list[str] = []
     website: str = Field("", max_length=300)
@@ -95,7 +96,17 @@ class AgentIn(BaseModel):
     profile_id: str = Field(..., max_length=40)
     event_id: str = Field(..., max_length=80)
     question: str = Field("", max_length=500)
+    role: Literal["", "owner", "ceo", "cfo", "accountant", "treasury"] = ""
     refresh: bool = False
+
+
+class EntryTokenIn(BaseModel):
+    client_id: str = Field(..., max_length=40)
+    role: Literal["owner", "ceo", "cfo", "accountant", "treasury"]
+
+
+class EntryVerifyIn(BaseModel):
+    token: str = Field(..., max_length=2000)
 
 
 class RefreshIn(BaseModel):
@@ -116,9 +127,11 @@ class ClaimOut(BaseModel):
     sources: list[str]
     confirmed: Optional[bool] = None  # для фактов: подтверждено официальным источником или 2+ независимыми изданиями
     link: Optional[dict] = None  # для позиции банка: {doc, title, page, date, url} — переход к странице материала
+    for_role: Optional[bool] = None  # относится к зоне ответственности роли пользователя
 
 
 class AgentActionOut(BaseModel):
+    for_role: Optional[bool] = None
     title: str
     description: str = ""
     why: Optional[str] = None
@@ -280,6 +293,7 @@ class AgentResultOut(BaseModel):
     features: list[FeatureOut] = []
     contradictions: list[ContradictionOut] = []
     plan: Optional[dict] = None  # {goal, by, sources, steps} — явный результат шага планирования
+    role: Optional[dict] = None  # {key, label, focus, note} — акценты для роли пользователя
     answers: AnswersOut
     checks: ChecksOut
     scores: ScoresOut
