@@ -59,3 +59,6 @@ backend/data/sft/
 backend/data/models/
 backend/data/gold/*.csv
 !backend/data/gold/gold_template.csv
+
+# веса локальной модели эмбеддингов (scripts/download_embeddings.py) и кэш векторов
+backend/data/embeddings/

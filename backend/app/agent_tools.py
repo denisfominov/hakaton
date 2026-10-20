@@ -22,7 +22,9 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import agent_rules, analysis, bank_rag, clients, company_features, ml_models, ner, nlp, store
+import numpy as np
+
+from . import agent_rules, analysis, bank_rag, clients, company_features, embeddings, ml_models, ner, nlp, store
 
 ALL_DATA = {"public", "bank_internal", "client_confidential"}
 
@@ -226,12 +228,12 @@ def tool_search_news(ctx, query="", limit=5):
 
 
 # RAG по новостям: фрагменты (предложения) всех новостей базы, TF-IDF по леммам; индекс — на версию данных
-_news_index = {"fp": None, "vec": None, "matrix": None, "chunks": []}
+_news_index = {"fp": None, "vec": None, "matrix": None, "chunks": [], "emb": None}
 _news_lock = threading.Lock()
 
 
 def _news_rag(conn):
-    fp = store.data_fingerprint(conn)
+    fp = store.data_fingerprint(conn) + embeddings.method()
     with _news_lock:
         if _news_index["fp"] == fp:
             return _news_index
@@ -242,12 +244,14 @@ def _news_rag(conn):
             if len(sent) >= 40 and not nlp.looks_like_injection(sent):
                 chunks.append({"event_id": ev["id"], "title": ev["title"], "source": ev["source"], "url": ev.get("url"),
                                "date": ev["published_at"], "cluster_id": ev.get("cluster_id"), "text": sent.strip()})
-    vec = matrix = None
+    vec = matrix = emb = None
     if chunks:
         vec = TfidfVectorizer(sublinear_tf=True, ngram_range=(1, 2))
         matrix = vec.fit_transform([" ".join(ner.lemmas(c["title"] + " " + c["text"])) for c in chunks])
+        if embeddings.available():
+            emb = embeddings.encode([f"{c['title']}. {c['text']}" for c in chunks], "passage")
     with _news_lock:
-        _news_index.update(fp=fp, vec=vec, matrix=matrix, chunks=chunks)
+        _news_index.update(fp=fp, vec=vec, matrix=matrix, chunks=chunks, emb=emb)
     return _news_index
 
 
@@ -256,12 +260,21 @@ def tool_news_rag(ctx, query="", limit=5):
     idx = _news_rag(ctx.conn)
     if not idx["chunks"] or not query.strip():
         return [], "в базе новостей ничего по запросу"
-    sims = cosine_similarity(idx["vec"].transform([" ".join(ner.lemmas(query))]), idx["matrix"])[0]
+    tf = cosine_similarity(idx["vec"].transform([" ".join(ner.lemmas(query))]), idx["matrix"])[0]
+    if idx["emb"] is not None:  # гибрид e5 + TF-IDF, как в аналитике банка (bank_rag.search)
+        e5 = idx["emb"] @ embeddings.encode([query], "query")[0]
+        rank = lambda v: np.argsort(np.argsort(-v))  # noqa: E731
+        sims = 1 / (bank_rag.RRF_K + rank(e5)) + 1 / (bank_rag.RRF_K + rank(tf))
+        ok = (e5 >= bank_rag.MIN_SCORE_E5) | (tf >= 0.08)
+    else:
+        sims, ok = tf, tf >= 0.08
     hits, seen = [], set()
     for i in sims.argsort()[::-1]:
         c = idx["chunks"][i]
-        if sims[i] < 0.08 or len(hits) >= int(limit):
+        if len(hits) >= int(limit):
             break
+        if not ok[i]:
+            continue
         if c["event_id"] == ctx.ev["id"] or c["cluster_id"] == ctx.ev.get("cluster_id") or c["event_id"] in seen:
             continue
         seen.add(c["event_id"])

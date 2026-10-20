@@ -20,13 +20,17 @@ from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import config, ner, nlp
+import numpy as np
+
+from . import config, embeddings, ner, nlp
 
 log = logging.getLogger("alpha.rag")
 logging.getLogger("pypdf").setLevel(logging.ERROR)  # PDF кейса — картинки страниц, pypdf шумит о структуре файла
 
 CHUNK_CHARS = 900
-MIN_SCORE = 0.08
+MIN_SCORE = 0.08     # TF-IDF: ниже — не по теме
+MIN_SCORE_E5 = 0.82  # e5: у посторонних запросов («футбол», «рецепт борща») максимум около 0,79, у тематических 0,87+
+RRF_K = 60           # гибрид: сумма 1/(60 + место) по e5 и TF-IDF (reciprocal rank fusion)
 EXTS = {".pdf", ".txt", ".md"}
 
 TOPICS = {
@@ -49,7 +53,7 @@ DATE_RE = re.compile(r"\b(\d{1,2}[.\s](?:\d{1,2}|январ\w*|феврал\w*|�
                      re.IGNORECASE)
 
 _lock = threading.Lock()
-_index = {"fp": None, "chunks": [], "docs": [], "vec": None, "matrix": None}
+_index = {"fp": None, "chunks": [], "docs": [], "vec": None, "matrix": None, "emb": None}
 
 
 def _files(folder=None):
@@ -263,36 +267,59 @@ def _documents(chunks):
 
 def _ensure(folder=None):
     files = _files(folder)
-    fp = _fingerprint(files) + str(Path(folder or config.BANK_DOCS_DIR).resolve())
+    fp = _fingerprint(files) + str(Path(folder or config.BANK_DOCS_DIR).resolve()) + embeddings.method()
     with _lock:
         if _index["fp"] == fp:
             return _index
     chunks = [c for p in files for c in _chunks(p)]
-    vec = matrix = None
+    vec = matrix = emb = None
     if chunks:
         vec = TfidfVectorizer(sublinear_tf=True, ngram_range=(1, 2))
         matrix = vec.fit_transform([" ".join(ner.lemmas(c["title"] + " " + c["text"])) for c in chunks])
+        if embeddings.available():
+            emb = embeddings.encode([f"{c['title']}. {c['text']}" for c in chunks], "passage")
     with _lock:
-        _index.update(fp=fp, chunks=chunks, docs=_documents(chunks), vec=vec, matrix=matrix)
+        _index.update(fp=fp, chunks=chunks, docs=_documents(chunks), vec=vec, matrix=matrix, emb=emb)
     log.info("bank rag: %s documents, %s chunks", len(files), len(chunks))
     return _index
 
 
-def search(query, k=4, folder=None):
-    """Фрагменты аналитики банка по запросу: [{id, doc, title, page, text, score}]."""
+DEFAULT_METHOD = "hybrid"  # по контрольным вопросам (docs/REVIEW.md); без весов e5 — TF-IDF
+
+
+def search(query, k=4, folder=None, method=None):
+    """Фрагменты аналитики банка по запросу: [{id, doc, title, page, text, score, method}].
+    method: hybrid (e5 + TF-IDF, по умолчанию), e5, tfidf; без весов e5 — всегда tfidf (запасной режим)."""
     idx = _ensure(folder)
     if not idx["chunks"] or not query.strip():
         return []
-    q = idx["vec"].transform([" ".join(ner.lemmas(query))])
-    sims = cosine_similarity(q, idx["matrix"])[0]
-    order = sims.argsort()[::-1][:k]
-    return [{**idx["chunks"][i], "score": round(float(sims[i]), 3)} for i in order if sims[i] >= MIN_SCORE]
+    method = method or DEFAULT_METHOD
+    if idx["emb"] is None:
+        method = "tfidf"
+    tf = cosine_similarity(idx["vec"].transform([" ".join(ner.lemmas(query))]), idx["matrix"])[0]
+    if method == "tfidf":
+        order = tf.argsort()[::-1][:k]
+        return [{**idx["chunks"][i], "score": round(float(tf[i]), 3), "method": "tfidf"} for i in order if tf[i] >= MIN_SCORE]
+    e5 = idx["emb"] @ embeddings.encode([query], "query")[0]
+    if method == "e5":
+        order = e5.argsort()[::-1][:k]
+        return [{**idx["chunks"][i], "score": round(float(e5[i]), 3), "method": "e5"} for i in order if e5[i] >= MIN_SCORE_E5]
+    rank_e5 = np.empty(len(e5), dtype=int)
+    rank_e5[np.argsort(-e5)] = np.arange(len(e5))
+    rank_tf = np.empty(len(tf), dtype=int)
+    rank_tf[np.argsort(-tf)] = np.arange(len(tf))
+    fused = 1 / (RRF_K + rank_e5) + 1 / (RRF_K + rank_tf)
+    ok = (e5 >= MIN_SCORE_E5) | (tf >= MIN_SCORE)
+    order = [i for i in np.argsort(-fused) if ok[i]][:k]
+    return [{**idx["chunks"][i], "score": round(float(e5[i]), 3), "tfidf": round(float(tf[i]), 3), "method": "hybrid"}
+            for i in order]
 
 
 def status(folder=None):
     idx = _ensure(folder)
     return {"folder": str(folder or config.BANK_DOCS_DIR), "documents": idx["docs"], "chunks": len(idx["chunks"]),
-            "topics": {k: label for k, (label, _r) in TOPICS.items()}}
+            "topics": {k: label for k, (label, _r) in TOPICS.items()},
+            "search": DEFAULT_METHOD if idx["emb"] is not None else "tfidf", "embeddings": embeddings.status()}
 
 
 def link(hit):

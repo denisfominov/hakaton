@@ -28,3 +28,5 @@ backend/data/sft/
 backend/data/models/
 backend/data/gold/*.csv
 !backend/data/gold/gold_template.csv
+# веса модели эмбеддингов (~130 МБ): том или --build-arg BAKE_EMBEDDINGS=1 (Dockerfile)
+backend/data/embeddings/

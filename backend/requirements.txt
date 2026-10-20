@@ -11,6 +11,9 @@ snowballstemmer==2.2.0
 pymorphy3==2.0.6
 natasha==1.6.0
 pypdf==5.1.0
+# локальная модель эмбеддингов (multilingual-e5-small, ONNX) для RAG и смысловой близости; не генеративная модель
+onnxruntime==1.31.0
+tokenizers==0.23.3
 
 # тесты
 pytest==8.3.4

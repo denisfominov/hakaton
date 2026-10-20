@@ -29,6 +29,12 @@ RUN uv pip install --system --no-cache -r requirements.lock
 COPY backend/ ./
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
+# Локальная модель эмбеддингов multilingual-e5-small (RAG, смысловая близость; MIT). По умолчанию в образ НЕ
+# попадает (образ меньше на ~130 МБ): веса подключаются томом (docker-compose.yml) или поиск работает на TF-IDF.
+# Для хостинга без томов: docker build --build-arg BAKE_EMBEDDINGS=1 — скачать при сборке (sha256 проверяется).
+ARG BAKE_EMBEDDINGS=0
+RUN if [ "$BAKE_EMBEDDINGS" = "1" ]; then python -m scripts.download_embeddings --out data/embeddings/multilingual-e5-small; fi
+
 # не от root; база и котировки пишутся в /data
 RUN useradd --create-home --uid 10001 app && mkdir -p /data && chown app /data
 USER app

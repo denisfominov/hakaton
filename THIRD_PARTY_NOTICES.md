@@ -22,10 +22,12 @@
 | pymorphy3 + pymorphy3-dicts-ru | 2.0.6 | MIT | лемматизация (поиск названий, RAG) |
 | natasha (+ navec, slovnet, razdel, yargy) | 1.6.0 | MIT | распознавание организаций и мест (NER) |
 | pypdf | 5.1.0 | BSD-3-Clause | извлечение текста из PDF аналитики банка |
+| onnxruntime | 1.31.0 | MIT | запуск локальной модели эмбеддингов (ONNX, CPU) |
+| tokenizers (Hugging Face) | 0.23.3 | Apache-2.0 | токенизатор модели эмбеддингов |
 | pytest | 8.3.4 | MIT | тесты (не входит в рабочую сборку логики) |
 
 Остальные транзитивные зависимости (anyio, h11, httpcore, idna, sniffio, click, websockets, watchfiles, PyYAML,
-joblib, threadpoolctl, python-dateutil, pytz, tzdata и др.) — MIT, BSD, Apache-2.0 или PSF; certifi — MPL-2.0.
+joblib, threadpoolctl, python-dateutil, pytz, tzdata, huggingface-hub, flatbuffers, protobuf и др.) — MIT, BSD, Apache-2.0 или PSF; certifi — MPL-2.0.
 
 ## 2. Библиотеки frontend
 
@@ -66,6 +68,15 @@ joblib, threadpoolctl, python-dateutil, pytz, tzdata и др.) — MIT, BSD, Apa
 Условия использования весов — по лицензии на карточке каждой модели; перед размещением весов на своём сервере
 лицензию нужно проверить (см. [docs/FINETUNE_PROPOSAL.md](docs/FINETUNE_PROPOSAL.md)). Без LLM сервис полностью работает на правилах.
 
+### Локальная модель эмбеддингов (не генеративная)
+
+| Модель | Лицензия | Назначение | Как подключается |
+|---|---|---|---|
+| [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small), ревизия `614241f6`, ONNX int8 | MIT (проверено на карточке модели 2026-10-20) | поиск по аналитике банка и новостям (RAG), смысловая близость новости к профилю | веса скачивает `python -m scripts.download_embeddings` (sha256 проверяется), в репозиторий не коммитятся; в Docker — том или `--build-arg BAKE_EMBEDDINGS=1` |
+
+Использование локальных моделей эмбеддингов разрешено организаторами; ограничение на шесть LLM к ним не относится.
+Без весов поиск работает на TF-IDF.
+
 ## 5. Данные
 
 | Данные | Источник | Условия |
@@ -95,5 +106,7 @@ joblib, threadpoolctl, python-dateutil, pytz, tzdata и др.) — MIT, BSD, Apa
 | Интеграция | Статус |
 |---|---|
 | API новостей и аналитики Альфа-Банка (`AlfaBankSource` в `backend/app/sources.py`) | каркас: формат ответа — наше предположение, доступа нет, не проверялась |
-| Интернет-банк Альфа-Бизнес (точка входа, вход пользователя, роли) | смоделировано веб-интерфейсом прототипа, авторизации нет |
 | Аналитика банка | RAG по файлам из `BANK_DOCS_DIR` вместо API банка |
+| Главный экран Альфа-Бизнеса (`/alfa-business`) | **макет**: свои стили, без логотипов и фирменных файлов банка; счета, платежи и кредиты — заглушки |
+| Токен входа из Альфа-Бизнеса | **заглушка**: подпись HMAC общим секретом `ENTRY_SECRET`, выпускает сам прототип (`/api/entry/mock-token`); в продукте токен выпускает банк (docs/ALFA_BUSINESS_ENTRY.md) |
+| Роль пользователя в компании | **смоделирована**: выбирается на макете; в продукте её и связь пользователя с компанией подтверждает банк (docs/SECURITY.md) |
