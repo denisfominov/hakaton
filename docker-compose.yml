@@ -1,6 +1,6 @@
 # Alpha Intelligence: агент новостной аналитики для ЛПР крупного бизнеса.
-#   docker compose up --build                       — сервис на http://localhost:8000 (без LLM или со шлюзом из .env)
-#   docker compose --profile local-llm up --build   — плюс своя LLM (Ollama) с открытыми весами разрешённой модели
+#   docker compose up --build   — сервис на http://localhost:8000: без LLM, в мок-режиме или со шлюзом организаторов (.env)
+# LLM — только шесть разрешённых кейсом моделей через шлюз организаторов (docs/COMPLIANCE.md).
 # Данные кейса и аналитика банка подключаются только для чтения и в образ не попадают.
 
 services:
@@ -23,17 +23,5 @@ services:
       - ${BANK_DOCS_HOST_DIR:-./backend/data/bank}:/bank:ro
     restart: unless-stopped
 
-  # своя LLM: LLM_PROVIDER=local, LLM_BASE_URL=http://ollama:11434/v1 в .env, модель скачать один раз:
-  #   docker compose exec ollama ollama pull qwen3.6:35b-a3b
-  ollama:
-    image: ollama/ollama:0.12.6
-    profiles: ["local-llm"]
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    restart: unless-stopped
-
 volumes:
   alpha-data:
-  ollama-models:

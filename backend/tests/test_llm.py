@@ -82,6 +82,33 @@ def test_only_allowed_models_pass(monkeypatch):
         llm_client.model_for("default")
 
 
+def test_not_allowed_model_never_reaches_network(monkeypatch):
+    """Модель вне списка кейса отклоняется до HTTP-запроса — и явная, и из настроек."""
+    from app import llm_client
+
+    monkeypatch.setattr(llm_client.config, "LLM_PROVIDER", "gateway")
+    monkeypatch.setattr(llm_client.config, "LLM_BASE_URL", "https://gateway.example/v1")
+
+    def no_network(*_a, **_k):
+        raise AssertionError("запрос к шлюзу с неразрешённой моделью")
+
+    monkeypatch.setattr(llm_client.httpx, "post", no_network)
+    for name in ["gpt-4o", "claude-opus-5-5", "llama-3-70b", "YandexGPT", "GigaChat"]:
+        with pytest.raises(llm_client.LLMError, match="не входит в список"):
+            llm_client.chat([{"role": "user", "content": "x"}], model=name)
+    monkeypatch.setattr(llm_client.config, "LLM_MODEL_REASONING", "claude-opus-5-5")
+    with pytest.raises(llm_client.LLMError, match="не входит в список"):
+        llm_client.chat([{"role": "user", "content": "x"}], role="reasoning")
+
+
+def test_ner_can_be_switched_off(monkeypatch):
+    from app import config, ner
+
+    monkeypatch.setattr(config, "NER_ENABLED", False)
+    monkeypatch.setattr(ner, "_ner", {"loaded": False, "seg": None, "tagger": None})
+    assert ner.entities("ПАО «Северсталь» повысило цены") == []
+
+
 def test_redaction_before_external_gateway():
     from app import llm_client
     text = "Пишите ivanov@corp.ru или +7 (912) 345-67-89, ИНН 7707083893, счёт 40702810900000000001"

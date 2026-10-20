@@ -54,7 +54,7 @@
 >   обоснованность, цитаты банка, валидность плана, ответ на вопрос, задержка, токены; точка отсчёта — агент без
 >   LLM. Ожидаемый лидер — GLM-5.3-Flash (уже стоит для ответа агента). Реальный запуск — после ключа шлюза.
 > - `docker-compose.yml` (сервис + необязательная своя LLM), `requirements.lock`, `.python-version`,
->   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [docs/OWN_LLM.md](docs/OWN_LLM.md), выгрузка датасета для
+>   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [docs/FINETUNE_PROPOSAL.md](docs/FINETUNE_PROPOSAL.md), выгрузка датасета для
 >   дообучения своей LLM (`scripts/export_sft.py`).
 >
 > **Что изменили**
@@ -303,11 +303,11 @@ curl -s http://localhost:8000/api/agent/schema
 - Процесс: еженедельный разбор событий с низкой оценкой пользователей и экспертами банка → правила, словари,
   датасет для дообучения своей LLM.
 
-## Своя LLM
+## Соответствие правилам и дообучение
 
-План и первые шаги — [docs/OWN_LLM.md](docs/OWN_LLM.md): открытые веса разрешённой модели на нашем сервере
-(Ollama/vLLM, тот же клиент `llm_client.py`), датасет из запусков агента (`python -m scripts.export_sft`),
-LoRA-дообучение, эталонный набор и метрики.
+Только шесть разрешённых кейсом LLM через шлюз организаторов, белый список в коде, без SDK внешних AI-сервисов и
+готовых агентных систем — [docs/COMPLIANCE.md](docs/COMPLIANCE.md). Модели не обучаются с нуля и не дообучаются;
+идея дообучения разрешённой модели описана как предложение — [docs/FINETUNE_PROPOSAL.md](docs/FINETUNE_PROPOSAL.md).
 
 ## Ограничения
 
@@ -335,7 +335,7 @@ backend/
   tests/
   requirements.txt, requirements.lock
 frontend/         React + Vite + Tailwind
-docs/             ARCHITECTURE, AUDIT, OWN_LLM, DATA, DEMO, REVIEW
+docs/             ARCHITECTURE, AUDIT, COMPLIANCE, FINETUNE_PROPOSAL, DATA, DATA_QUALITY, DEMO, REVIEW
 Dockerfile, docker-compose.yml, .env.example, THIRD_PARTY_NOTICES.md, CHANGELOG.md
 ```
 

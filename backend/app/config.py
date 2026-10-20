@@ -32,12 +32,14 @@ LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "GLM-5.3-Flash"
 LLM_MODEL_VISION = os.getenv("LLM_MODEL_VISION") or "Qwen3-VL-30B-A3B-Instruct"
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "90")
 LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")
-LLM_MODEL = LLM_MODEL_DEFAULT  # для совместимости со старым кодом
 
 # данные кейса о клиентах (df_Uid_data_hack.csv и др.); по умолчанию — корень репозитория, затем синтетический пример
 CLIENT_DATA_DIR = os.getenv("CLIENT_DATA_DIR", "")
 # аналитические материалы Альфа-Банка (PDF/текст) для RAG
 BANK_DOCS_DIR = Path(os.getenv("BANK_DOCS_DIR") or DATA_DIR / "bank")
+
+# NER natasha (небольшая модель распознавания организаций, не LLM): можно выключить, тогда поиск названий — по корням
+NER_ENABLED = os.getenv("NER_ENABLED", "1") != "0"
 
 # RSS
 RSS_TIMEOUT = float(os.getenv("RSS_TIMEOUT", "8"))

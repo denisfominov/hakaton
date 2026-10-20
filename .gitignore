@@ -51,3 +51,7 @@ backend/data/bank/*
 лекции по Машинному обучению/
 # датасеты для дообучения своей LLM из данных кейса (scripts/build_case_dataset.py)
 backend/data/sft/
+
+# служебные файлы SQLite в режиме WAL
+*.db-wal
+*.db-shm

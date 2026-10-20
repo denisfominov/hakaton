@@ -249,7 +249,7 @@ def status():
         "events": {"curated": curated, "demo": demo, "live": live, "total": sum(by_type.values())},
         "llm": {
             "enabled": config.llm_enabled(),
-            "model": config.LLM_MODEL if config.llm_enabled() else None,
+            "model": llm_client.model_for("reasoning") if config.llm_enabled() else None,
             "note": None if config.llm_enabled() else
             "LLM не подключена: аналитика строится правилами. Задайте LLM_PROVIDER и LLM_BASE_URL (разрешённые модели).",
         },

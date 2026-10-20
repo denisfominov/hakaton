@@ -64,7 +64,7 @@ joblib, threadpoolctl, python-dateutil, pytz, tzdata и др.) — MIT, BSD, Apa
 | DeepSeek-V4.1-Flash, Kimi-K2.6, Qwen3-VL-30B-A3B-Instruct | разрешены, по умолчанию не используются | через `LLM_MODEL_*` |
 
 Условия использования весов — по лицензии на карточке каждой модели; перед размещением весов на своём сервере
-лицензию нужно проверить (см. [docs/OWN_LLM.md](docs/OWN_LLM.md)). Без LLM сервис полностью работает на правилах.
+лицензию нужно проверить (см. [docs/FINETUNE_PROPOSAL.md](docs/FINETUNE_PROPOSAL.md)). Без LLM сервис полностью работает на правилах.
 
 ## 5. Данные
 

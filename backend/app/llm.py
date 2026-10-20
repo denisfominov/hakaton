@@ -154,7 +154,7 @@ def verify(out, ev, rules_insight):
 
     return {
         "engine": "llm",
-        "model": config.LLM_MODEL,
+        "model": None,  # заполняет analyze() по фактическому ответу
         "summary_line": out.summary_line,
         "what_happened": out.what_happened,
         "facts": facts or rules_insight["facts"],
@@ -196,7 +196,7 @@ indicators (list[str]), assumptions (list[str]), data_gaps (list[str]), confiden
 def analyze(ev, profile, rules_insight, score, conn=None):
     if not config.llm_enabled():
         raise LLMError("LLM не подключена (LLM_PROVIDER=off или не задан LLM_BASE_URL)")
-    data, _usage = llm_client.chat_json(
+    data, usage = llm_client.chat_json(
         [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + SCHEMA_HINT},
          {"role": "user", "content": build_prompt(ev, profile, rules_insight, score)}],
         role="reasoning", purpose="event_rewrite", max_tokens=3000, conn=conn)
@@ -205,5 +205,6 @@ def analyze(ev, profile, rules_insight, score, conn=None):
     except ValidationError as e:
         raise LLMError(f"ответ не прошёл проверку схемы: {e.error_count()} ошибок")
     result = verify(out, ev, rules_insight)
+    result["model"] = usage.get("model")  # модель, которая реально ответила (из списка кейса)
     result["impact_type"] = _impact_type(result["risks"], result["opportunities"])
     return result

@@ -48,7 +48,7 @@
 **Сдача**
 - `docker-compose.yml`: сервис + профиль `local-llm` (Ollama); данные кейса и аналитика банка — тома только для чтения.
 - `backend/requirements.lock` (uv pip compile), `.python-version`; Dockerfile ставит зависимости из lock-файла.
-- `THIRD_PARTY_NOTICES.md`, `docs/AUDIT.md`, `docs/OWN_LLM.md`; README переписан по требованиям кейса.
+- `THIRD_PARTY_NOTICES.md`, `docs/AUDIT.md`, `docs/FINETUNE_PROPOSAL.md`; README переписан по требованиям кейса.
 - Тесты: 123 → 136 (агент, RAG, белый список моделей, маскирование, данные клиентов, выгрузка датасета).
 
 **Повторная сверка со слайдами кейса** (тот же PR, `docs/AUDIT.md`)
