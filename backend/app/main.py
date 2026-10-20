@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 import httpx
 
-from . import (agent, bank_rag, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
+from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
                market, model, nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
 from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
@@ -285,6 +285,7 @@ def status():
                     if clients.source_kind() else []},
         "bank_docs": {k: v for k, v in bank_rag.status().items() if k != "folder"},
         "llm_provider": llm_client.status(),
+        "demo_cache": {k: v for k, v in demo_cache.status().items() if k != "dir"},
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
         "companies": n_profiles,
         "live": {"last": last_live, "by_country": by_country, "outlets": live_outlets},
@@ -654,6 +655,12 @@ def agent_insight(body: AgentIn):
     Повторный запрос с тем же вопросом отдаёт сохранённый запуск, refresh=true — запускает агента заново."""
     with get_db() as conn:
         profile = get_profile(conn, body.profile_id)
+        if not body.refresh and not body.question.strip() and not demo_cache.live_llm():
+            # без ключа: ответ настоящей модели, полученный заранее, если он есть для этой пары (с пометкой);
+            # «Перезапустить» (refresh) — честный разбор правилами
+            hit = demo_cache.lookup(profile["id"], body.event_id, body.role)
+            if hit:
+                return hit
         if not body.refresh:
             prev = agent.latest_run(conn, profile["id"], body.event_id, body.question.strip(), body.role)
             if prev:

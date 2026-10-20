@@ -218,7 +218,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
           <div className="text-xs text-ink-500">
             {run
               ? `Агент: ${tools} вызовов инструментов, ${r!.mode === "llm" ? `модели ${(r!.llm?.models || [r!.model]).join(", ")}${r!.llm?.mock ? " (мок)" : ""}` : "без LLM, на правилах и поиске"}`
-                + (run.cached ? " · сохранённый запуск" : "")
+                + (r!.from_cache ? " · ответ из кэша" : run.cached ? " · сохранённый запуск" : "")
               : "Агент планирует, какие данные нужны, вызывает инструменты, проверяет полноту и отвечает на 6 вопросов"}
           </div>
         </div>
@@ -234,6 +234,24 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
       </div>
 
       {error && <div className="border-b border-red-100 bg-red-50 px-5 py-2 text-sm text-red-800">{error}</div>}
+      {r?.from_cache && (
+        <div className="flex gap-2 border-b border-sky-100 bg-sky-50 px-5 py-2 text-xs text-sky-900">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <span>
+            <b>Ответ из кэша</b>, получен ранее моделью {r.from_cache.model || "—"}
+            {r.from_cache.obtained_at ? `, ${new Date(r.from_cache.obtained_at).toLocaleDateString("ru-RU")}` : ""}
+            {r.from_cache.prompts.length ? ` (промпты ${r.from_cache.prompts.join(", ")})` : ""}. Языковая модель сейчас
+            не подключена: перезапуск и новые события разбираются правилами и своими ML-моделями.
+          </span>
+        </div>
+      )}
+      {r && r.mode === "rules" && !r.llm && !r.from_cache && (
+        <div className="flex gap-2 border-b border-ink-100 bg-ink-50 px-5 py-2 text-xs text-ink-600">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          Языковая модель не подключена (нет ключа шлюза): разбор собран правилами, своими ML-моделями и поиском по
+          источникам — это не ответ LLM.
+        </div>
+      )}
       {r?.llm?.degraded && (
         <div className="flex gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-900">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />

@@ -575,6 +575,9 @@ export interface AgentResult {
   mode: "rules" | "llm";
   model: string | null;
   question: string | null;
+  // ответ настоящей модели, полученный заранее (data/demo_cache): показывается без ключа с пометкой
+  from_cache?: { kind: "demo_cache"; model: string | null; models: string[]; prompts: string[]; obtained_at: string | null;
+    role: string | null; file: string; note: string } | null;
   llm?: {
     provider: string;
     mock: boolean;

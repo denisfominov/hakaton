@@ -287,6 +287,18 @@ class ContradictionOut(BaseModel):
     note: str
 
 
+class CacheMarkOut(BaseModel):
+    """Ответ взят из кэша демонстрации: получен ранее настоящей моделью (data/demo_cache)."""
+    kind: Literal["demo_cache"]
+    model: Optional[str] = None
+    models: list[str] = []
+    prompts: list[str] = []
+    obtained_at: Optional[str] = None
+    role: Optional[str] = None
+    file: str
+    note: str
+
+
 class AgentResultOut(BaseModel):
     summary: str
     ai_conclusion: Optional[AIConclusionOut] = None
@@ -304,3 +316,4 @@ class AgentResultOut(BaseModel):
     model: Optional[str] = None
     question: Optional[str] = None
     llm: Optional[LLMMetaOut] = None
+    from_cache: Optional[CacheMarkOut] = None

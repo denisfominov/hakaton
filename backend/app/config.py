@@ -48,6 +48,8 @@ def daily_budget_from_env():
 
 DAILY_BUDGET_RUB = daily_budget_from_env()
 BUDGET_TZ = os.getenv("BUDGET_TZ") or "Europe/Moscow"
+# ответы настоящих моделей, полученные заранее (scripts/warm_cache.py): показываются без ключа с пометкой
+DEMO_CACHE_DIR = Path(os.getenv("DEMO_CACHE_DIR") or DATA_DIR / "demo_cache")
 LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")
 LLM_PRICE_DEFAULT = os.getenv("LLM_PRICE_DEFAULT") or "60,180"
 
