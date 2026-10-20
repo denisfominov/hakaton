@@ -18,9 +18,14 @@ backend/.venv
 !.env.example
 .DS_Store
 *.log
-# данные кейса и материалы банка подключаются томом (docker-compose.yml), в образ не копируются
-df_*_hack.csv
-*.pdf
+# данные кейса и материалы банка подключаются томом (docker-compose.yml), в образ не копируются.
+# Шаблоны .dockerignore без **/ совпадают только с корнем контекста — поэтому **/ (иначе PDF и распознанный
+# текст аналитики банка из backend/data/bank попадали в образ)
+**/df_*_hack.csv
+**/*.pdf
+**/sft*.jsonl
+backend/data/bank/*
+!backend/data/bank/README.md
 лекции по Машинному обучению/
 данные из слайда 17/
 backend/data/sft/

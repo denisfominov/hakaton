@@ -91,3 +91,17 @@ def test_role_changes_emphasis(client):
     assert res["cfo"]["role"]["focus"] != res["accountant"]["role"]["focus"]
     roles_api = {x["key"] for x in client.get("/api/roles").json()}
     assert roles_api == {"owner", "ceo", "cfo", "accountant", "treasury"}
+
+
+def test_health_is_cheap_and_warns_about_dev_secret(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import config
+    from app.main import app
+
+    with TestClient(app) as c:
+        h = c.get("/api/health").json()
+        assert h["ok"] and h["db"] and h["llm"] == "off" and not h["live_llm"]
+        assert any("ENTRY_SECRET" in w for w in h["warnings"])
+        monkeypatch.setattr(config, "ENTRY_SECRET", "x" * 32)
+        assert c.get("/api/health").json()["warnings"] == []

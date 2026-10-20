@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import httpx
 
@@ -233,7 +233,20 @@ def apply_filters(results, days=None, category=None, impact=None, level=None, mo
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    """Живость для хостинга и HEALTHCHECK: база открывается. Дёшево, без сети и без загрузки моделей."""
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception as e:  # noqa: BLE001 — любая ошибка базы = сервис не готов
+        log.warning("health: база недоступна: %s", e.__class__.__name__)
+        db_ok = False
+    warnings = []
+    if config.ENTRY_SECRET == config.DEV_ENTRY_SECRET:
+        warnings.append("ENTRY_SECRET не задан: токены входа подписаны секретом разработки")
+    body = {"ok": db_ok, "db": db_ok, "llm": llm_client.provider(), "live_llm": demo_cache.live_llm(),
+            "warnings": warnings}
+    return body if db_ok else JSONResponse(body, status_code=503)
 
 
 @app.get("/api/status")

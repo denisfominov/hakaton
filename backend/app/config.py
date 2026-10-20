@@ -66,7 +66,8 @@ DEMO_CLIENTS = os.getenv("DEMO_CLIENTS", "")
 
 # вход из Альфа-Бизнеса (смоделирован): секрет подписи токена. В продукте — секрет, общий с интернет-банком,
 # только из переменных окружения хостинга. Значение по умолчанию годится лишь для локальной демонстрации.
-ENTRY_SECRET = os.getenv("ENTRY_SECRET") or "dev-only-entry-secret-change-me"
+DEV_ENTRY_SECRET = "dev-only-entry-secret-change-me"  # только для разработки; на хостинге — ENTRY_SECRET из окружения
+ENTRY_SECRET = os.getenv("ENTRY_SECRET") or DEV_ENTRY_SECRET
 
 # свои ML-модели (scripts/train_models.py); не в git — производные от данных кейса
 CASE_MODELS_PATH = Path(os.getenv("CASE_MODELS_PATH") or DATA_DIR / "models" / "case_models.pkl")
