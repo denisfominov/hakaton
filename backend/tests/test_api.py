@@ -114,7 +114,7 @@ def test_action_validation(client):
 def test_llm_endpoint_without_key(client):
     r = client.post("/api/events/demo-06/llm", params={"profile_id": "uralmet"})
     assert r.status_code == 400
-    assert "ANTHROPIC_API_KEY" in r.json()["detail"]
+    assert "LLM_PROVIDER" in r.json()["detail"]
 
 
 def test_overview(client):

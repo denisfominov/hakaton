@@ -457,13 +457,17 @@ def detect_channels(ev, profile, pidx, m):
 
     # 8. ключевая ставка
     borrower = not pidx["is_bank"] and (pidx["debt_sensitive"] or pidx["has_investments"])
+    loans = pidx.get("bank_loans") or []
+    loans_txt = " и ".join(x.lower() for x in loans)
+    via_debt = (f"{loans_txt} в банке (данные банка о клиенте)" if loans
+                else "долг/кредиты в реестре рисков" if pidx["debt_sensitive"] else "есть инвестпланы")
     if "rate_up" in sig and borrower:
         project = nlp.clean_name(inv[0]) if inv else "инвестпрограммы"
         channels.append({
             "key": "rate_up", "type": "risk", "area": "financial",
             "severity": "high" if pidx["debt_sensitive"] else "medium",
-            "via_profile": "долг/кредиты в реестре рисков" if pidx["debt_sensitive"] else "есть инвестпланы",
-            "title": "Рост стоимости заимствований",
+            "via_profile": via_debt,
+            "title": "Рост долговой нагрузки: кредиты дорожают" if loans else "Рост стоимости заимствований",
             "description": "Повышение ставки увеличивает процентные расходы"
                            + (" — в профиле есть долг с плавающей ставкой" if pidx["debt_sensitive"] else "")
                            + f" и удорожает финансирование «{project}».",
@@ -508,10 +512,13 @@ def detect_channels(ev, profile, pidx, m):
         project = nlp.clean_name(inv[0]) if inv else "инвестпрограммы"
         channels.append({
             "key": "rate_hold", "type": "risk", "area": "financial", "severity": "medium",
-            "via_profile": "долг/кредиты в реестре рисков" if pidx["debt_sensitive"] else "есть инвестпланы",
+            "via_profile": via_debt,
             "title": "Дорогие деньги сохраняются дольше",
-            "description": "Ставка остаётся на прежнем высоком уровне: снижение стоимости кредитов откладывается, "
-                           f"а финансирование «{project}» и спрос клиентов, зависящий от кредитов, остаются под давлением.",
+            "description": (f"У компании есть {loans_txt} — ставка на прежнем высоком уровне означает, что период "
+                            "удешевления кредитов приостановлен и финансовая нагрузка по долгу в ближайшие месяцы не снизится; "
+                            f"финансирование «{project}» тоже остаётся дорогим." if loans else
+                            "Ставка остаётся на прежнем высоком уровне: снижение стоимости кредитов откладывается, "
+                            f"а финансирование «{project}» и спрос клиентов, зависящий от кредитов, остаются под давлением."),
             "chain": ["Ключевая ставка без изменений", "Кредиты не дешевеют", "Процентные расходы и спрос — без улучшения"],
             "horizon": "short",
             "actions": [
@@ -531,6 +538,23 @@ def detect_channels(ev, profile, pidx, m):
             ],
             "indicators": ["Решение по ставке на следующем заседании", "Инфляция и инфляционные ожидания",
                            "Ставки по кредитам и облигациям"],
+        })
+    if ("rate_up" in sig or "rate_hold" in sig) and pidx.get("bank_deposits") and not pidx["is_bank"]:
+        channels.append({
+            "key": "rate_deposits", "type": "opportunity", "area": "financial", "severity": "medium",
+            "via_profile": "депозиты в банке (данные банка о клиенте)",
+            "title": "Доход по депозитам остаётся высоким",
+            "description": "У компании есть депозиты: высокая ключевая ставка сохраняет доходность размещения свободной "
+                           "ликвидности — это частично компенсирует дорогой долг.",
+            "chain": ["Ставка остаётся высокой", "Высокие ставки по депозитам", "Процентный доход на свободные средства"],
+            "horizon": "short",
+            "actions": [action("Пересмотреть размещение ликвидности",
+                               "Казначейству сравнить сроки депозитов с прогнозом ставки и зафиксировать доходность "
+                               "на срок до ожидаемого снижения ставки.", "Казначейство", 7,
+                               why="Пока ставка высокая, длинное размещение фиксирует доход, который исчезнет при снижении ставки.",
+                               if_done="Процентный доход зафиксирован на несколько месяцев вперёд.",
+                               if_ignored="При снижении ставки доход по коротким депозитам упадёт.")],
+            "indicators": ["Ставки по депозитам для бизнеса", "Сигналы Банка России к следующему заседанию"],
         })
     rate_sig = [k for k in ("rate_up", "rate_down", "rate_hold") if k in sig]
     if rate_sig and pidx["is_bank"]:
@@ -867,6 +891,7 @@ def own_company_channel(ev, profile):
 # при равной силе что показывать первым: идущий сбой важнее роста цен и т.д.
 CHANNEL_ORDER = ["supply_disruption", "competitor_trouble", "regulation", "input_cost_up", "export_disruption",
                  "support", "export_niche", "input_cost_down", "demand_down", "clients_demand", "clients_capex", "rate_up",
+                 "rate_deposits",
                  "rate_bank", "localization",
                  "rate_hold",
                  "fx_export", "competitor_growth", "demand_up", "output_price_down", "fx_import", "rate_down", "tech",

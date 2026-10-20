@@ -1,0 +1,33 @@
+# Alpha Intelligence: агент новостной аналитики для ЛПР крупного бизнеса.
+#   docker compose up --build   — сервис на http://localhost:8000: без LLM, в мок-режиме или со шлюзом организаторов (.env)
+# LLM — только шесть разрешённых кейсом моделей через шлюз организаторов (docs/COMPLIANCE.md).
+# Данные кейса и аналитика банка подключаются только для чтения и в образ не попадают.
+
+services:
+  app:
+    build: .
+    image: alpha-intelligence:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CLIENT_DATA_DIR: /case
+      BANK_DOCS_DIR: /bank
+      CASE_MODELS_PATH: /models/case_models.pkl
+      EMBEDDINGS_DIR: /embeddings/multilingual-e5-small
+    volumes:
+      - alpha-data:/data
+      # папка с df_*_hack.csv (по умолчанию — корень репозитория); нет файлов — синтетический пример
+      - ${CASE_DATA_DIR:-.}:/case:ro
+      # PDF/тексты аналитики Альфа-Банка для RAG
+      - ${BANK_DOCS_HOST_DIR:-./backend/data/bank}:/bank:ro
+      # веса своих ML-моделей (python -m scripts.train_models); нет файла — работают правила
+      - ${CASE_MODELS_HOST_DIR:-./backend/data/models}:/models:ro
+      # веса модели эмбеддингов e5 (python -m scripts.download_embeddings); нет файлов — поиск на TF-IDF
+      - ${EMBEDDINGS_HOST_DIR:-./backend/data/embeddings}:/embeddings:ro
+    restart: unless-stopped
+
+volumes:
+  alpha-data:

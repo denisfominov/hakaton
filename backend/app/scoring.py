@@ -56,7 +56,11 @@ def _short(items, n=3):
     return ", ".join(names[:n])
 
 
-def relevance_factors(m, channels, semantic, offtopic=False):
+SEMANTIC_DETAIL = {"tfidf": "TF-IDF косинус {v:.2f}",
+                   "e5": "эмбеддинги e5: близость выше, чем у {p:.0f}% новостей ленты"}
+
+
+def relevance_factors(m, channels, semantic, offtopic=False, semantic_method="tfidf"):
     f = []
 
     def add(key, label, points, detail):
@@ -110,7 +114,8 @@ def relevance_factors(m, channels, semantic, offtopic=False):
         add("sensitivity", "Чувствительность из профиля", 15, "; ".join(dict.fromkeys(via)))
 
     sem_points = min(10, round(semantic * 60))
-    add("semantic", "Смысловая близость к профилю", sem_points, f"TF-IDF косинус {semantic:.2f}")
+    detail = SEMANTIC_DETAIL["e5" if semantic_method == "e5" else "tfidf"].format(v=semantic, p=50 + semantic * 6 * 45)
+    add("semantic", "Смысловая близость к профилю", sem_points, detail)
 
     if offtopic:
         total = sum(x["points"] for x in f)
@@ -119,7 +124,7 @@ def relevance_factors(m, channels, semantic, offtopic=False):
 
 
 def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None, extra_relevance=None,
-                priority_adjust=None):
+                priority_adjust=None, semantic_method="tfidf"):
     """extra_relevance — поправки своей модели и оценки пользователя (видны в разложении релевантности),
     priority_adjust — явная поправка приоритета от пользователя («важнее» / «менее важно»)."""
     text = " ".join([ev.get("title") or "", ev.get("summary") or "", ev.get("body") or ""])
@@ -127,7 +132,7 @@ def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None, extr
     hours = age_hours(ev.get("published_at"), now)
 
     # --- релевантность
-    rel_f = relevance_factors(m, channels, semantic, nlp.is_offtopic(ev["nlp"].get("tokens", [])))
+    rel_f = relevance_factors(m, channels, semantic, nlp.is_offtopic(ev["nlp"].get("tokens", [])), semantic_method)
     rel_f += extra_relevance or []
     relevance = clamp(sum(x["points"] for x in rel_f))
     exposure = relevance / 100

@@ -8,6 +8,10 @@ interface AppState {
   profileId: string;
   profile: Profile | undefined;
   setProfileId: (id: string) => void;
+  // роль пользователя: акценты интерпретации и действий (кейс: сервис для людей, а не для юрлиц)
+  role: string;
+  setRole: (role: string) => void;
+  entryNote: string | null;
   reloadProfiles: () => Promise<void>;
   status: Status | null;
   reloadStatus: () => Promise<void>;
@@ -22,6 +26,15 @@ interface AppState {
 const Ctx = createContext<AppState | null>(null);
 
 const STORAGE_KEY = "alpha.profileId";
+const ROLE_KEY = "alpha.role";
+
+function readStoredRole() {
+  try {
+    return localStorage.getItem(ROLE_KEY) || "cfo";
+  } catch {
+    return "cfo";
+  }
+}
 
 function readStoredProfile() {
   try {
@@ -46,6 +59,17 @@ export function AppProvider({ children, onToast }: { children: ReactNode; onToas
   const [meta, setMeta] = useState<Meta | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [role, setRoleState] = useState(readStoredRole());
+  const [entryNote, setEntryNote] = useState<string | null>(null);
+
+  const setRole = (r: string) => {
+    setRoleState(r);
+    try {
+      localStorage.setItem(ROLE_KEY, r);
+    } catch {
+      // приватный режим — роль не запоминаем
+    }
+  };
 
   const setProfileId = (id: string) => {
     setProfileIdState(id);
@@ -67,7 +91,22 @@ export function AppProvider({ children, onToast }: { children: ReactNode; onToas
   }, []);
 
   useEffect(() => {
-    Promise.all([reloadProfiles(), reloadStatus(), api.meta().then(setMeta)])
+    // вход из Альфа-Бизнеса: ?entry=<подписанный токен> -> компания и роль (СМОДЕЛИРОВАНО, docs/ALFA_BUSINESS_ENTRY.md)
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("entry");
+    const enter = token
+      ? api.entryVerify(token).then((r) => {
+          storeProfile(r.profile.id);
+          setProfileIdState(r.profile.id);
+          setRole(r.role);
+          setEntryNote(`Вход из Альфа-Бизнеса (макет): ${r.profile.name}`);
+        }).catch((e) => setEntryNote(e.message)).finally(() => {
+          params.delete("entry");
+          const q = params.toString();
+          window.history.replaceState(null, "", window.location.pathname + (q ? `?${q}` : ""));
+        })
+      : Promise.resolve();
+    enter.then(() => Promise.all([reloadProfiles(), reloadStatus(), api.meta().then(setMeta)]))
       .then(() => setBootError(null))
       .catch((e) => setBootError(e.message));
   }, [reloadProfiles, reloadStatus]);
@@ -77,6 +116,9 @@ export function AppProvider({ children, onToast }: { children: ReactNode; onToas
     profileId,
     profile: profiles.find((p) => p.id === profileId),
     setProfileId,
+    role,
+    setRole,
+    entryNote,
     reloadProfiles,
     status,
     reloadStatus,

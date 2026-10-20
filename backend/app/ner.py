@@ -89,6 +89,11 @@ def _load_ner():
     if _ner["loaded"]:
         return _ner["tagger"] is not None
     _ner["loaded"] = True
+    from . import config
+
+    if not config.NER_ENABLED:
+        _ner["tagger"] = None
+        return False
     try:
         from natasha import NewsEmbedding, NewsNERTagger, Segmenter
 

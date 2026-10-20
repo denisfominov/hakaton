@@ -10,7 +10,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 import threading
 import time
 
-from . import analysis, config, dedup, jobs, matching, model, ner, nlp, outlets, scoring, sources, store, threads
+import numpy as np
+
+from . import (analysis, company_features, config, dedup, embeddings, jobs, matching, ml_models, model, ner, nlp, outlets,
+               scoring, sources, store, threads)
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
@@ -141,6 +144,7 @@ def ingest_dataset(conn):
     refresh_nlp(conn)
     recluster(conn)
     log_fetch(conn, f"dataset:{config.DATASET}", True, added)
+    conn.commit()  # сначала зафиксировать: фоновый пересчёт читает базу своим соединением
     bump_version()
     return added
 
@@ -212,6 +216,9 @@ def ingest_live(conn):
                    1 for r in report if not r.get("ok") and not r.get("skipped"))}
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_live', ?)", (dumps(summary),))
     recluster(conn)
+    # сначала зафиксировать, потом сбросить отпечаток: иначе фоновый поток успевает посчитать анализ по старым
+    # данным, запоминает старый отпечаток — и новые новости не видны в ленте до перезапуска
+    conn.commit()
     bump_version()
     return report
 
@@ -246,8 +253,16 @@ def prepare_events(items):
 
 
 def semantic_scores(events, profile):
+    """Смысловая близость новости к профилю. e5 (если веса есть): близость относительно ленты — новости выше медианы
+    получают баллы, верхние 5% — максимум (как сильная близость по TF-IDF). Иначе — TF-IDF косинус."""
     if not events:
         return {}
+    if embeddings.available():
+        prof = embeddings.encode([matching.profile_text(profile)[:2000]], "query")[0]
+        sims = embeddings.encode([" ".join([e["title"], e.get("summary") or ""])[:1500] for e in events], "passage") @ prof
+        lo, hi = np.percentile(sims, 50), np.percentile(sims, 95)
+        rel = np.clip((sims - lo) / max(float(hi - lo), 1e-6), 0, 1)
+        return {e["id"]: float(r / 6) for e, r in zip(events, rel)}  # 1/6 -> 10 баллов, как у TF-IDF
     docs = [nlp.stem_text(matching.profile_text(profile))]
     docs += [nlp.stem_text(" ".join([e["title"], e.get("summary") or "", e.get("body") or ""])) for e in events]
     m = TfidfVectorizer(sublinear_tf=True).fit_transform(docs)
@@ -333,6 +348,8 @@ def analyze_events(events, profile, ml=None):
     """
     pidx = matching.profile_index(profile)
     sem = semantic_scores(events, profile)
+    # свои ML-модели по данным кейса — только для профилей клиентов кейса и если модели обучены
+    case_f = company_features.features(profile["client_id"]) if profile.get("client_id") and ml_models.available() else None
 
     clusters = {}
     for ev in events:
@@ -346,12 +363,16 @@ def analyze_events(events, profile, ml=None):
         m = matching.find_matches(ev, profile, pidx)
         channels = analysis.detect_channels(ev, profile, pidx, m)
         n_sources = len({x["source"] for x in members})
-        rules_score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources)
+        rules_score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
+                                          semantic_method=embeddings.method())
         feats = model.features(ev, m, channels, rules_score, pidx)
         extra, adjust, fb, info = model.adjust_score(ml, feats, [x["id"] for x in members], rules_score)
+        case_pred = ml_models.predict(ev, case_f) if case_f else None
+        if case_pred:
+            extra = (extra or []) + [ml_models.relevance_factor(case_pred)]
         score = rules_score
         if extra or adjust:
-            score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
+            score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources, semantic_method=embeddings.method(),
                                         extra_relevance=extra, priority_adjust=adjust)
         insight = analysis.build_insight(ev, profile, m, channels, score, n_sources)
         verif = outlets.verify(members, ev["nlp"].get("suspicious", False))
@@ -370,6 +391,7 @@ def analyze_events(events, profile, ml=None):
             "insight": insight,
             "verification": verif,
             "fact_status": fact_status(ev, members, verif),
+            "case_ml": case_pred,
         })
 
     results.sort(key=lambda r: -r["score"]["priority"])

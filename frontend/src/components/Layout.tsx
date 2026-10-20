@@ -1,6 +1,6 @@
 import {
-  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Grid3x3, LayoutDashboard, Newspaper, RefreshCw,
-  ShieldCheck,
+  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Gauge, Grid3x3, Home, Landmark, LayoutDashboard,
+  Newspaper, RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -11,12 +11,31 @@ import { plural, timeAgo } from "../utils";
 import AnalyticsPanel from "./AnalyticsPanel";
 import SourcesModal from "./SourcesModal";
 
+export const ROLE_LABELS: Record<string, string> = {
+  owner: "Собственник", ceo: "Генеральный директор", cfo: "Финансовый директор", accountant: "Главный бухгалтер",
+  treasury: "Руководитель казначейства",
+};
+
+// роль пользователя: меняет акценты интерпретации и действий (сервис — для людей, а не для юрлиц)
+function RoleSelect() {
+  const { role, setRole } = useApp();
+  return (
+    <select className="hidden rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 sm:block" value={role}
+      title="Роль: от неё зависят акценты интерпретации и действия" onChange={(e) => setRole(e.target.value)}>
+      {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+    </select>
+  );
+}
+
 const NAV = [
+  { to: "/alfa-business", label: "Альфа-Бизнес (макет)", icon: Home, end: false },
   { to: "/companies", label: "Выбор компании", icon: Briefcase, end: false },
   { to: "/portfolio", label: "Портфель", icon: Grid3x3, end: false },
   { to: "/", label: "Обзор", icon: LayoutDashboard, end: true },
   { to: "/feed", label: "Лента событий", icon: Newspaper },
   { to: "/decisions", label: "Решения", icon: ClipboardCheck },
+  { to: "/bank", label: "Аналитика банка", icon: Landmark },
+  { to: "/spending", label: "Расход", icon: Gauge },
   { to: "/profile", label: "Профиль компании", icon: Building2 },
 ];
 
@@ -189,7 +208,7 @@ function RefreshMenu() {
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { profile } = useApp();
+  const { profile, entryNote } = useApp();
   return (
     <div className="min-h-screen md:pl-60">
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-ink-200 bg-white px-4 py-5 md:flex">
@@ -222,6 +241,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             {profile && <span className="truncate text-sm font-medium text-ink-700">{profile.name}</span>}
           </Link>
           <div className="ml-auto flex items-center gap-2">
+            <RoleSelect />
             <EngineBadge />
             <DataModeBadge />
             <RefreshMenu />
@@ -239,7 +259,10 @@ export default function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        {entryNote && <div className="mb-4 rounded-lg border border-ink-200 bg-white px-4 py-2 text-xs text-ink-600">{entryNote}</div>}
+        {children}
+      </main>
     </div>
   );
 }

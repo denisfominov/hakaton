@@ -105,10 +105,10 @@ def threads_for(conn):
 
 
 def key_for(conn, profile):
-    from . import model
+    from . import ml_models, model
     from .pipeline import profile_hash
 
-    raw = f"{profile_hash(profile)}|{data_fingerprint(conn)}|{model.fingerprint()}|{CODE_FP}"
+    raw = f"{profile_hash(profile)}|{data_fingerprint(conn)}|{model.fingerprint()}|{ml_models.fingerprint()}|{CODE_FP}"
     return hashlib.md5(raw.encode()).hexdigest()[:16]
 
 

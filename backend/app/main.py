@@ -7,13 +7,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import httpx
 
-from . import catalog, company, config, jobs, llm, lookup, market, model, nlp, outlets, overview, pipeline, sources, store
+from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
+               market, model, nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -29,10 +30,37 @@ def preset_profiles():
     Если не редактировал — при изменении файла обновляем профиль в базе автоматически.
     """
     out = []
+    if not presets_wanted():
+        return out
     for p in sources.load_profiles():
         h = pipeline.profile_hash(p)
         out.append({**p, "preset_hash": h})
     return out
+
+
+def presets_wanted():
+    """Встроенные публичные компании нужны только тестовому набору или когда данных кейса нет (config.PRESET_PROFILES)."""
+    if config.PRESET_PROFILES in ("1", "0"):
+        return config.PRESET_PROFILES == "1"
+    return config.DATASET == "synthetic" or clients.source_kind() is None
+
+
+def seed_demo_clients(conn):
+    """Демо-клиенты кейса — встроенные профили с постоянными id (ссылки входа, кэш ответов модели)."""
+    ids = []
+    for uid in clients.demo_client_ids():
+        pid = clients.profile_id(uid)
+        ids.append(pid)
+        if conn.execute("SELECT 1 FROM profiles WHERE id = ?", (pid,)).fetchone():
+            continue
+        p = clients.profile_from_client(uid)
+        if not p:
+            continue
+        data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
+        data["id"] = pid
+        conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
+                     (pid, dumps(data), now_iso()))
+    return ids
 
 
 def deleted_presets(conn):
@@ -50,11 +78,11 @@ async def lifespan(_app):
     init_db()
     with get_db() as conn:
         presets = preset_profiles()
-        ids = [p["id"] for p in presets]
+        ids = [p["id"] for p in presets] + seed_demo_clients(conn)
         deleted = deleted_presets(conn)
-        # при смене набора данных убираем встроенные профили и события другого набора;
-        # профили, созданные пользователем, и план действий не трогаем
-        conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids))})", ids)
+        # при смене набора данных убираем встроенные профили и события другого набора (в том числе публичные компании,
+        # которых нет в базе кейса); профили, созданные пользователем, и план действий не трогаем
+        conn.execute(f"DELETE FROM profiles WHERE is_demo = 1 AND id NOT IN ({','.join('?' * len(ids)) or 'NULL'})", ids)
         other = "demo" if config.DATASET == "real" else "curated"
         conn.execute("DELETE FROM events WHERE source_type = ?", (other,))
         for p in presets:
@@ -205,7 +233,20 @@ def apply_filters(results, days=None, category=None, impact=None, level=None, mo
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    """Живость для хостинга и HEALTHCHECK: база открывается. Дёшево, без сети и без загрузки моделей."""
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception as e:  # noqa: BLE001 — любая ошибка базы = сервис не готов
+        log.warning("health: база недоступна: %s", e.__class__.__name__)
+        db_ok = False
+    warnings = []
+    if config.ENTRY_SECRET == config.DEV_ENTRY_SECRET:
+        warnings.append("ENTRY_SECRET не задан: токены входа подписаны секретом разработки")
+    body = {"ok": db_ok, "db": db_ok, "llm": llm_client.provider(), "live_llm": demo_cache.live_llm(),
+            "warnings": warnings}
+    return body if db_ok else JSONResponse(body, status_code=503)
 
 
 @app.get("/api/status")
@@ -248,11 +289,16 @@ def status():
         "events": {"curated": curated, "demo": demo, "live": live, "total": sum(by_type.values())},
         "llm": {
             "enabled": config.llm_enabled(),
-            "model": config.LLM_MODEL if config.llm_enabled() else None,
+            "model": llm_client.model_for("reasoning") if config.llm_enabled() else None,
             "note": None if config.llm_enabled() else
-            "LLM не подключён: аналитика строится правилами. Добавьте ANTHROPIC_API_KEY в .env, чтобы включить.",
+            "LLM не подключена: аналитика строится правилами. Задайте LLM_PROVIDER и LLM_BASE_URL (разрешённые модели).",
         },
         "model": model_short,
+        "clients": {"source": clients.source_kind(), "demo": [clients.profile_id(u) for u in clients.demo_client_ids()]
+                    if clients.source_kind() else []},
+        "bank_docs": {k: v for k, v in bank_rag.status().items() if k != "folder"},
+        "llm_provider": llm_client.status(),
+        "demo_cache": {k: v for k, v in demo_cache.status().items() if k != "dir"},
         "deleted_presets": [{"id": p["id"], "name": p["name"]} for p in sources.load_profiles() if p["id"] in deleted],
         "companies": n_profiles,
         "live": {"last": last_live, "by_country": by_country, "outlets": live_outlets},
@@ -545,6 +591,7 @@ def event_detail(event_id: str, profile_id: str):
         "market": reaction,
         "feedback": r["feedback"],
         "ml": r["ml"],
+        "case_ml": r.get("case_ml"),
         "linked_actions": len(linked),
         "linked_action_titles": linked,
         "related": [{"id": c["id"], "title": c["title"], "source": c["source"], "url": c["url"],
@@ -596,20 +643,180 @@ def toggle_favorite(event_id: str, profile_id: str):
 @app.post("/api/events/{event_id}/llm")
 def run_llm(event_id: str, profile_id: str):
     if not config.llm_enabled():
-        raise HTTPException(400, "LLM не подключён. Укажите ANTHROPIC_API_KEY в .env и перезапустите backend.")
+        raise HTTPException(400, "LLM не подключена. Укажите LLM_PROVIDER и LLM_BASE_URL в .env и перезапустите backend.")
     with get_db() as conn:
         profile = get_profile(conn, profile_id)
         r = pipeline.find_result(conn, profile, event_id)
         if not r:
             raise HTTPException(404, "Событие не найдено")
     try:
-        insight = llm.analyze(r["event"], profile, r["insight"], r["score"])
+        with get_db() as lconn:
+            insight = llm.analyze(r["event"], profile, r["insight"], r["score"], conn=lconn)
     except llm.LLMError as e:
         log.warning("llm failed for %s: %s", event_id, e)
         raise HTTPException(502, f"Не удалось получить анализ LLM: {e}. Показан анализ на правилах.")
     with get_db() as conn:
         pipeline.save_llm(conn, r["event"]["id"], profile, insight)
     return {"insight": insight}
+
+
+# ---------- агент для ЛПР ----------
+
+@app.post("/api/agent/insight")
+def agent_insight(body: AgentIn):
+    """Инсайт на 6 вопросов кейса: план -> инструменты -> самопроверка -> ответ с трассировкой.
+    Повторный запрос с тем же вопросом отдаёт сохранённый запуск, refresh=true — запускает агента заново."""
+    with get_db() as conn:
+        profile = get_profile(conn, body.profile_id)
+        if not body.refresh and not body.question.strip() and not demo_cache.live_llm():
+            # без ключа: ответ настоящей модели, полученный заранее, если он есть для этой пары (с пометкой);
+            # «Перезапустить» (refresh) — честный разбор правилами
+            hit = demo_cache.lookup(profile["id"], body.event_id, body.role)
+            if hit:
+                return hit
+        if not body.refresh:
+            prev = agent.latest_run(conn, profile["id"], body.event_id, body.question.strip(), body.role)
+            if prev:
+                return {**prev, "cached": True}
+        out = agent.run(conn, profile, body.event_id, body.question, role=body.role or None)
+    if out is None:
+        raise HTTPException(404, "Событие не найдено")
+    out.pop("context", None)  # вход модели хранится в agent_runs для датасета, в интерфейс не отдаём
+    return {**out, "cached": False}
+
+
+@app.get("/api/agent/schema")
+def agent_schema():
+    """JSON-схема ответа агента: факты, позиция банка, данные клиента и выводы модели разделены полем kind."""
+    from .schemas import AgentResultOut
+
+    return AgentResultOut.model_json_schema()
+
+
+@app.get("/api/contracts")
+def contracts():
+    """JSON-схемы контрактов между частями системы (docs/CONTRACTS.md)."""
+    from .schemas.contracts import CONTRACTS, CONTRACTS_VERSION
+
+    return {"version": CONTRACTS_VERSION, "schemas": {n: m.model_json_schema() for n, m in CONTRACTS.items()}}
+
+
+@app.get("/api/roles")
+def list_roles():
+    """Роли пользователя: от роли зависят акценты интерпретации и действий."""
+    return roles.catalog()
+
+
+@app.post("/api/entry/mock-token")
+def entry_mock_token(body: EntryTokenIn):
+    """СМОДЕЛИРОВАНО: токен входа, который в продукте выпускает интернет-банк Альфа-Бизнес (docs/ALFA_BUSINESS_ENTRY.md)."""
+    if not clients.card(body.client_id):
+        raise HTTPException(404, "Компании нет в данных кейса")
+    token = entry.issue(body.client_id, body.role)
+    return {"token": token, "url": f"/?entry={token}", "expires_in": entry.TTL_SECONDS, "simulated": True}
+
+
+@app.post("/api/entry/verify")
+def entry_verify(body: EntryVerifyIn):
+    """Вход по токену из Альфа-Бизнеса: проверка подписи, срока и одноразовости, журнал, профиль компании и роль."""
+    error = None
+    with get_db() as conn:
+        try:
+            payload = entry.verify(conn, body.token)
+        except entry.EntryError as e:
+            error = str(e)  # исключение — после выхода из транзакции, иначе запись журнала откатится
+    if error:
+        raise HTTPException(401, f"Вход не выполнен: {error}")
+    profile = client_profile(payload["client_id"])
+    return {"profile": profile, "role": payload["role"], "client_id": payload["client_id"]}
+
+
+@app.get("/api/agent/runs/{run_id}")
+def agent_run(run_id: str):
+    with get_db() as conn:
+        out = agent.get_run(conn, run_id)
+    if not out:
+        raise HTTPException(404, "Запуск агента не найден")
+    return out
+
+
+@app.get("/api/ml/status")
+def ml_status():
+    """Свои ML-модели (не LLM): обучены ли, какие выбраны, метрики (черновые, пока нет ручной разметки)."""
+    from . import ml_models
+
+    return ml_models.status()
+
+
+@app.get("/api/llm/usage")
+def llm_usage(days: int = Query(14, ge=1, le=90)):
+    """Страница «Расход»: токены и стоимость по дням и моделям, лимит, маршруты моделей, версии промптов."""
+    with get_db() as conn:
+        u = llm_budget.usage(conn, days)
+    st = llm_client.status()
+    return {**u, "provider": st["provider"], "enabled": st["enabled"], "mock": st["mock"], "verified": st["verified"],
+            "key": st["key"], "routes": llm_router.table(), "prompts": prompts.catalog(),
+            "prices": {m: dict(zip(("input", "output"), llm_budget.prices(m))) for m in llm_client.ALLOWED_MODELS}}
+
+
+@app.get("/api/bank-docs/file/{name}")
+def bank_doc_file(name: str):
+    """Исходный материал банка (PDF) — переход к первоисточнику из ответа агента."""
+    path = bank_rag.file_path(name)
+    if path is None:
+        raise HTTPException(404, "Материал не найден")
+    return FileResponse(path, media_type="application/pdf" if path.suffix.lower() == ".pdf" else "text/plain")
+
+
+@app.get("/api/agent/tools")
+def agent_tools_catalog():
+    """Реестр инструментов агента: описание, схемы входа и выхода, права."""
+    from . import agent_tools
+
+    return agent_tools.catalog()
+
+
+@app.get("/api/bank-docs")
+def bank_docs():
+    """Какие аналитические материалы банка проиндексированы для RAG."""
+    s = bank_rag.status()
+    return {"documents": s["documents"], "chunks": s["chunks"], "topics": s["topics"]}
+
+
+# ---------- клиенты банка (данные кейса) ----------
+
+@app.get("/api/clients")
+def list_clients(segment: bool = True, q: str = "", limit: int = Query(60, ge=1, le=500)):
+    """Клиенты из данных кейса; по умолчанию — крупный бизнес (выручка от 15 млрд ₽)."""
+    return {"source": clients.source_kind(), "segment_revenue": clients.SEGMENT_REVENUE,
+            "items": clients.list_clients(segment, q.strip(), limit)}
+
+
+@app.get("/api/clients/{uid}")
+def client_card(uid: str):
+    c = clients.card(uid)
+    if not c:
+        raise HTTPException(404, "Клиент не найден в данных")
+    return c
+
+
+@app.post("/api/clients/{uid}/profile", status_code=201)
+def client_profile(uid: str):
+    """Профиль для анализа из карточки клиента. Повторный вызов возвращает уже созданный профиль."""
+    with get_db() as conn:
+        for r in conn.execute("SELECT id, data FROM profiles"):
+            if loads(r["data"], {}).get("client_id") == uid:
+                return get_profile(conn, r["id"])
+    p = clients.profile_from_client(uid)
+    if not p:
+        raise HTTPException(404, "Клиент не найден в данных")
+    data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
+    data["id"] = clients.profile_id(uid)  # постоянный id: одинаковый у всей команды
+    with get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
+                     (data["id"], dumps(data), now_iso()))
+        jobs.request(data["id"])
+        return get_profile(conn, data["id"])
 
 
 # ---------- портфель: все компании сразу ----------

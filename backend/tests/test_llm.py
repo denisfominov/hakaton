@@ -63,6 +63,72 @@ def test_verify_flags_injection(sample):
 
 def test_analyze_without_key_raises(sample, profiles, monkeypatch):
     ev, ins, score = sample
-    monkeypatch.setattr(llm.config, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(llm.config, "LLM_PROVIDER", "off")
     with pytest.raises(llm.LLMError):
         llm.analyze(ev, profiles["nordfarma"], ins, score)
+
+
+# ---------- только разрешённые модели ----------
+
+def test_only_allowed_models_pass(monkeypatch):
+    from app import llm_client
+    for name in ["Qwen3.6 35B A3B", "Qwen/Qwen3.6-35B-A3B", "qwen3.6:35b-a3b", "GLM-5.3-Flash", "gemma4:26b-a4b",
+                 "DeepSeek-V4.1-Flash", "Kimi-K2.6", "Qwen3-VL-30B-A3B-Instruct"]:
+        assert llm_client.canonical(name), name
+    for name in ["gpt-4o", "claude-opus-5-5", "llama-3-70b", "o3-mini"]:
+        assert llm_client.canonical(name) is None, name
+    monkeypatch.setattr(llm_client.config, "LLM_MODEL_DEFAULT", "gpt-4o")
+    with pytest.raises(llm_client.LLMError):
+        llm_client.model_for("default")
+
+
+def test_not_allowed_model_never_reaches_network(monkeypatch):
+    """Модель вне списка кейса отклоняется до HTTP-запроса — и явная, и из настроек."""
+    from app import llm_client
+
+    monkeypatch.setattr(llm_client.config, "LLM_PROVIDER", "gateway")
+    monkeypatch.setattr(llm_client.config, "LLM_BASE_URL", "https://gateway.example/v1")
+
+    def no_network(*_a, **_k):
+        raise AssertionError("запрос к шлюзу с неразрешённой моделью")
+
+    monkeypatch.setattr(llm_client.httpx, "post", no_network)
+    for name in ["gpt-4o", "claude-opus-5-5", "llama-3-70b", "YandexGPT", "GigaChat"]:
+        with pytest.raises(llm_client.LLMError, match="не входит в список"):
+            llm_client.chat([{"role": "user", "content": "x"}], model=name)
+    monkeypatch.setattr(llm_client.config, "LLM_MODEL_REASONING", "claude-opus-5-5")
+    with pytest.raises(llm_client.LLMError, match="не входит в список"):
+        llm_client.chat([{"role": "user", "content": "x"}], role="reasoning")
+
+
+def test_ner_can_be_switched_off(monkeypatch):
+    from app import config, ner
+
+    monkeypatch.setattr(config, "NER_ENABLED", False)
+    monkeypatch.setattr(ner, "_ner", {"loaded": False, "seg": None, "tagger": None})
+    assert ner.entities("ПАО «Северсталь» повысило цены") == []
+
+
+def test_redaction_before_external_gateway():
+    from app import llm_client
+    text = "Пишите ivanov@corp.ru или +7 (912) 345-67-89, ИНН 7707083893, счёт 40702810900000000001"
+    out = llm_client.redact(text)
+    assert "ivanov@" not in out and "345-67-89" not in out and "7707083893" not in out and "40702810" not in out
+
+
+def test_chat_calls_gateway_with_allowed_model(monkeypatch):
+    import httpx
+
+    from app import llm_client
+    monkeypatch.setattr(llm_client.config, "LLM_PROVIDER", "gateway")
+    monkeypatch.setattr(llm_client.config, "LLM_BASE_URL", "https://gateway.example/v1")
+    seen = {}
+
+    def fake_post(url, json, headers, timeout):
+        seen.update(url=url, model=json["model"], content=json["messages"][0]["content"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}],
+                                         "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})
+    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
+    data, usage = llm_client.chat_json([{"role": "user", "content": "почта a@b.ru"}], role="fast", purpose="test")
+    assert data == {"ok": True} and seen["model"] == "Gemma 4 26B A4B"
+    assert seen["url"].endswith("/chat/completions") and "a@b.ru" not in seen["content"]

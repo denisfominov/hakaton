@@ -1,0 +1,2 @@
+pair_id,client_id,okved,okved_name,revenue_bn,bank_products,fts_countries,macro_region,event_id,event_date,event_title,event_url,relevant,relevance_grade,impact,urgency,category,annotator,comment
+U_EXAMPLE|r21,U_EXAMPLE,42.99,Строительство прочих инженерных сооружений,62.3,Кредиты; Лизинг,Китай,Сибирь,r21,2026-09-11,Банк России принял решение сохранить ключевую ставку на уровне 14,00% годовых,,1,2,risk,medium,economy,эксперт,кредиты и лизинг дорожают дольше

@@ -36,3 +36,29 @@ __pycache__/
 .env
 frontend/.vite/
 backend/alpha.db
+
+# данные кейса (обезличенные CSV и PDF): не коммитим, загружаются из папки CLIENT_DATA_DIR
+df_*_hack.csv
+*.pdf
+!backend/data/clients/sample/*.csv
+# датасеты для дообучения (scripts/export_sft.py)
+sft*.jsonl
+# материалы банка (приложение 2) и их распознанный текст — данные кейса, в git не кладём
+backend/data/bank/*
+!backend/data/bank/README.md
+данные из слайда 17/
+# учебные материалы (лекции) — только для чтения командой
+лекции по Машинному обучению/
+# датасеты для дообучения своей LLM из данных кейса (scripts/build_case_dataset.py)
+backend/data/sft/
+
+# служебные файлы SQLite в режиме WAL
+*.db-wal
+*.db-shm
+# свои ML-модели (производные от данных кейса) и ручная разметка с признаками клиентов
+backend/data/models/
+backend/data/gold/*.csv
+!backend/data/gold/gold_template.csv
+
+# веса локальной модели эмбеддингов (scripts/download_embeddings.py) и кэш векторов
+backend/data/embeddings/

@@ -65,6 +65,15 @@ def profile_index(p):
     is_bank = "finance" in industries and "банк" in nlp.normalize_text(p.get("industry", "") + " " + p.get("name", ""))
     risk_toks = nlp.tokens(" ".join((p.get("risks") or []) + (p.get("investment_plans") or [])))
     debt_sensitive = not is_bank and any(nlp.has_root(risk_toks, r) for r in DEBT_ROOTS)
+    # данные банка о клиенте (clients.py): продукты и ВЭД точнее слов в профиле
+    bank_products = set(p.get("bank_products") or [])
+    bank_loans = sorted(bank_products & {"Кредиты", "Лизинг"})
+    if bank_loans and not is_bank:
+        debt_sensitive = True
+    foreign_trade = "foreign_trade" in (p.get("client_signals") or [])
+    if foreign_trade:
+        # ФТС не говорит, импорт это или экспорт: курс рубля касается расчётов в обе стороны
+        is_importer = is_exporter = True
 
     primary = nlp.detect_industries(nlp.tokens(p.get("industry", "")))
     # продаёт то, что клиенты покупают на инвестиции (станки, оборудование, техника)
@@ -84,6 +93,9 @@ def profile_index(p):
         "is_importer": is_importer,
         "debt_sensitive": debt_sensitive,
         "has_investments": bool(p.get("investment_plans")),
+        "bank_loans": bank_loans,
+        "bank_deposits": "Депозиты" in bank_products,
+        "foreign_trade": foreign_trade,
         "sells_capex": sells_capex,
     }
 

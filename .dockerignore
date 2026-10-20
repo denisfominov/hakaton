@@ -18,3 +18,20 @@ backend/.venv
 !.env.example
 .DS_Store
 *.log
+# данные кейса и материалы банка подключаются томом (docker-compose.yml), в образ не копируются.
+# Шаблоны .dockerignore без **/ совпадают только с корнем контекста — поэтому **/ (иначе PDF и распознанный
+# текст аналитики банка из backend/data/bank попадали в образ)
+**/df_*_hack.csv
+**/*.pdf
+**/sft*.jsonl
+backend/data/bank/*
+!backend/data/bank/README.md
+лекции по Машинному обучению/
+данные из слайда 17/
+backend/data/sft/
+# веса своих моделей и ручная разметка — производные от данных кейса: подключаются томом (docker-compose.yml)
+backend/data/models/
+backend/data/gold/*.csv
+!backend/data/gold/gold_template.csv
+# веса модели эмбеддингов (~130 МБ): том или --build-arg BAKE_EMBEDDINGS=1 (Dockerfile)
+backend/data/embeddings/

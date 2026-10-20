@@ -26,6 +26,9 @@ export interface Profile {
   website?: string;
   // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
+  client_id?: string;
+  label?: string;
+  bank_products?: string[];
   autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[];
     sources_log?: SourceLogItem[] };
   is_demo?: boolean;
@@ -91,10 +94,28 @@ export interface ModelFeature {
   weight: number;
 }
 
+export interface CvMetrics {
+  precision?: number;
+  recall?: number;
+  f1?: number;
+  accuracy: number;
+  roc_auc?: number;
+  pr_auc?: number;
+  brier?: number;
+  macro_f1?: number;
+}
+
 export interface ModelCv {
   folds: number;
   model_accuracy: number;
   rules_accuracy: number;
+  scheme?: string;
+  metric?: "pr_auc" | "macro_f1";
+  n?: number;
+  positive_share?: number;
+  C?: number;
+  model?: CvMetrics;
+  rules?: CvMetrics;
 }
 
 export interface ModelStatus {
@@ -279,8 +300,26 @@ export interface Insight {
   confidence: number;
 }
 
+export interface CaseContribution {
+  feature: string;
+  label: string;
+  contribution: number;
+  value: number;
+}
+
+export interface CaseMl {
+  draft: boolean;
+  trained_at: string | null;
+  relevance: { probability: number; model: string; contributions: CaseContribution[] };
+  impact?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
+  urgency?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
+  category?: { label: string; probability: number; model: string };
+  company_features: string[];
+}
+
 export interface EventDetail extends EventCard {
   body: string;
+  case_ml?: CaseMl | null;
   rules_relevance: number;
   verification_detail: VerificationDetail;
   thread_detail: ThreadDetail | null;
@@ -419,4 +458,194 @@ export interface Portfolio {
   formula: string;
   rows: PortfolioRow[];
   categories: { key: string; label: string }[];
+}
+
+// ---------- агент для ЛПР ----------
+
+export type ClaimKind = "fact" | "bank" | "client" | "ai";
+
+export interface Claim {
+  text: string;
+  kind: ClaimKind;
+  sources: string[];
+  confirmed?: boolean | null;
+  for_role?: boolean | null;
+  link?: { doc: string; title: string; page: number; date: string | null; url: string } | null;
+}
+
+export interface Contradiction {
+  topic: string;
+  news: { text: string; source: string; url?: string | null };
+  bank: { text: string; source: string; url?: string | null; date?: string | null };
+  note: string;
+}
+
+export interface Scenario {
+  title: string;
+  text: string;
+  direction?: string | null;
+  bank_view?: string | null;
+  kind: ClaimKind;
+  sources: string[];
+}
+
+export interface AgentIssue {
+  type: "signals" | "numbers" | "bank" | "feedback";
+  text: string;
+  sources: string[];
+}
+
+export interface AgentSource {
+  id: string;
+  type: "news" | "bank" | "client" | "rules" | "market" | "model";
+  title: string;
+  detail?: string;
+  url?: string | null;
+}
+
+export interface AgentAction {
+  for_role?: boolean | null;
+  title: string;
+  description: string;
+  why?: string;
+  if_done?: string;
+  if_ignored?: string;
+  owner?: string;
+  due_days?: number;
+  kind: ClaimKind;
+  sources: string[];
+}
+
+export interface AgentStep {
+  n: number;
+  kind: "plan" | "tool" | "check" | "synthesis";
+  title: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  why?: string;
+  result?: string;
+  ok?: boolean;
+  ms?: number;
+  model?: string;
+  prompt?: string;
+  tokens?: number;
+  cost_rub?: number;
+  cached?: boolean;
+  fallback_from?: string | null;
+  gaps?: string[];
+  issues?: string[];
+  extra?: string[];
+  plan?: { tool: string; why: string }[];
+  plan_json?: { goal: string; by: string; sources: string[]; steps: { tool: string; args: Record<string, unknown>; why: string }[] };
+  rights?: { access: string; data: string };
+}
+
+export interface AgentResult {
+  summary: string;
+  ai_conclusion?: { text: string; kind: ClaimKind; model: string | null; prompt: string | null; engine: string; sources: string[] } | null;
+  features?: { label: string; contribution: number | null; value: number | null; source: "case_model" | "rules" }[];
+  contradictions?: Contradiction[];
+  plan?: { goal: string; by: string; sources: string[]; steps: { tool: string; why: string }[] } | null;
+  role?: { key: string; label: string; focus: string; note: string } | null;
+  answers: {
+    what_happened: Claim[];
+    event: {
+      participants: string[];
+      dates: string[];
+      confirmation: { status: "official" | "confirmed" | "single"; label: string; outlets: number };
+      category?: string | null;
+    };
+    why_important: Claim[];
+    consequences: { risks: Claim[]; opportunities: Claim[]; bank_adjusted: Claim[]; horizon?: string };
+    actions: AgentAction[];
+    follow_up: { questions: string[]; indicators: string[]; scenarios: Scenario[] };
+    bank_view: { found: boolean; items: Claim[]; note: string | null; agreement: "agree" | "conflict" | "none"; topics: string[] };
+    basis: { sources: AgentSource[]; client_features: string[]; market: { ticker: string; ar: number; horizon: number } | null };
+    question: { text: string; items: Claim[]; note: string | null } | null;
+  };
+  checks: {
+    completeness: string[];
+    consistency: AgentIssue[];
+    grounding: { claims: number; dropped: number; llm_dropped: number };
+  };
+  scores: { relevance: number; impact: number; urgency: number; confidence: number; priority: number };
+  data_gaps: string[];
+  confidence: number;
+  priority: number;
+  mode: "rules" | "llm";
+  model: string | null;
+  question: string | null;
+  // ответ настоящей модели, полученный заранее (data/demo_cache): показывается без ключа с пометкой
+  from_cache?: { kind: "demo_cache"; model: string | null; models: string[]; prompts: string[]; obtained_at: string | null;
+    role: string | null; file: string; note: string } | null;
+  llm?: {
+    provider: string;
+    mock: boolean;
+    models: string[];
+    prompts: string[];
+    tokens: number;
+    cost_rub: number;
+    cached: boolean;
+    degraded: { reason: "budget" | "error"; detail: string } | null;
+  } | null;
+}
+
+export interface LlmUsage {
+  today: string;
+  timezone: string;
+  resets_at: string;
+  gateway_reported: ({ ts: string } & Record<string, unknown>) | null;
+  limit_rub: number;
+  spent_rub: number;
+  remaining_rub: number;
+  tokens: number;
+  token_limit: number;
+  provider: string;
+  enabled: boolean;
+  mock: boolean;
+  verified: boolean;
+  key: string;
+  prices_assumed: boolean;
+  by_day: { day: string; rub: number; tokens: number; calls: number; cache_hits: number; errors: number }[];
+  by_model: { model: string; rub: number; prompt_tokens: number; completion_tokens: number; calls: number; cache_hits: number; errors: number }[];
+  by_purpose: { purpose: string; calls: number; rub: number }[];
+  errors: { ts: string; model: string; purpose: string; error: string }[];
+  routes: { task: string; label: string; primary: string; fallback: string[] }[];
+  prompts: { name: string; version: string }[];
+  prices: Record<string, { input: number; output: number }>;
+}
+
+export interface AgentRun {
+  run_id: string;
+  ms: number;
+  cached?: boolean;
+  result: AgentResult;
+  trace: AgentStep[];
+}
+
+export interface CaseClient {
+  id: string;
+  okved_code: string;
+  okved_name: string;
+  revenue_bn: number;
+  segment: boolean;
+  city: string;
+  region: string;
+  client_type: string;
+  products: string[];
+  fts_countries: string[];
+  workers: string;
+  group_id: string;
+  okved_class_rank?: number | null;
+  okved_class_companies?: number | null;
+}
+
+export interface BankDoc {
+  file: string;
+  title: string;
+  date: string | null;
+  topics: string[];
+  pages: number;
+  chunks: number;
+  theses: { text: string; page: number; chunk: string }[];
 }

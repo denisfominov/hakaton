@@ -1,0 +1,55 @@
+{
+  "$id": "alpha-intelligence/ToolSpec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Описание инструмента из реестра агента (`agent_tools.TOOLS`): что делает, права, схемы входа и выхода.",
+  "properties": {
+    "access": {
+      "const": "read",
+      "description": "инструментов записи нет",
+      "title": "Access",
+      "type": "string"
+    },
+    "data": {
+      "enum": [
+        "public",
+        "bank_internal",
+        "client_confidential"
+      ],
+      "title": "Data",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "input_schema": {
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "name": {
+      "pattern": "^[a-z_]+$",
+      "title": "Name",
+      "type": "string"
+    },
+    "output_schema": {
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "when": {
+      "default": "",
+      "title": "When",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "access",
+    "data",
+    "input_schema",
+    "output_schema"
+  ],
+  "title": "ToolSpec",
+  "type": "object",
+  "x-contracts-version": "1.0"
+}
