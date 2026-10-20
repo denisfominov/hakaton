@@ -96,7 +96,8 @@ backend/
     market/        снимок котировок Мосбиржи
     sources.json   список RSS (18 изданий: 15 российских, 3 зарубежных)
     outlets.json   реестр изданий: тип, страна, репутация, холдинг
-  scripts/         build_market_data, import_history
+  scripts/         build_market_data, import_history, ocr_bank_docs (PDF банка → текст), build_case_dataset (датасет
+                   своей LLM из данных кейса), compare_models (сравнение разрешённых LLM), case_data_report
   tests/           pytest
 frontend/
   src/pages/       О сервисе, Выбор компании, Портфель, Обзор, Лента, Событие, Профиль, Решения, Аналитика банка
