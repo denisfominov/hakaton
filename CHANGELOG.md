@@ -3,6 +3,19 @@
 Одна запись на пулл-реквест в `main`, новые — сверху (процесс — CLAUDE.md). Версий `vN` и веток `prompt-N` больше
 нет; записи v1–v10 ниже — архив прежнего процесса.
 
+## 2026-10-20 — PR `docs/cleanup`: CLAUDE.md по факту, карта модулей, мелкие противоречия
+
+- CLAUDE.md переписан по текущему коду и сокращён: запуск через `docker compose`, клиенты из данных кейса (пример —
+  `backend/data/clients/sample`), режимы `LLM_PROVIDER=off|mock|gateway` вместо `ANTHROPIC_API_KEY`, раздел «Правила
+  кейса» (шесть моделей, белый список в `llm_client.py`, без SDK внешних AI и LangChain, ключ только в `.env`).
+- docs/ARCHITECTURE.md: «Карта модулей» (backend/app, scripts, data, frontend) перенесена из CLAUDE.md и дополнена;
+  LLM-слой — точные имена моделей шлюза, бюджетный день с 03:00 МСК, стоимость из ответа шлюза.
+- Сброс лимита — 03:00 МСК везде: README, QUESTIONS, TASKS, REVIEW, AUDIT, SECURITY, страница «Расход» (час сброса —
+  из ответа API), комментарии в коде.
+- Ollama: в docker-compose его нет — убран из THIRD_PARTY_NOTICES, README и FINETUNE_PROPOSAL (как в COMPLIANCE.md).
+- README: шлюз проверен smoke-тестом (раздел «Ограничения» больше не говорит обратного), 210 тестов.
+- docs/TASKS.md: убран «Шаг 0» (ветки уже в `main`), C5 отмечена сделанной. Удалён `test.md` (проба репозитория).
+
 ## 2026-10-20 — PR `feature/c-gateway-smoke`: шлюз организаторов проверен (C5)
 
 - Smoke-тест шлюза (`scripts/smoke_gateway.py`): все шесть моделей отвечают по точным именам, ≈ 0,017 ₽ на шесть
