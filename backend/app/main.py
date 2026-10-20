@@ -39,10 +39,8 @@ def preset_profiles():
 
 
 def presets_wanted():
-    """Встроенные публичные компании нужны только тестовому набору или когда данных кейса нет (config.PRESET_PROFILES)."""
-    if config.PRESET_PROFILES in ("1", "0"):
-        return config.PRESET_PROFILES == "1"
-    return config.DATASET == "synthetic" or clients.source_kind() is None
+    """Встроенные публичные компании — только по явному PRESET_PROFILES=1 (тесты); по умолчанию — клиенты кейса."""
+    return config.PRESET_PROFILES in ("1", "true", "yes", "on")
 
 
 def seed_demo_clients(conn):
