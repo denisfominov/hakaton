@@ -20,18 +20,29 @@ if DATASET not in ("real", "synthetic"):
     DATASET = "real"
 DATASET_DIR = DATA_DIR / DATASET
 
-# LLM — только разрешённые кейсом модели (app/llm_client.py). Без LLM всё работает на правилах.
-# LLM_PROVIDER: gateway — шлюз организаторов; local — своя модель (Ollama/vLLM); off — без LLM
+# LLM — только разрешённые кейсом модели (app/llm_client.py, app/llm_router.py). Без LLM всё работает на правилах.
+# LLM_PROVIDER: off — без LLM; mock — мок-режим шлюза без сети; gateway — шлюз организаторов
 # пустая строка в .env (LLM_BASE_URL=) = значение по умолчанию, поэтому `or`, а не второй аргумент getenv
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "off").lower()
-LLM_BASE_URL = os.getenv("LLM_BASE_URL") or ("http://localhost:11434/v1" if LLM_PROVIDER == "local" else "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL") or ""
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+# формат запроса шлюза неизвестен: допущение — Chat Completions (docs/GATEWAY_QUESTIONS.md)
+LLM_API_FORMAT = os.getenv("LLM_API_FORMAT") or "chat_completions"
+LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER") or "Authorization"
+LLM_AUTH_SCHEME = os.getenv("LLM_AUTH_SCHEME", "Bearer")
 LLM_MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT") or "Qwen3.6 35B A3B"
 LLM_MODEL_FAST = os.getenv("LLM_MODEL_FAST") or "Gemma 4 26B A4B"
 LLM_MODEL_REASONING = os.getenv("LLM_MODEL_REASONING") or "GLM-5.3-Flash"
 LLM_MODEL_VISION = os.getenv("LLM_MODEL_VISION") or "Qwen3-VL-30B-A3B-Instruct"
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "90")
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or "60")
+LLM_RETRIES = int(os.getenv("LLM_RETRIES") or "2")
+LLM_BACKOFF = float(os.getenv("LLM_BACKOFF") or "1.0")
+LLM_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS") or "24000")
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS") or "2000")
+# бюджет: дневной лимит в ₽ (жёстко не выше 499 — лимит кейса 500 ₽) и в токенах; цены — допущение, ₽ за 1 млн токенов
+LLM_DAILY_BUDGET_RUB = float(os.getenv("LLM_DAILY_BUDGET_RUB") or "450")
 LLM_DAILY_TOKEN_LIMIT = int(os.getenv("LLM_DAILY_TOKEN_LIMIT") or "300000")
+LLM_PRICE_DEFAULT = os.getenv("LLM_PRICE_DEFAULT") or "60,180"
 
 # данные кейса о клиентах (df_Uid_data_hack.csv и др.); по умолчанию — корень репозитория, затем синтетический пример
 CLIENT_DATA_DIR = os.getenv("CLIENT_DATA_DIR", "")
@@ -64,4 +75,5 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1
 
 
 def llm_enabled():
-    return LLM_PROVIDER in ("gateway", "local") and bool(LLM_BASE_URL)
+    p = "gateway" if LLM_PROVIDER == "local" else LLM_PROVIDER
+    return p == "mock" or (p == "gateway" and bool(LLM_BASE_URL))

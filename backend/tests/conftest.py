@@ -11,6 +11,7 @@ _tmp = tempfile.mkdtemp(prefix="alpha-tests-")
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 # без LLM по умолчанию: тесты, которым нужна модель, подменяют HTTP-вызов
 os.environ["LLM_PROVIDER"] = "off"
+os.environ["LLM_BACKOFF"] = "0"  # повторы без пауз
 # аналитика банка — пустая временная папка; тесты RAG кладут туда свои документы
 os.environ["BANK_DOCS_DIR"] = os.path.join(_tmp, "bank")
 # логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.

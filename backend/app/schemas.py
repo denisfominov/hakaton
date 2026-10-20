@@ -231,6 +231,17 @@ class ScoresOut(BaseModel):
     priority: float
 
 
+class LLMMetaOut(BaseModel):
+    provider: str
+    mock: bool = False  # мок-режим шлюза: ответ построен без модели
+    models: list[str] = []
+    prompts: list[str] = []  # версии промптов, например agent_answer@v1
+    tokens: int = 0
+    cost_rub: float = 0.0
+    cached: bool = False  # весь ответ модели взят из кэша
+    degraded: Optional[dict] = None  # {"reason": "budget" | "error", "detail"} — ответ правилами вместо модели
+
+
 class AgentResultOut(BaseModel):
     summary: str
     answers: AnswersOut
@@ -242,3 +253,4 @@ class AgentResultOut(BaseModel):
     mode: Literal["rules", "llm"]
     model: Optional[str] = None
     question: Optional[str] = None
+    llm: Optional[LLMMetaOut] = None

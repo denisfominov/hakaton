@@ -1,5 +1,5 @@
 import {
-  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Grid3x3, Landmark, LayoutDashboard, Newspaper,
+  Briefcase, Building2, Check, ChevronDown, ClipboardCheck, Cpu, Gauge, Grid3x3, Landmark, LayoutDashboard, Newspaper,
   RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +18,7 @@ const NAV = [
   { to: "/feed", label: "Лента событий", icon: Newspaper },
   { to: "/decisions", label: "Решения", icon: ClipboardCheck },
   { to: "/bank", label: "Аналитика банка", icon: Landmark },
+  { to: "/spending", label: "Расход", icon: Gauge },
   { to: "/profile", label: "Профиль компании", icon: Building2 },
 ];
 

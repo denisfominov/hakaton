@@ -102,7 +102,9 @@ function Trace({ steps, ms }: { steps: AgentStep[]; ms: number }) {
             )}
             {s.issues && s.issues.length > 0 && <span className="text-amber-700"> · противоречия: {s.issues.join(" ")}</span>}
             {s.plan && <span className="text-ink-500"> → {s.plan.map((p) => p.tool).join(" → ")}</span>}
-            {s.model && <span className="text-ink-400"> · {s.model}</span>}
+            {s.model && <span className="text-ink-400"> · {s.model}{s.fallback_from ? ` (запасная вместо ${s.fallback_from})` : ""}</span>}
+            {s.prompt && <span className="text-ink-400"> · промпт {s.prompt}</span>}
+            {s.tokens ? <span className="text-ink-400"> · {s.tokens} ток., {(s.cost_rub ?? 0).toFixed(3)} ₽{s.cached ? ", из кэша" : ""}</span> : null}
             {s.ms !== undefined && s.ms > 0 && <span className="text-ink-400"> · {s.ms} мс</span>}
           </span>
         </li>
@@ -157,7 +159,7 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
           <div className="text-sm font-semibold">Инсайт для руководителя</div>
           <div className="text-xs text-ink-500">
             {run
-              ? `Агент: ${tools} вызовов инструментов, ${r!.mode === "llm" ? `модель ${r!.model}` : "без LLM, на правилах и поиске"}`
+              ? `Агент: ${tools} вызовов инструментов, ${r!.mode === "llm" ? `модели ${(r!.llm?.models || [r!.model]).join(", ")}${r!.llm?.mock ? " (мок)" : ""}` : "без LLM, на правилах и поиске"}`
                 + (run.cached ? " · сохранённый запуск" : "")
               : "Агент планирует, какие данные нужны, вызывает инструменты, проверяет полноту и отвечает на 6 вопросов"}
           </div>
@@ -174,6 +176,21 @@ export default function AgentPanel({ profileId, eventId, llmEnabled }: { profile
       </div>
 
       {error && <div className="border-b border-red-100 bg-red-50 px-5 py-2 text-sm text-red-800">{error}</div>}
+      {r?.llm?.degraded && (
+        <div className="flex gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-900">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          {r.llm.degraded.reason === "budget"
+            ? "Дневной лимит бюджета LLM исчерпан — ответ собран правилами и своими моделями без языковой модели."
+            : "Модели недоступны (ошибка или таймаут у основной и запасной) — ответ собран правилами."}
+        </div>
+      )}
+      {r?.llm && !r.llm.degraded && (r.llm.mock || r.llm.cached) && (
+        <div className="flex gap-2 border-b border-ink-100 bg-ink-50 px-5 py-2 text-xs text-ink-600">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          {r.llm.mock ? "Мок-режим шлюза: формулировки построены из собранных данных без языковой модели (ключа шлюза пока нет). " : ""}
+          {r.llm.cached ? "Ответ модели взят из кэша — бюджет не тратился." : ""}
+        </div>
+      )}
       {busy && !run && <div className="px-5 py-6 text-sm text-ink-500">Агент собирает данные: событие, профиль, данные банка, аналитика…</div>}
 
       {r && a && (

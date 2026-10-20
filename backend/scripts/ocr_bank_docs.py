@@ -146,9 +146,10 @@ def ocr_vl(img):
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
-    text, _usage = llm_client.vision(base64.b64encode(buf.getvalue()).decode(),
-                                     "Перепиши весь текст страницы аналитического обзора по-русски, сохраняя абзацы и "
-                                     "цифры. Без пояснений, графики не описывай.", purpose="bank_ocr")
+    from app import prompts
+
+    text, _usage = llm_client.vision(base64.b64encode(buf.getvalue()).decode(), prompts.get("vision_ocr").text,
+                                     purpose="bank_ocr")
     return [(i / 1000, 0.0, 1.0, 0.01, t.strip()) for i, t in enumerate(text.splitlines()) if t.strip()]
 
 

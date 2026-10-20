@@ -498,6 +498,11 @@ export interface AgentStep {
   ok?: boolean;
   ms?: number;
   model?: string;
+  prompt?: string;
+  tokens?: number;
+  cost_rub?: number;
+  cached?: boolean;
+  fallback_from?: string | null;
   gaps?: string[];
   issues?: string[];
   extra?: string[];
@@ -534,6 +539,38 @@ export interface AgentResult {
   mode: "rules" | "llm";
   model: string | null;
   question: string | null;
+  llm?: {
+    provider: string;
+    mock: boolean;
+    models: string[];
+    prompts: string[];
+    tokens: number;
+    cost_rub: number;
+    cached: boolean;
+    degraded: { reason: "budget" | "error"; detail: string } | null;
+  } | null;
+}
+
+export interface LlmUsage {
+  today: string;
+  limit_rub: number;
+  spent_rub: number;
+  remaining_rub: number;
+  tokens: number;
+  token_limit: number;
+  provider: string;
+  enabled: boolean;
+  mock: boolean;
+  verified: boolean;
+  key: string;
+  prices_assumed: boolean;
+  by_day: { day: string; rub: number; tokens: number; calls: number; cache_hits: number; errors: number }[];
+  by_model: { model: string; rub: number; prompt_tokens: number; completion_tokens: number; calls: number; cache_hits: number; errors: number }[];
+  by_purpose: { purpose: string; calls: number; rub: number }[];
+  errors: { ts: string; model: string; purpose: string; error: string }[];
+  routes: { task: string; label: string; primary: string; fallback: string[] }[];
+  prompts: { name: string; version: string }[];
+  prices: Record<string, { input: number; output: number }>;
 }
 
 export interface AgentRun {

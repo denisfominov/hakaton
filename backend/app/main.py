@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse
 
 import httpx
 
-from . import (agent, bank_rag, catalog, clients, company, config, jobs, llm, llm_client, lookup, market, model, nlp,
-               outlets, overview, pipeline, sources, store)
+from . import (agent, bank_rag, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
+               market, model, nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
 from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
                       SuggestIn)
@@ -651,6 +651,17 @@ def agent_run(run_id: str):
     if not out:
         raise HTTPException(404, "Запуск агента не найден")
     return out
+
+
+@app.get("/api/llm/usage")
+def llm_usage(days: int = Query(14, ge=1, le=90)):
+    """Страница «Расход»: токены и стоимость по дням и моделям, лимит, маршруты моделей, версии промптов."""
+    with get_db() as conn:
+        u = llm_budget.usage(conn, days)
+    st = llm_client.status()
+    return {**u, "provider": st["provider"], "enabled": st["enabled"], "mock": st["mock"], "verified": st["verified"],
+            "key": st["key"], "routes": llm_router.table(), "prompts": prompts.catalog(),
+            "prices": {m: dict(zip(("input", "output"), llm_budget.prices(m))) for m in llm_client.ALLOWED_MODELS}}
 
 
 @app.get("/api/bank-docs")

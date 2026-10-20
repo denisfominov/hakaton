@@ -7,6 +7,7 @@ import { ErrorBox, Loading } from "./components/States";
 import { AppProvider, useApp } from "./context";
 import AboutPage from "./pages/AboutPage";
 import BankPage from "./pages/BankPage";
+import SpendingPage from "./pages/SpendingPage";
 import CompaniesPage from "./pages/CompaniesPage";
 import DecisionsPage from "./pages/DecisionsPage";
 import EventPage from "./pages/EventPage";
@@ -47,6 +48,7 @@ function Routed() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/bank" element={<BankPage />} />
+        <Route path="/spending" element={<SpendingPage />} />
         <Route path="*" element={<div className="py-20 text-center text-ink-500">Страница не найдена. <Link to="/" className="underline">На главную</Link></div>} />
       </Routes>
     </ErrorBoundary>

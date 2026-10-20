@@ -20,7 +20,7 @@ import logging
 import time
 import uuid
 
-from . import agent_rules, analysis, bank_rag, clients, llm_client, ner, pipeline, store
+from . import agent_rules, analysis, bank_rag, clients, llm_client, ner, pipeline, prompts, store
 from .db import dumps, loads, now_iso
 from .schemas import AgentResultOut
 
@@ -71,6 +71,9 @@ CATEGORY_TOPICS = {"economy": "макроэкономика ВВП инфляц�
                    "regulation": "регулирование экономика", "industry": "отрасль спрос производство"}
 
 
+TASK_ROLE = {"plan": "fast", "analysis": "reasoning"}  # явные модели можно задать и по старым ролям
+
+
 class Ctx:
     """Контекст запуска: профиль, событие, результаты инструментов, трассировка."""
 
@@ -80,21 +83,35 @@ class Ctx:
         self.data = {}
         self.trace = []
         self.sources = {}
-        self.models = models or {}  # явные модели по ролям (сравнение моделей); иначе — из настроек
-        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "llm_ms": 0, "errors": []}
+        self.models = models or {}  # явные модели по задачам (сравнение моделей); иначе — роутер
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "llm_ms": 0, "cost_rub": 0.0,
+                      "errors": [], "details": []}
+        self.degraded = None  # {"reason": "budget" | "error", "detail": ...} — ответ правилами вместо модели
 
-    def llm(self, messages, role, purpose, max_tokens):
-        """Вызов разрешённой модели с учётом токенов и времени — для журнала и сравнения моделей."""
+    def llm(self, messages, task, purpose, max_tokens, prompt):
+        """Вызов разрешённой модели через роутер: кэш по (событие, профиль, версия промпта, модель), бюджет, учёт."""
+        model = self.models.get(task) or self.models.get(TASK_ROLE.get(task, ""))
         try:
-            data, usage = llm_client.chat_json(messages, role=role, purpose=purpose, max_tokens=max_tokens,
-                                               conn=self.conn, model=self.models.get(role))
+            data, usage = llm_client.chat_json(messages, task=task, purpose=purpose, max_tokens=max_tokens,
+                                               conn=self.conn, model=model, prompt_version=prompt.id,
+                                               cache={"event_id": self.ev["id"], "profile_id": self.profile.get("id")})
+        except llm_client.BudgetExceeded as e:
+            self.usage["errors"].append(f"{purpose}: {e}")
+            self.degraded = {"reason": "budget", "detail": str(e)}
+            raise
         except llm_client.LLMError as e:
             self.usage["errors"].append(f"{purpose}: {e}")
+            self.degraded = self.degraded or {"reason": "error", "detail": str(e)}
             raise
+        tokens = int(usage.get("prompt_tokens") or 0) + int(usage.get("completion_tokens") or 0)
         self.usage["calls"] += 1
         self.usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         self.usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
         self.usage["llm_ms"] += int(usage.get("ms") or 0)
+        self.usage["cost_rub"] = round(self.usage["cost_rub"] + float(usage.get("cost_rub") or 0), 4)
+        self.usage["details"].append({"purpose": purpose, "task": task, "model": usage.get("model"), "prompt": prompt.id,
+                                      "tokens": tokens, "cost_rub": usage.get("cost_rub", 0.0),
+                                      "cached": bool(usage.get("cached")), "fallback_from": usage.get("fallback_from")})
         return data, usage
 
     def step(self, kind, title, **kw):
@@ -258,14 +275,12 @@ def heuristic_plan(ctx):
 def llm_plan(ctx):
     tools = "\n".join(f"- {n}: {d}" + (f" (аргументы: {', '.join(spec)})" if spec else "")
                       for n, (_f, d, spec) in TOOLS.items())
-    msg = [{"role": "system", "content": "Ты планировщик аналитического агента банка для руководителей крупного бизнеса. "
-            "Выбери инструменты, нужные, чтобы объяснить влияние события на компанию и позицию банка. "
-            "Ответ — JSON {\"plan\": [{\"tool\": имя, \"args\": {...}, \"why\": зачем}]}, не больше 7 шагов. "
-            "Инструменты:\n" + tools},
+    prompt = prompts.get("agent_plan")
+    msg = [{"role": "system", "content": prompt.render(tools=tools)},
            {"role": "user", "content": f"Событие: {ctx.ev['title']}\nКомпания: {ctx.profile.get('name')}, "
             f"отрасль: {ctx.profile.get('industry')}, продукты банка: {', '.join(ctx.profile.get('bank_products') or []) or 'нет данных'}"
             + (f"\nВопрос пользователя: {ctx.question}" if ctx.question else "")}]
-    data, usage = ctx.llm(msg, "fast", "agent_plan", 600)
+    data, usage = ctx.llm(msg, "plan", "agent_plan", 600, prompt)
     plan = [(s.get("tool"), s.get("args") or {}, s.get("why") or "")
             for s in (data.get("plan") or []) if isinstance(s, dict)][:MAX_STEPS]
     return plan, usage
@@ -414,18 +429,8 @@ def _sentence(text, limit=360):
     return cut[:max(cut.rfind(". "), limit // 2)] + "…"
 
 
-LLM_SYSTEM = """Ты аналитик Альфа-Банка для руководителей крупного бизнеса. Перепиши готовый разбор понятным языком,
-не добавляя фактов. Правила:
-- what_happened — только факты из раздела FACTS (тип fact);
-- bank_view — только из раздела BANK, каждое утверждение со ссылкой на id фрагмента (тип bank);
-- why_important — связь с компанией по разделу CLIENT (тип client);
-- consequences и actions — твои выводы (тип ai), опирайся на CLIENT, FACTS, BANK, учитывай несколько факторов;
-- scenarios — 2 сценария развития с учётом BANK, если он есть;
-- answer — ответ на ВОПРОС пользователя, если он задан, только по данным выше;
-- ничего не выдумывай: если данных нет — так и напиши.
-Ответ — JSON {"summary": str, "why_important": [str], "risks": [str], "opportunities": [str],
-"bank_view": [{"text": str, "source": id фрагмента}], "actions": [{"title": str, "why": str}],
-"scenarios": [{"title": str, "text": str}], "answer": str}"""
+# системный промпт ответа агента — в файле app/prompts/agent_answer@vN.txt (версия попадает в ответ и кэш)
+LLM_SYSTEM = prompts.get("agent_answer").text
 
 
 def bank_texts(ctx):
@@ -447,8 +452,9 @@ def llm_rewrite(ctx, draft):
     """Разрешённая модель переписывает черновик; факты и позиция банка проверяются по источникам."""
     bank = bank_texts(ctx)
     payload = llm_payload(ctx, draft)
-    data, usage = ctx.llm([{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": payload}],
-                          "reasoning", "agent_answer", 1800)
+    prompt = prompts.get("agent_answer")
+    data, usage = ctx.llm([{"role": "system", "content": prompt.text}, {"role": "user", "content": payload}],
+                          "analysis", "agent_answer", 1800, prompt)
     out = json.loads(json.dumps(draft))
     roots = agent_rules.context_roots(payload)
     dropped = 0
@@ -492,6 +498,14 @@ def llm_rewrite(ctx, draft):
 
 # ---------- запуск ----------
 
+def _llm_step(usage):
+    """Что записать в трассировку о вызове модели: модель, версия промпта, токены, стоимость, кэш, запасная."""
+    return {"model": usage.get("model"), "prompt": usage.get("prompt_version"),
+            "tokens": int(usage.get("prompt_tokens") or 0) + int(usage.get("completion_tokens") or 0),
+            "cost_rub": usage.get("cost_rub", 0.0), "cached": bool(usage.get("cached")),
+            "fallback_from": usage.get("fallback_from")}
+
+
 def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True):
     """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/compare_models.py);
     save=False — не писать в agent_runs (сборка датасета на копии базы)."""
@@ -506,7 +520,8 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
         try:
             plan, usage = llm_plan(ctx)
             mode, model = "llm", usage.get("model")
-            ctx.step("plan", "план построила модель", model=model, plan=[{"tool": t, "why": w} for t, _a, w in plan])
+            ctx.step("plan", "план построила модель", plan=[{"tool": t, "why": w} for t, _a, w in plan],
+                     **_llm_step(usage))
         except llm_client.LLMError as e:
             ctx.step("plan", f"модель недоступна ({e}) — план по правилам", ok=False)
     if not plan:
@@ -535,7 +550,7 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
             result, usage = llm_rewrite(ctx, result)
             model = usage.get("model") or model
             ctx.step("synthesis", "ответ сформулировала модель, факты и позиция банка проверены по источникам",
-                     model=usage.get("model"))
+                     **_llm_step(usage))
         except llm_client.LLMError as e:
             ctx.step("synthesis", f"модель недоступна ({e}) — ответ собран правилами", ok=False)
     else:
@@ -558,6 +573,14 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     run_id = uuid.uuid4().hex[:12]
     ms = int((time.time() - started) * 1000)
     result.update(mode=mode, model=model, question=ctx.question or None)
+    if use_llm and llm_client.enabled():
+        u = ctx.usage
+        result["llm"] = {"provider": llm_client.provider(), "mock": llm_client.provider() == "mock",
+                         "models": sorted({d["model"] for d in u["details"] if d["model"]}),
+                         "prompts": sorted({d["prompt"] for d in u["details"]}),
+                         "tokens": u["prompt_tokens"] + u["completion_tokens"], "cost_rub": u["cost_rub"],
+                         "cached": bool(u["details"]) and all(d["cached"] for d in u["details"]),
+                         "degraded": ctx.degraded}
     result = AgentResultOut.model_validate(result).model_dump()  # ответ строго по JSON-схеме
     if save:
         conn.execute("INSERT INTO agent_runs (id, profile_id, event_id, question, created_at, mode, model, ms, plan, "
