@@ -1,0 +1,263 @@
+{
+  "$defs": {
+    "Channel": {
+      "additionalProperties": true,
+      "properties": {
+        "area": {
+          "enum": [
+            "financial",
+            "market",
+            "operational",
+            "regulatory",
+            "strategic"
+          ],
+          "title": "Area",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "risk",
+            "opportunity"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "type",
+        "area",
+        "severity",
+        "title"
+      ],
+      "title": "Channel",
+      "type": "object"
+    },
+    "Factor": {
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "points": {
+          "title": "Points",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "points"
+      ],
+      "title": "Factor",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/RankedEvent",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Результат отбора и ранжирования одной группы публикаций для одной компании: баллы 0–100 и их разложение.",
+  "properties": {
+    "channels": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Channel"
+      },
+      "title": "Channels",
+      "type": "array"
+    },
+    "cluster_ids": {
+      "description": "все публикации группы дублей",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Cluster Ids",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "event_id": {
+      "description": "карточка группы — самая надёжная публикация",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "fact_status": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Fact Status",
+      "type": "object"
+    },
+    "impact": {
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Impact",
+      "type": "number"
+    },
+    "impact_type": {
+      "enum": [
+        "risk",
+        "opportunity",
+        "mixed",
+        "neutral"
+      ],
+      "title": "Impact Type",
+      "type": "string"
+    },
+    "matched": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "что из профиля упоминается в новости",
+      "title": "Matched",
+      "type": "object"
+    },
+    "ml": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "поправка своей модели, если есть",
+      "title": "Ml"
+    },
+    "priority": {
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Priority",
+      "type": "number"
+    },
+    "priority_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Priority Level",
+      "type": "string"
+    },
+    "profile_id": {
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "published_at": {
+      "title": "Published At",
+      "type": "string"
+    },
+    "relevance": {
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Relevance",
+      "type": "number"
+    },
+    "relevance_factors": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Factor"
+      },
+      "title": "Relevance Factors",
+      "type": "array"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "urgency": {
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Urgency",
+      "type": "number"
+    },
+    "urgency_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Urgency Level",
+      "type": "string"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Url"
+    }
+  },
+  "required": [
+    "profile_id",
+    "event_id",
+    "cluster_ids",
+    "title",
+    "source",
+    "published_at",
+    "relevance",
+    "impact",
+    "urgency",
+    "confidence",
+    "priority",
+    "priority_level",
+    "urgency_level",
+    "impact_type",
+    "fact_status"
+  ],
+  "title": "RankedEvent",
+  "type": "object",
+  "x-contracts-version": "1.0"
+}

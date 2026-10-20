@@ -1,0 +1,1220 @@
+{
+  "$defs": {
+    "AIConclusionOut": {
+      "properties": {
+        "engine": {
+          "default": "rules",
+          "title": "Engine",
+          "type": "string"
+        },
+        "kind": {
+          "default": "ai",
+          "enum": [
+            "fact",
+            "bank",
+            "client",
+            "ai"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "sources"
+      ],
+      "title": "AIConclusionOut",
+      "type": "object"
+    },
+    "AgentActionOut": {
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "due_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due Days"
+        },
+        "for_role": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "For Role"
+        },
+        "if_done": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "If Done"
+        },
+        "if_ignored": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "If Ignored"
+        },
+        "kind": {
+          "default": "ai",
+          "enum": [
+            "fact",
+            "bank",
+            "client",
+            "ai"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why"
+        }
+      },
+      "required": [
+        "title",
+        "sources"
+      ],
+      "title": "AgentActionOut",
+      "type": "object"
+    },
+    "AnswersOut": {
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/AgentActionOut"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "bank_view": {
+          "$ref": "#/$defs/BankViewOut"
+        },
+        "basis": {
+          "$ref": "#/$defs/BasisOut"
+        },
+        "consequences": {
+          "$ref": "#/$defs/ConsequencesOut"
+        },
+        "event": {
+          "$ref": "#/$defs/EventDetailsOut"
+        },
+        "follow_up": {
+          "$ref": "#/$defs/FollowUpOut"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuestionOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "what_happened": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "What Happened",
+          "type": "array"
+        },
+        "why_important": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Why Important",
+          "type": "array"
+        }
+      },
+      "required": [
+        "what_happened",
+        "event",
+        "why_important",
+        "consequences",
+        "actions",
+        "follow_up",
+        "bank_view",
+        "basis"
+      ],
+      "title": "AnswersOut",
+      "type": "object"
+    },
+    "BankViewOut": {
+      "properties": {
+        "agreement": {
+          "default": "none",
+          "enum": [
+            "agree",
+            "conflict",
+            "none"
+          ],
+          "title": "Agreement",
+          "type": "string"
+        },
+        "found": {
+          "title": "Found",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "topics": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Topics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "found",
+        "items"
+      ],
+      "title": "BankViewOut",
+      "type": "object"
+    },
+    "BasisOut": {
+      "properties": {
+        "client_features": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Client Features",
+          "type": "array"
+        },
+        "market": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceOut"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources",
+        "client_features"
+      ],
+      "title": "BasisOut",
+      "type": "object"
+    },
+    "CacheMarkOut": {
+      "description": "Ответ взят из кэша демонстрации: получен ранее настоящей моделью (data/demo_cache).",
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "kind": {
+          "const": "demo_cache",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "models": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "obtained_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Obtained At"
+        },
+        "prompts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Prompts",
+          "type": "array"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        }
+      },
+      "required": [
+        "kind",
+        "file",
+        "note"
+      ],
+      "title": "CacheMarkOut",
+      "type": "object"
+    },
+    "ChecksOut": {
+      "properties": {
+        "completeness": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Completeness",
+          "type": "array"
+        },
+        "consistency": {
+          "items": {
+            "$ref": "#/$defs/IssueOut"
+          },
+          "title": "Consistency",
+          "type": "array"
+        },
+        "grounding": {
+          "$ref": "#/$defs/GroundingOut"
+        }
+      },
+      "required": [
+        "completeness",
+        "consistency",
+        "grounding"
+      ],
+      "title": "ChecksOut",
+      "type": "object"
+    },
+    "ClaimOut": {
+      "properties": {
+        "confirmed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmed"
+        },
+        "for_role": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "For Role"
+        },
+        "kind": {
+          "enum": [
+            "fact",
+            "bank",
+            "client",
+            "ai"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "sources"
+      ],
+      "title": "ClaimOut",
+      "type": "object"
+    },
+    "ConfirmationOut": {
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "outlets": {
+          "title": "Outlets",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "official",
+            "confirmed",
+            "single"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "label",
+        "outlets"
+      ],
+      "title": "ConfirmationOut",
+      "type": "object"
+    },
+    "ConsequencesOut": {
+      "properties": {
+        "bank_adjusted": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Bank Adjusted",
+          "type": "array"
+        },
+        "horizon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Horizon"
+        },
+        "opportunities": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Opportunities",
+          "type": "array"
+        },
+        "risks": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Risks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "risks",
+        "opportunities"
+      ],
+      "title": "ConsequencesOut",
+      "type": "object"
+    },
+    "ContradictionOut": {
+      "properties": {
+        "bank": {
+          "$ref": "#/$defs/SideOut"
+        },
+        "news": {
+          "$ref": "#/$defs/SideOut"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "news",
+        "bank",
+        "note"
+      ],
+      "title": "ContradictionOut",
+      "type": "object"
+    },
+    "EventDetailsOut": {
+      "properties": {
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/ConfirmationOut"
+        },
+        "dates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dates",
+          "type": "array"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Participants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "participants",
+        "dates",
+        "confirmation"
+      ],
+      "title": "EventDetailsOut",
+      "type": "object"
+    },
+    "FeatureOut": {
+      "properties": {
+        "contribution": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contribution"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "case_model",
+            "rules"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "label",
+        "source"
+      ],
+      "title": "FeatureOut",
+      "type": "object"
+    },
+    "FollowUpOut": {
+      "properties": {
+        "indicators": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Indicators",
+          "type": "array"
+        },
+        "questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Questions",
+          "type": "array"
+        },
+        "scenarios": {
+          "items": {
+            "$ref": "#/$defs/ScenarioOut"
+          },
+          "title": "Scenarios",
+          "type": "array"
+        }
+      },
+      "required": [
+        "questions",
+        "indicators",
+        "scenarios"
+      ],
+      "title": "FollowUpOut",
+      "type": "object"
+    },
+    "GroundingOut": {
+      "properties": {
+        "claims": {
+          "default": 0,
+          "title": "Claims",
+          "type": "integer"
+        },
+        "dropped": {
+          "default": 0,
+          "title": "Dropped",
+          "type": "integer"
+        },
+        "llm_dropped": {
+          "default": 0,
+          "title": "Llm Dropped",
+          "type": "integer"
+        },
+        "llm_proposed": {
+          "default": 0,
+          "title": "Llm Proposed",
+          "type": "integer"
+        }
+      },
+      "title": "GroundingOut",
+      "type": "object"
+    },
+    "IssueOut": {
+      "properties": {
+        "pair": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pair"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "signals",
+            "numbers",
+            "bank",
+            "feedback",
+            "model"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text",
+        "sources"
+      ],
+      "title": "IssueOut",
+      "type": "object"
+    },
+    "LLMMetaOut": {
+      "properties": {
+        "cached": {
+          "default": false,
+          "title": "Cached",
+          "type": "boolean"
+        },
+        "cost_rub": {
+          "default": 0.0,
+          "title": "Cost Rub",
+          "type": "number"
+        },
+        "degraded": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Degraded"
+        },
+        "mock": {
+          "default": false,
+          "title": "Mock",
+          "type": "boolean"
+        },
+        "models": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "prompts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Prompts",
+          "type": "array"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "tokens": {
+          "default": 0,
+          "title": "Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "title": "LLMMetaOut",
+      "type": "object"
+    },
+    "QuestionOut": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ClaimOut"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "items"
+      ],
+      "title": "QuestionOut",
+      "type": "object"
+    },
+    "ScenarioOut": {
+      "properties": {
+        "bank_view": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank View"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Direction"
+        },
+        "kind": {
+          "default": "ai",
+          "enum": [
+            "fact",
+            "bank",
+            "client",
+            "ai"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "sources"
+      ],
+      "title": "ScenarioOut",
+      "type": "object"
+    },
+    "ScoresOut": {
+      "properties": {
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "impact": {
+          "title": "Impact",
+          "type": "number"
+        },
+        "priority": {
+          "title": "Priority",
+          "type": "number"
+        },
+        "relevance": {
+          "title": "Relevance",
+          "type": "number"
+        },
+        "urgency": {
+          "title": "Urgency",
+          "type": "number"
+        }
+      },
+      "required": [
+        "relevance",
+        "impact",
+        "urgency",
+        "confidence",
+        "priority"
+      ],
+      "title": "ScoresOut",
+      "type": "object"
+    },
+    "SideOut": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "text",
+        "source"
+      ],
+      "title": "SideOut",
+      "type": "object"
+    },
+    "SourceOut": {
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "news",
+            "bank",
+            "client",
+            "rules",
+            "market",
+            "model"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "title"
+      ],
+      "title": "SourceOut",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/InsightResult",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Ответ агента для ЛПР: 6 вопросов кейса; у каждого утверждения — kind (fact / bank / client / ai) и источники.",
+  "properties": {
+    "ai_conclusion": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AIConclusionOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "answers": {
+      "$ref": "#/$defs/AnswersOut"
+    },
+    "checks": {
+      "$ref": "#/$defs/ChecksOut"
+    },
+    "confidence": {
+      "title": "Confidence",
+      "type": "number"
+    },
+    "contradictions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ContradictionOut"
+      },
+      "title": "Contradictions",
+      "type": "array"
+    },
+    "data_gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "features": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FeatureOut"
+      },
+      "title": "Features",
+      "type": "array"
+    },
+    "from_cache": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CacheMarkOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "llm": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LLMMetaOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "mode": {
+      "enum": [
+        "rules",
+        "llm"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan"
+    },
+    "priority": {
+      "title": "Priority",
+      "type": "number"
+    },
+    "question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Question"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Role"
+    },
+    "scores": {
+      "$ref": "#/$defs/ScoresOut"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary",
+    "answers",
+    "checks",
+    "scores",
+    "data_gaps",
+    "confidence",
+    "priority",
+    "mode"
+  ],
+  "title": "InsightResult",
+  "type": "object",
+  "x-contracts-version": "1.0"
+}

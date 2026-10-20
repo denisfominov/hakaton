@@ -1,0 +1,198 @@
+{
+  "$id": "alpha-intelligence/CompanyProfile",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Профиль компании, под который ранжируются новости и отвечает агент. Для клиентов кейса собирается из полей\nприложения 1 (`clients.profile_from_client`); `client_id` — обезличенный SYNTHETIC_U.",
+  "properties": {
+    "aliases": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "autofill_info": {
+      "default": {},
+      "title": "Autofill Info",
+      "type": "object"
+    },
+    "autofilled": {
+      "default": false,
+      "title": "Autofilled",
+      "type": "boolean"
+    },
+    "bank_products": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Bank Products",
+      "type": "array"
+    },
+    "client_id": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Client Id",
+      "type": "string"
+    },
+    "client_signals": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Client Signals",
+      "type": "array"
+    },
+    "clients": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Clients",
+      "type": "array"
+    },
+    "competitors": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Competitors",
+      "type": "array"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "goals": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Goals",
+      "type": "array"
+    },
+    "id": {
+      "description": "id профиля: case-<uid> для клиентов кейса",
+      "title": "Id",
+      "type": "string"
+    },
+    "industry": {
+      "default": "",
+      "title": "Industry",
+      "type": "string"
+    },
+    "inn": {
+      "default": "",
+      "maxLength": 12,
+      "title": "Inn",
+      "type": "string"
+    },
+    "investment_plans": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Investment Plans",
+      "type": "array"
+    },
+    "keywords": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Keywords",
+      "type": "array"
+    },
+    "kind": {
+      "default": "",
+      "title": "Kind",
+      "type": "string"
+    },
+    "label": {
+      "default": "",
+      "maxLength": 400,
+      "title": "Label",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 2,
+      "title": "Name",
+      "type": "string"
+    },
+    "priorities": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Priorities",
+      "type": "array"
+    },
+    "products": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Products",
+      "type": "array"
+    },
+    "regions": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Regions",
+      "type": "array"
+    },
+    "risks": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Risks",
+      "type": "array"
+    },
+    "source_note": {
+      "default": "",
+      "title": "Source Note",
+      "type": "string"
+    },
+    "subindustries": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Subindustries",
+      "type": "array"
+    },
+    "suppliers": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Suppliers",
+      "type": "array"
+    },
+    "ticker": {
+      "default": "",
+      "maxLength": 12,
+      "title": "Ticker",
+      "type": "string"
+    },
+    "website": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Website",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "id"
+  ],
+  "title": "CompanyProfile",
+  "type": "object",
+  "x-contracts-version": "1.0"
+}

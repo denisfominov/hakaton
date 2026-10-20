@@ -693,6 +693,14 @@ def agent_schema():
     return AgentResultOut.model_json_schema()
 
 
+@app.get("/api/contracts")
+def contracts():
+    """JSON-схемы контрактов между частями системы (docs/CONTRACTS.md)."""
+    from .schemas.contracts import CONTRACTS, CONTRACTS_VERSION
+
+    return {"version": CONTRACTS_VERSION, "schemas": {n: m.model_json_schema() for n, m in CONTRACTS.items()}}
+
+
 @app.get("/api/roles")
 def list_roles():
     """Роли пользователя: от роли зависят акценты интерпретации и действий."""

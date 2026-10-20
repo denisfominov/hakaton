@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "EventNLP": {
+      "additionalProperties": true,
+      "properties": {
+        "entities": {
+          "default": [],
+          "items": {},
+          "title": "Entities",
+          "type": "array"
+        },
+        "industries": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Industries",
+          "type": "array"
+        },
+        "lemmas": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Lemmas",
+          "type": "array"
+        },
+        "regions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "signals": {
+          "description": "ставка, курс, цены… с числами и направлением",
+          "title": "Signals",
+          "type": "object"
+        },
+        "suspicious": {
+          "default": false,
+          "title": "Suspicious"
+        },
+        "tokens": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "title": "EventNLP",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/EventDoc",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Одна публикация: из подборки, RSS или будущего API банка. Склейка дублей — через cluster_id.",
+  "properties": {
+    "body": {
+      "default": "",
+      "title": "Body",
+      "type": "string"
+    },
+    "category": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Category"
+    },
+    "cluster_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cluster Id"
+    },
+    "extra": {
+      "title": "Extra",
+      "type": "object"
+    },
+    "fetched_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fetched At"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "is_demo": {
+      "default": false,
+      "title": "Is Demo",
+      "type": "boolean"
+    },
+    "nlp": {
+      "$ref": "#/$defs/EventNLP"
+    },
+    "official": {
+      "default": false,
+      "title": "Official",
+      "type": "boolean"
+    },
+    "published_at": {
+      "description": "ISO 8601 с часовым поясом",
+      "title": "Published At",
+      "type": "string"
+    },
+    "reliability": {
+      "description": "репутация издания (data/outlets.json)",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Reliability",
+      "type": "number"
+    },
+    "source": {
+      "description": "издание",
+      "title": "Source",
+      "type": "string"
+    },
+    "source_type": {
+      "enum": [
+        "curated",
+        "rss",
+        "demo",
+        "alfa",
+        "history"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "summary": {
+      "default": "",
+      "title": "Summary",
+      "type": "string"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thread Id"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Url"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "source",
+    "source_type",
+    "published_at",
+    "reliability"
+  ],
+  "title": "EventDoc",
+  "type": "object",
+  "x-contracts-version": "1.0"
+}
