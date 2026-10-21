@@ -32,9 +32,10 @@ def mock_llm(monkeypatch):
 
 def test_rules_profile_uses_only_dataset_facts(facts):
     p = news_matching.rules_profile(facts)
-    for field in ("products", "suppliers", "clients", "competitors", "goals", "risks", "keywords"):
+    for field in ("suppliers", "clients", "competitors", "goals", "risks", "keywords"):
         assert not p.get(field), f"{field} — не из набора банка"
     known = news_matching.known(facts)
+    assert p["products"] == list(known.get("p:activity", {}).get("value") or []), "предмет деятельности — из ОКВЭД"
     if "p:sector" in known:
         assert p["industry_keys"] == [known["p:sector"]["value"]["key"]]
     assert set(p["bank_products"]) == set(known.get("p:bank_products", {}).get("value") or [])

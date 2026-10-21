@@ -47,9 +47,44 @@ SHARE_NOTE = "доля в выборке набора банка, не доля 
 PAYMENTS_METHOD = ("сумма PAY_AMT по контрагентам за 01.01–31.10.2026 (В19); переводы самой себе исключены (В20); "
                    "только контрагенты с карточкой в наборе (В21)")
 PAYMENTS_NOTE = "направление платежа не говорит, поставщик это или покупатель (В22)"
-SIGNIFICANCE = ("p:okved", "p:sector", "p:revenue", "p:segment", "p:position.okved_class", "p:group", "p:group.size",
+SIGNIFICANCE = ("p:okved", "p:sector", "p:activity", "p:revenue", "p:segment", "p:position.okved_class", "p:group", "p:group.size",
                 "p:bank_products", "p:fts", "p:fts.countries", "p:region", "p:city", "p:payments.out_sectors",
                 "p:payments.in_sectors", "p:affiliates")
+
+
+# общие слова наименований ОКВЭД: вид операции, а не предмет деятельности
+ACTIVITY_GENERIC = {"торговля", "деятельность", "вид", "услуга", "предоставление", "обеспечение", "группировка",
+                    "агент", "производство", "продукт", "продукция", "изделие", "работа", "прочее", "число", "тип",
+                    "принадлежность", "назначение", "часть", "использование", "основа", "организация", "оказание",
+                    "выполнение", "осуществление", "управление", "средство", "товар", "материал", "работоспособность"}
+ACTIVITY_METHOD = ("существительные из наименования основного ОКВЭД (MAINOKVED_NAME) в начальной форме (pymorphy3), "
+                   "без общих слов вида операции: торговля, деятельность, производство, продукция и т.п.")
+
+
+@lru_cache(maxsize=1)
+def _morph():
+    try:
+        import pymorphy3
+
+        return pymorphy3.MorphAnalyzer()
+    except Exception:  # noqa: BLE001 — без библиотеки предмет деятельности не выделяется
+        return None
+
+
+@lru_cache(maxsize=4096)
+def activity_terms(okved_name):
+    """Предмет деятельности по наименованию ОКВЭД: «Торговля оптовая металлами и металлическими рудами» -> металл, руда."""
+    morph = _morph()
+    if morph is None:
+        return ()
+    out = []
+    for w in re.findall(r"[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)?", okved_name or ""):
+        parses = morph.parse(w.lower())
+        p = parses[0]
+        adjective = any({"ADJF", "ADJS", "PRTF"} & set(str(x.tag).replace(" ", ",").split(",")) for x in parses[:3])
+        if "NOUN" in p.tag and not adjective and len(p.normal_form) >= 4 and p.normal_form not in ACTIVITY_GENERIC:
+            out.append(p.normal_form)
+    return tuple(dict.fromkeys(out))
 
 
 def industry_of(okved):
@@ -161,6 +196,10 @@ def _build(path_key, uid):
     if code:
         facts.append(_fact("p:okved", "industry", "Основной вид деятельности (ОКВЭД)", f"{code} — {name}".strip(" —"),
                            "confirmed", [_src(["MAINOKVED_CODE", "MAINOKVED_NAME"], record=rec)]))
+        terms = list(activity_terms(name))
+        facts.append(_fact("p:activity", "activity", "Предмет деятельности (по наименованию ОКВЭД)", terms,
+                           "derived" if terms else "insufficient_data", [_src(["MAINOKVED_NAME"], record=rec)],
+                           ACTIVITY_METHOD, None if terms else "в наименовании ОКВЭД только общие слова"))
         key = industry_of(code)
         facts.append(_fact("p:sector", "industry", "Укрупнённая отрасль", {"key": key, "label": SECTOR_LABELS[key]}
                            if key else None, "derived" if key else "insufficient_data",

@@ -88,6 +88,20 @@ class ImpactOut(_Out):
     matches: dict
 
 
+class MatchOut(_Out):
+    score: dict
+    links: list[dict]
+    assumptions: list[dict]
+    llm: dict
+
+
+class InterpretOut(_Out):
+    headline: str
+    why_it_matters: list[dict]
+    uncertainty: dict
+    mode: str
+
+
 class Hit(_Out):
     id: str
     title: str
@@ -173,6 +187,35 @@ def tool_impact(ctx):
                detail=f"релевантность {r['score']['relevance']}, приоритет {r['score']['priority']}")
     out = {"channels": r["channels"], "score": r["score"], "matches": r["matches"], "insight": r["insight"]}
     return out, f"каналов влияния: {len(r['channels'])}, релевантность {r['score']['relevance']}"
+
+
+def tool_match(ctx):
+    """Сервис 3 (C20.5): тот же балл правил, что в ленте, и связи события с фактами профиля из набора банка."""
+    from .services import company_profile, news_matching
+
+    uid = ctx.profile.get("client_id")
+    facts = company_profile.build(uid) if uid else None
+    if not facts:
+        return None, "у компании нет данных в наборе банка"
+    m = news_matching.match(facts, ctx.r, conn=ctx.conn, use_llm=getattr(ctx, "use_llm", False))
+    ctx.source("client:facts", type="client", title="Профиль из данных банка (сервис 1)",
+               detail=f"фактов {len(facts['facts'])}, пробелов {len(facts['gaps'])}")
+    ctx.source("client:match", type="client", title="Сопоставление с профилем (сервис 3)",
+               detail=f"связей {len(m['links'])}, допущений {len(m['assumptions'])}, проверка моделью: {m['llm']['status']}")
+    return m, f"связей {len(m['links'])}, допущений {len(m['assumptions'])}; проверка моделью: {m['llm']['status']}"
+
+
+def tool_interpret(ctx):
+    """Сервис 4 (C20.6): объяснение для руководителя только по результату сопоставления (и роли читателя)."""
+    from .services import interpretation
+
+    m = ctx.data.get("match_company_news")
+    if not m:
+        return None, "нет результата сопоставления (сервис 3)"
+    role = getattr(ctx, "role", None)
+    reader = {"key": role["key"], "label": role["label"], "focus": role["focus"]} if role else None
+    out = interpretation.interpret(m, reader, conn=ctx.conn, use_llm=getattr(ctx, "use_llm", False))
+    return out, f"объяснение: {'модель' if out['mode'] == 'llm' else 'шаблон'}, неопределённость {out['uncertainty']['level']}"
 
 
 def tool_search_bank(ctx, query="", k=4):
@@ -282,6 +325,12 @@ TOOLS = {t.name: t for t in [
          when="клиент из данных банка: связь через поставщиков, покупателей, регионы"),
     Tool("analyze_impact", "каналы влияния события на компанию и баллы (правила)", tool_impact, NoArgs, ImpactOut,
          "bank_internal", when="всегда: связь с компанией"),
+    Tool("match_company_news", "сервис 3: значимость по правилам и связи события с фактами профиля из набора банка "
+         "(подтверждённые — с цитатой из новости, отдельно допущения)", tool_match, NoArgs, MatchOut,
+         "client_confidential", when="клиент из данных банка: всегда"),
+    Tool("explain_for_executive", "сервис 4: объяснение для руководителя только по результату сопоставления, "
+         "неопределённость отмечена", tool_interpret, NoArgs, InterpretOut, "client_confidential",
+         when="после сопоставления"),
     Tool("search_bank_analytics", "позиция Альфа-Банка по самому событию: фрагменты аналитики (9 материалов приложения 2), "
          "близкие к новости; запрос задаёт только порядок", tool_search_bank,
          SearchArgs, HITS, "bank_internal", when="позиция банка по теме события"),

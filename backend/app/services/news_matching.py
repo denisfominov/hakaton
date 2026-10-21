@@ -54,6 +54,8 @@ def rules_profile(facts):
         "id": facts["profile_id"], "name": f"Компания {facts['client_id']}", "client_id": facts["client_id"],
         "industry": sector.get("label", ""), "industry_keys": [sector["key"]] if sector.get("key") else [],
         "subindustries": [okved.split(" — ", 1)[1]] if " — " in okved else [],
+        # предмет деятельности из наименования ОКВЭД — то, чем компания торгует или что делает (факт сервиса 1)
+        "products": list(val("p:activity") or []),
         "regions": regions, "bank_products": list(val("p:bank_products") or []),
         "client_signals": ["foreign_trade"] if val("p:fts") == "да" else [],
         "payment_sectors": sorted(sectors), "facts_profile": True,

@@ -6,7 +6,7 @@ df_Fid_Uid_link_hack.csv (связанные физлица). Все данны�
 (backend/data/clients/sample, сгенерирован скриптом scripts/make_sample_clients.py), чтобы сервис и тесты работали
 без данных кейса. Файлы кейса в git не коммитятся.
 
-Чтение файлов и расчёты по ним — в case_data.py; здесь — карточка клиента, список клиентов и профиль для правил.
+Чтение файлов и расчёты по ним — в case_data.py; здесь — карточка клиента, список клиентов и запись профиля.
 Из карточки клиента получается бизнес-контекст для анализа новостей:
 - отрасль и виды деятельности — по ОКВЭД; масштаб — выручка и численность; география — город, регион, страны ФТС;
 - продукты банка: кредиты и лизинг -> чувствительность к ставке, депозиты -> доход при высокой ставке, ВЭД -> валюта;
@@ -146,50 +146,20 @@ def position_text(pos):
 
 
 def profile_from_client(uid):
-    """Профиль компании для анализа новостей из карточки клиента (дальше пользователь правит его как обычно)."""
-    from . import catalog
+    """Запись профиля клиента в базе: только данные из набора банка — подпись, отрасль по ОКВЭД, регион, продукты банка.
+    Анализ новостей берёт не её, а факты сервиса 1 (services/company_profile.py); ручного ввода и шаблонов нет (C20.7)."""
+    from .services import company_profile
 
-    c = card(uid)
-    if c is None:
+    facts = company_profile.build(uid)
+    if not facts:
         return None
-    industry = catalog.template_by_okved(c["okved_code"]) or ""
-    name = f"Компания {uid}"
-    desc = (f"Обезличенный клиент из данных кейса. Основной вид деятельности: {c['okved_name']} (ОКВЭД {c['okved_code']}). "
-            f"Выручка — {c['revenue_bn']} млрд ₽, сотрудников — {c['workers'] or 'нет данных'}, {c['city']}. "
-            + (f"Продукты банка: {', '.join(p.lower() for p in c['products'])}. " if c["products"] else "")
-            + (f"Внешнеэкономическая деятельность: {', '.join(c['fts_countries'])}. " if c["fts_countries"] else "")
-            + (f"Группа компаний: {c['group']['companies']} компаний, {c['group']['revenue_bn']} млрд ₽. " if c["group"]["companies"] > 1 else "")
-            + position_text(c["position"]))
-    s = catalog.suggest(name, industry, c["okved_name"], context=" ".join(x["okved_name"] for x in c["suppliers"] + c["customers"]))
-    p = s["profile"]
-    p["description"] = desc
-    if c["region"] and c["region"] not in p["regions"]:
-        p["regions"].append(c["region"])
-    if c["city"] and c["city"] not in p["regions"]:
-        p["regions"].append(c["city"])
-    for country in c["fts_countries"]:
-        if country not in p["regions"]:
-            p["regions"].append(country)
-    p["subindustries"] = list(dict.fromkeys([c["okved_name"]] + p["subindustries"]))
-    # контрагенты из графа платежей: отрасли главных поставщиков и покупателей
-    for x in c["suppliers"][:4]:
-        if x["okved_name"]:
-            p["suppliers"].append(f"Поставщики: {x['okved_name'].lower()}")
-    for x in c["customers"][:4]:
-        if x["okved_name"]:
-            p["clients"].append(f"Покупатели: {x['okved_name'].lower()}")
-    if "Кредиты" in c["products"]:
-        p["risks"].append("Высокая ключевая ставка и рост расходов по кредитам")
-    if "Лизинг" in c["products"]:
-        p["risks"].append("Удорожание лизинга при высокой ставке")
-    if c["fts_countries"]:
-        p["risks"].append("Валютный риск по внешнеторговым расчётам")
-    for f in catalog.LIST_FIELDS + ["aliases"]:
-        p[f] = catalog.sort_values(list(dict.fromkeys(p[f])))
-    p["client_id"] = uid
-    p["label"] = label(c)
-    p["bank_products"] = c["products"]
-    p["client_signals"] = [x["key"] for x in c["signals"]]
-    p["autofill_info"] = {"template": s["template"], "from_description": s["from_description"],
-                          "sources": ["Данные кейса: профиль клиента", "Граф платежей", "Продукты банка"]}
-    return p
+    f = {x["id"]: x["value"] for x in facts["facts"] if x["status"] in ("confirmed", "derived")}
+    companies, _, _ = load()
+    sector = f.get("p:sector") or {}
+    okved = f.get("p:okved") or ""
+    return {"name": f"Компания {uid}", "client_id": uid, "label": label(brief(companies.loc[uid])),
+            "kind": "case", "source_note": "Набор данных Альфа-Банка (приложение 1)",
+            "industry": sector.get("label", ""), "subindustries": [okved] if okved else [],
+            "regions": [x for x in (f.get("p:region"), f.get("p:city")) if x] + list(f.get("p:fts.countries") or []),
+            "bank_products": list(f.get("p:bank_products") or []),
+            "client_signals": ["foreign_trade"] if f.get("p:fts") == "да" else []}

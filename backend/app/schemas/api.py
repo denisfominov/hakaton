@@ -33,12 +33,6 @@ class ProfileIn(BaseModel):
     autofill_info: dict = {}
 
 
-class SuggestIn(BaseModel):
-    name: str = Field(min_length=2, max_length=200)
-    industry: str = ""
-    description: str = Field("", max_length=5000)
-
-
 Priority = Literal["high", "medium", "low"]
 Status = Literal["new", "in_progress", "done"]
 
@@ -297,6 +291,8 @@ class AgentResultOut(BaseModel):
     features: list[FeatureOut] = []
     contradictions: list[ContradictionOut] = []
     plan: Optional[dict] = None  # {goal, by, sources, steps} — явный результат шага планирования
+    match: Optional[dict] = None  # C20.7: результат сервиса 3 (MatchResult) — у клиента из набора банка
+    interpretation: Optional[dict] = None  # C20.7: объяснение сервиса 4 (Interpretation) по результату сервиса 3
     role: Optional[dict] = None  # {key, label, focus, note} — акценты для роли пользователя
     answers: AnswersOut
     checks: ChecksOut

@@ -49,26 +49,27 @@ def test_unknown_event_and_profile(client):
     assert client.get("/api/events", params={"profile_id": "nope"}).status_code == 404
 
 
-def test_profile_edit_changes_score(client):
-    before = client.get("/api/events/demo-10", params={"profile_id": "uralmet"}).json()["priority"]
+def test_no_manual_profile_input(client):
+    """C20.7: сведения о компании — только из набора банка: создать, править, подсказать или сбросить профиль нельзя."""
     p = client.get("/api/profiles/uralmet").json()
     body = {k: v for k, v in p.items() if k not in ("id", "is_demo", "updated_at")}
-    body["competitors"] = []
-    assert client.put("/api/profiles/uralmet", json=body).status_code == 200
-    after = client.get("/api/events/demo-10", params={"profile_id": "uralmet"}).json()["priority"]
-    assert after < before
-    client.post("/api/profiles/uralmet/reset")
-    restored = client.get("/api/events/demo-10", params={"profile_id": "uralmet"}).json()["priority"]
-    assert restored == before
+    assert client.put("/api/profiles/uralmet", json=body).status_code == 405
+    assert client.post("/api/profiles", json={"name": "Тест Логистик", "industry": "Логистика"}).status_code == 405
+    assert client.post("/api/profiles/suggest", json={"name": "Тест", "industry": ""}).status_code in (404, 405)
+    assert client.get("/api/profile-options").status_code == 404
+    assert client.post("/api/profiles/uralmet/reset").status_code in (404, 405)
 
 
-def test_create_and_delete_custom_profile(client):
-    r = client.post("/api/profiles", json={"name": "Тест Логистик", "industry": "Логистика",
-                                           "regions": ["Приморский край"], "keywords": ["порт"]})
-    assert r.status_code == 201
-    pid = r.json()["id"]
-    assert client.get("/api/events", params={"profile_id": pid}).status_code == 200
-    assert client.delete(f"/api/profiles/{pid}").status_code == 200
+def test_case_client_profile_comes_from_dataset(client):
+    from app import case_data
+
+    uid = case_data.load()[0].index[0]
+    p = client.post(f"/api/clients/{uid}/profile").json()
+    assert p["client_id"] == uid and p["name"] == f"Компания {uid}"
+    for field in ("products", "suppliers", "clients", "competitors", "goals", "priorities", "risks", "keywords"):
+        assert not p.get(field), f"{field}: в профиле только данные набора"
+    facts = client.get(f"/api/profiles/{p['id']}/facts").json()
+    assert facts["client_id"] == uid
 
 
 def test_delete_and_restore_builtin_company(client):

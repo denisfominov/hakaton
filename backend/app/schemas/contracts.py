@@ -20,8 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "2.1"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2);
-# 2.1: MatchResult.profile_facts и NewsRef.summary — сервису 4 хватает результата сервиса 3 (C20.6)
+CONTRACTS_VERSION = "2.2"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2);
+# 2.1: MatchResult.profile_facts и NewsRef.summary — сервису 4 хватает результата сервиса 3 (C20.6);
+# 2.2: InsightResult.match и .interpretation — агент вызывает сервисы 3 и 4 (C20.7)
 
 Level = Literal["low", "medium", "high", "critical"]
 

@@ -22,7 +22,6 @@ export interface Profile {
   keywords: string[];
   inn?: string;
   website?: string;
-  // заполнен сервисом и ещё не проверен пользователем
   autofilled?: boolean;
   client_id?: string;
   label?: string;
@@ -30,27 +29,6 @@ export interface Profile {
   autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[] };
   is_demo?: boolean;
   updated_at?: string;
-}
-
-export type ProfileListField =
-  | "subindustries" | "regions" | "products" | "clients" | "suppliers" | "competitors"
-  | "goals" | "priorities" | "risks" | "investment_plans" | "keywords";
-
-export interface FieldOptions {
-  suggested: string[];
-  other: string[];
-}
-
-export interface ProfileOptions {
-  industries: string[];
-  template: string | null;
-  fields: Record<ProfileListField, FieldOptions>;
-}
-
-export interface ProfileSuggestion {
-  profile: Omit<Profile, "id">;
-  template: string | null;
-  from_description: Record<string, string[]>;
 }
 
 // сервис 1 (C20.3): профиль только из набора банка — у каждого факта источник

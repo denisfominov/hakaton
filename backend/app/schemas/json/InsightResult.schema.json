@@ -1153,6 +1153,18 @@
       ],
       "default": null
     },
+    "interpretation": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Interpretation"
+    },
     "llm": {
       "anyOf": [
         {
@@ -1163,6 +1175,18 @@
         }
       ],
       "default": null
+    },
+    "match": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Match"
     },
     "mode": {
       "enum": [
@@ -1244,5 +1268,5 @@
   ],
   "title": "InsightResult",
   "type": "object",
-  "x-contracts-version": "2.1"
+  "x-contracts-version": "2.2"
 }

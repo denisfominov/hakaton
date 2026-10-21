@@ -79,12 +79,25 @@ def _profile_lock(pid):
         return _profile_locks.setdefault(pid, threading.Lock())
 
 
+def rules_input(profile):
+    """Что видят правила (сервис 3): у клиента из набора банка — только факты сервиса 1 (rules_profile), запись
+    профиля в базе не используется. Профиль без client_id бывает только в тестах (PRESET_PROFILES=1)."""
+    from .services import company_profile
+
+    if profile.get("client_id"):
+        facts = company_profile.build(profile["client_id"])
+        if facts:
+            return {**news_matching.rules_profile(facts), "id": profile["id"]}
+    return profile
+
+
 def analyze_all(conn, profile, force=False):
     """Результаты анализа компании: память -> снимок в базе -> расчёт (и сохранение снимка).
 
     Снимок старше часа отдаём сразу, а пересчёт просим у фонового потока (свежесть новостей меняется со временем).
     force — посчитать заново (так работает фоновый поток)."""
     pid = profile["id"]
+    profile = rules_input(profile)
     key = store.key_for(conn, profile)
     if not force:
         mem = _cache.get(pid)

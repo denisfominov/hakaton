@@ -6,11 +6,6 @@ import Modal from "../components/Modal";
 import { useApp } from "../context";
 import type { CaseClient, Profile } from "../types";
 
-function filled(p: Profile) {
-  const keys = ["products", "clients", "suppliers", "competitors", "regions", "goals", "risks", "keywords"] as const;
-  return keys.filter((k) => p[k]?.length).length;
-}
-
 // клиенты банка из данных кейса: крупный бизнес с выручкой от 15 млрд ₽ — целевая аудитория агента
 function CaseClients({ onOpen }: { onOpen: (id: string) => void }) {
   const { profiles, reloadProfiles, toast } = useApp();
@@ -188,9 +183,7 @@ export default function CompaniesPage() {
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
                 <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">{p.client_id ? (p.is_demo ? "Демо-клиент кейса" : "Клиент из базы кейса") : p.is_demo ? "Встроенная" : "Добавлена вручную"}</span>
-                {p.inn && <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">ИНН {p.inn}</span>}
-                {p.autofilled && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-800">Профиль не подтверждён</span>}
-                <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-500">Заполнено разделов: {filled(p)} из 8</span>
+                {p.client_id && <span className="rounded-md bg-sky-50 px-2 py-0.5 text-sky-800">Профиль — только из данных банка</span>}
               </div>
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 <button className="btn-primary !py-1.5 text-sm" onClick={() => open(p.id, "/")}>Анализировать</button>
@@ -208,7 +201,7 @@ export default function CompaniesPage() {
       {removing && (
         <Modal title="Удалить компанию?" onClose={() => setRemoving(null)}>
           <p className="text-sm text-ink-700">
-            «{removing.name}», её избранное, оценки и кэш анализа будут удалены. Действия в плане останутся.
+            «{removing.name}», её избранное и кэш анализа будут удалены. Действия в плане останутся.
             {removing.is_demo && " Это встроенная компания — её можно будет восстановить."}
           </p>
           <div className="mt-5 flex justify-end gap-2">
