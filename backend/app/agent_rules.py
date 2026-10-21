@@ -11,7 +11,7 @@
 """
 import re
 
-from . import nlp
+from . import nlp, scoring
 
 # «ставку сохранили, риторика жёстче» (hold + up) противоречием не считаем ни в новости, ни против банка
 OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rub_strong", "rub_weak"),
@@ -249,8 +249,95 @@ def _roots(text):
     return [s[:4] for s in nlp.stems(text) if len(s) >= 4]
 
 
+# C4: тип вопроса — по словам; порядок — приоритет («когда действовать?» — про сроки, а не про действия)
+QUESTION_TYPES = [
+    ("bank", "Позиция банка", re.compile(
+        r"позици\w* банка|мнени\w* банка|оценк\w* банка|прогноз\w* банка|аналитик\w*|альфа|"
+        r"(?:что|как) (?:думает|говорит|считает|оценивает|ожидает) банк|банк (?:думает|считает|оценивает|ожидает)")),
+    ("deadlines", "Сроки", re.compile(
+        r"\bкогда\b|\bсрок|как быстро|до какого|к какому|горизонт|успеть|дедлайн|насколько срочно|срочно ли")),
+    ("risks", "Риски", re.compile(r"риск|угроз|чем (?:это )?грозит|опасн|потер|пойти не так|негатив|минус")),
+    ("opportunities", "Возможности", re.compile(r"возможност|выгод|заработ|\bплюс|шанс|преимуществ")),
+    ("actions", "Что делать", re.compile(
+        r"что (?:нам |мне )?(?:делать|сделать|предпринять)|как (?:нам |мне )?(?:быть|действовать|реагировать|поступить)|"
+        r"каки\w* (?:шаги|действия|меры)|рекоменд|что посоветуе")),
+]
+URGENCY_TEXT = {"critical": "высокая — реагировать сегодня", "high": "выше средней — в течение недели",
+                "medium": "средняя — в течение месяца", "low": "низкая"}
+AGREEMENT_TEXT = {"agree": "Оценка банка совпадает с направлением новости.",
+                  "conflict": "Оценка банка расходится с новостью: сверьте даты материала банка и новости.",
+                  "none": "Позиция банка дополняет картину, прямого подтверждения или опровержения в ней нет."}
+
+
+def question_type(question):
+    text = " ".join(question.lower().replace("ё", "е").split())
+    return next(((key, label) for key, label, rx in QUESTION_TYPES if rx.search(text)), (None, None))
+
+
+def _claim(text, kind="ai", sources=("rules:analysis",), **extra):
+    return {"text": text, "kind": kind, "sources": list(sources), **extra}
+
+
+def _q_actions(a):
+    items = []
+    for x in a["actions"][:3]:
+        who = ", ".join(filter(None, [x.get("owner"), f"срок {x['due_days']} дн." if x.get("due_days") else None]))
+        why = f" Почему: {x['why']}" if x.get("why") else ""
+        items.append(_claim(f"{x['title']}" + (f" ({who})." if who else ".") + why, x["kind"], x["sources"],
+                            for_role=x.get("for_role")))
+    if not items:
+        items.append(_claim("Конкретных действий не требуется — достаточно мониторинга."))
+        if a["follow_up"]["indicators"]:
+            items.append(_claim("Что отслеживать: " + "; ".join(a["follow_up"]["indicators"][:3]) + "."))
+    return items
+
+
+def _q_consequences(a, key, empty):
+    items = [{k: x[k] for k in ("text", "kind", "sources", "for_role") if k in x} for x in a["consequences"][key][:3]]
+    return items or [_claim(empty)]
+
+
+def _q_deadlines(a, result):
+    level = scoring.urgency_level(result["scores"].get("urgency") or 0)
+    quiet = level == "low" and not any(x.get("due_days") for x in a["actions"])
+    items = [_claim(f"Срочность: {URGENCY_TEXT[level]}" + (" — достаточно мониторинга" if quiet else "")
+                    + (f"; горизонт влияния — {a['consequences']['horizon'].lower()}"
+                       if a["consequences"].get("horizon") else "") + ".")]
+    news = next((x["sources"] for x in a["what_happened"] if x.get("sources")), None)
+    dates = (a.get("event") or {}).get("dates") or []
+    if dates and news:
+        items.append(_claim("Даты в новости: " + ", ".join(dates[:4]) + ".", "fact", news))
+    for x in a["actions"][:3]:
+        if x.get("due_days"):
+            items.append(_claim(f"{x['title']} — в течение {x['due_days']} дн." + (f" ({x['owner']})" if x.get("owner") else ""),
+                                x["kind"], x["sources"], for_role=x.get("for_role")))
+    return items
+
+
+def _q_bank(a):
+    view = a["bank_view"]
+    if not view["items"]:
+        return [_claim(view.get("note") or "По этой теме позиции банка нет.")]
+    items = [dict(x) for x in view["items"][:3]]
+    items.append(_claim(AGREEMENT_TEXT[view.get("agreement") or "none"], "ai",
+                        sorted({s for x in items for s in x["sources"]})))
+    return items
+
+
 def answer_question(question, result):
-    """Выбор из собранных утверждений: какие отвечают на вопрос (корни слов вопроса и синонимы)."""
+    """Ответ на вопрос без LLM. Известный тип вопроса (что делать, риски, возможности, сроки, позиция банка) — шаблон
+    из собранных агентом данных; иначе — выбор утверждений по корням слов вопроса и синонимам."""
+    qtype, label = question_type(question)
+    if qtype:
+        a = result["answers"]
+        items = {"actions": lambda: _q_actions(a),
+                 "risks": lambda: _q_consequences(a, "risks", "Рисков для компании по этой новости не выявлено."),
+                 "opportunities": lambda: _q_consequences(a, "opportunities",
+                                                          "Возможностей для компании по этой новости не выявлено."),
+                 "deadlines": lambda: _q_deadlines(a, result),
+                 "bank": lambda: _q_bank(a)}[qtype]()
+        return {"text": question, "items": items,
+                "note": f"Ответ по шаблону «{label}» — из данных, собранных агентом, без языковой модели."}
     q = set(_roots(question))
     for root in list(q):
         for key, syn in SYNONYMS.items():
