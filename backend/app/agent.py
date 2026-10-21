@@ -172,10 +172,10 @@ def heuristic_plan(ctx):
     if ctx.profile.get("client_id"):
         plan.append(("score_with_models", {}, "свои ML-модели: значимость и вклад признаков компании"))
     plan.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция Альфа-Банка по теме события"))
-    if ctx.ev.get("thread_id") or (ctx.r.get("verification") or {}).get("independent", 1) < 2:
-        plan.append(("search_news", {"query": ctx.ev["title"]}, "развитие сюжета и подтверждения в других изданиях"))
-    if ctx.question:
-        plan.append(("search_news_rag", {"query": ctx.question + " " + ctx.ev["title"]}, "контекст для ответа на вопрос"))
+    if ctx.ev.get("thread_id"):
+        plan.append(("search_news", {"query": ctx.ev["title"]}, "развитие сюжета в других публикациях"))
+    # подтверждения при одном издании, подробности при скудном тексте и поиск под вопрос вне типовых — не в плане,
+    # их добавляет самопроверка по тому, чего не хватило в собранных данных (C9)
     if ctx.profile.get("ticker"):
         plan.append(("get_market_reaction", {}, "как рынок оценил событие для акций компании"))
     return plan
@@ -223,6 +223,18 @@ def llm_plan(ctx):
 # ---------- самопроверка ----------
 
 NO_BANK_VIEW = "по этой теме позиции банка нет"
+NO_CONFIRMATION = "подтверждений в других изданиях не найдено — событие известно из одного источника"
+
+
+def confirmations(ctx):
+    """Публикации других изданий в том же сюжете (поиск связанных новостей): {издание: публикация}.
+    Совпадение слов заголовка подтверждением не считаем: «проблемы с вывозом продукции» и «вывоз мусора» — разное."""
+    own = {o["name"] for o in (ctx.r.get("verification") or {}).get("outlets", [])} | {ctx.ev.get("source")}
+    out = {}
+    for h in ctx.data.get("search_news") or []:
+        if h.get("same_thread") and h.get("source") and h["source"] not in own:
+            out.setdefault(h["source"], h)
+    return out
 
 
 def self_check(ctx):
@@ -245,11 +257,22 @@ def self_check(ctx):
             extra.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция банка по самому событию"))
     v = (ctx.data.get("get_event") or {}).get("verification") or {}
     issues, _agreement = agent_rules.consistency(ctx.r, list((ctx.data.get("bank_hits") or {}).values()))
-    searched_news = "search_news" in ctx.data
-    if (v.get("independent") or 1) < 2 and not ctx.data.get("related") and not searched_news:
-        extra.append(("search_news", {"query": ctx.ev["title"]}, "одно издание — ищем подтверждения"))
+    searched_news, searched_rag = "search_news" in ctx.data, "search_news_rag" in ctx.data
+    # C9: шаги — по тому, чего не хватило в собранных данных; у каждого — причина
+    # подтверждения ищем только в том же сюжете: поиск «по смыслу» находит посторонние новости с похожими словами
+    single = (v.get("independent") or 1) < 2
+    if (single or len(facts) < 2) and not searched_news:
+        extra.append(("search_news", {"query": ctx.ev["title"]},
+                      "одно издание — ищем подтверждения в других изданиях" if single
+                      else "в тексте мало фактов — ищем другие публикации сюжета"))
+    elif single and searched_news and not confirmations(ctx):
+        gaps.append(NO_CONFIRMATION)
     elif any(i["type"] == "numbers" for i in issues) and not searched_news:
         extra.append(("search_news", {"query": ctx.ev["title"]}, "издания расходятся в цифрах — ищем другие публикации"))
+    if ctx.question and not agent_rules.question_type(ctx.question)[0] and not searched_rag \
+            and not any(t == "search_news_rag" for t, _a, _w in extra):
+        extra.append(("search_news_rag", {"query": ctx.question + " " + ctx.ev["title"]},
+                      "вопрос вне типовых — ищем ответ в текстах новостей"))
     if any(i["type"] == "bank" for i in issues):
         q = " ".join(filter(None, [topic_query(ctx), ctx.ev["published_at"][:7]]))
         if not any(s.get("args", {}).get("query") == q for s in ctx.trace):
@@ -277,6 +300,10 @@ def compose(ctx, gaps):
     details = event.get("details") or agent_rules.event_details(ctx.ev, r.get("verification"))
     confirmed = details["confirmation"]["status"] != "single"
     what = [{**_item(f, "fact", news_src), "confirmed": confirmed} for f in event.get("facts", [])][:4]
+    others = confirmations(ctx)
+    if others:  # C9: самопроверка нашла другие издания — это видно в ответе
+        what.append({**_item("Сюжет освещают и другие издания: " + ", ".join(list(others)[:3]) + ".", "fact",
+                             [f"news:{s}" for s in list(others)[:3]]), "confirmed": True})
 
     why = []
     if card and card.get("position"):
@@ -552,9 +579,12 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     for tool, args, why in plan[:MAX_STEPS]:
         run_tool(ctx, tool, args, why)
     gaps = []
-    for round_no in range(1, MAX_ROUNDS + 1):
+    for round_no in range(1, MAX_ROUNDS + 2):  # последний раунд — только проверка после доп. шагов
         gaps, extra = self_check(ctx)
-        ctx.step("check", f"самопроверка, раунд {round_no}", gaps=gaps, extra=[t for t, _a, _w in extra])
+        if round_no > MAX_ROUNDS:
+            extra = []
+        ctx.step("check", f"самопроверка, раунд {round_no}", gaps=gaps, extra=[t for t, _a, _w in extra],
+                 why=[w for _t, _a, w in extra])
         if not extra:
             break
         for tool, args, why in extra:
