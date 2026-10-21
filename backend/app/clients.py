@@ -26,6 +26,9 @@ from . import config
 
 FILES = {"companies": "df_Uid_data_hack.csv", "payments": "df_Uid_payment_hack.csv", "links": "df_Fid_Uid_link_hack.csv"}
 SEGMENT_REVENUE = 15e9  # крупный бизнес по условию кейса: выручка СВЫШЕ 15 млрд ₽ (REVENUE_COMPANY — число в рублях)
+# В14: выручка 1000 — техническая заглушка организаторов, данных нет. Считаем пропуском (NaN): не входит в места по
+# выручке и суммы группы. Не заполняем: почему выручки нет, неизвестно, заполнение исказило бы места (курс ML, занятие 2)
+REVENUE_STUB = 1000.0
 PRODUCTS = {
     "CL_PRODUCT_LOA_MARK": "Кредиты",
     "CL_PRODUCT_LEA_MARK": "Лизинг",
@@ -69,10 +72,11 @@ def _load(path_key):
     companies["MAINOKVED_CODE"] = code.where(~code.str.fullmatch(r"\d{2}\.\d"), code + "0")
     companies = companies.set_index("SYNTHETIC_U", drop=False)
     companies["OKVED_CLASS"] = companies["MAINOKVED_CODE"].fillna("").str[:2]
-    companies["REVENUE_COMPANY"] = pd.to_numeric(companies["REVENUE_COMPANY"], errors="coerce").fillna(0.0)
+    rev = pd.to_numeric(companies["REVENUE_COMPANY"], errors="coerce").fillna(0.0)
+    companies["REVENUE_COMPANY"] = rev.where(rev != REVENUE_STUB)
     by_class = companies.groupby("OKVED_CLASS")["REVENUE_COMPANY"]
-    companies["CLASS_RANK"] = by_class.rank(ascending=False, method="min").astype(int)
-    companies["CLASS_N"] = by_class.transform("size").astype(int)
+    companies["CLASS_RANK"] = by_class.rank(ascending=False, method="min")  # у заглушки — NaN: места нет
+    companies["CLASS_N"] = by_class.transform("count").astype(int)  # компании с известной выручкой
     payments = None
     if (d / FILES["payments"]).exists():
         payments = pd.read_csv(d / FILES["payments"], sep=";", dtype={"BENEFICIARY": str, "PAYER": str})
@@ -213,6 +217,7 @@ def _counterparties(payments, companies, uid, side, limit=6):
         rows, other = payments[payments["PAYER"] == uid], "BENEFICIARY"
     else:
         rows, other = payments[payments["BENEFICIARY"] == uid], "PAYER"
+    rows = rows[rows[other].isin(companies.index)]  # В21: контрагента без карточки в базе использовать нельзя
     if rows.empty:
         return []
     total = float(rows["PAY_AMT"].sum())
@@ -229,7 +234,9 @@ def _counterparties(payments, companies, uid, side, limit=6):
 
 
 def _rank(revenues, rev):
-    """Место по выручке (1 — крупнейшая), перцентиль и доля в сумме выручки группы сравнения."""
+    """Место по выручке (1 — крупнейшая), перцентиль и доля в сумме выручки группы сравнения.
+    Компании с заглушкой вместо выручки (NaN) в сравнении не участвуют."""
+    revenues = revenues.dropna()
     n = int(len(revenues))
     total = float(revenues.sum())
     return {"companies": n, "rank": int((revenues > rev).sum()) + 1,
@@ -242,12 +249,15 @@ def position(companies, row):
     rev = _num(row.get("REVENUE_COMPANY"))
     code = _str(row.get("MAINOKVED_CODE"))
     out = {"basis": "выручка компаний того же ОКВЭД в наборе данных кейса (не рыночная доля)"}
+    if row.get("REVENUE_COMPANY") != row.get("REVENUE_COMPANY"):  # NaN: выручки нет — и места нет
+        out["revenue"] = "нет данных"
+        return out
     if code:
         out["okved_class"] = {"okved": code[:2], **_rank(companies.loc[companies["OKVED_CLASS"] == code[:2], "REVENUE_COMPANY"], rev)}
         out["okved_code"] = {"okved": code, **_rank(companies.loc[companies["MAINOKVED_CODE"] == code, "REVENUE_COMPANY"], rev)}
     gid = _str(row.get("GROUP_ID"))
     if gid:
-        g = companies.loc[companies["GROUP_ID"].astype(str) == gid, "REVENUE_COMPANY"]
+        g = companies.loc[companies["GROUP_ID"].astype(str) == gid, "REVENUE_COMPANY"].dropna()
         if len(g) > 1:
             out["group"] = _rank(g, rev)
     return out
