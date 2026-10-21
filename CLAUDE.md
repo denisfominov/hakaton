@@ -101,6 +101,20 @@ Environment variables, template — [.env.example](.env.example) (copy to `.env`
 
 Details — [docs/COMPLIANCE.md](docs/COMPLIANCE.md), gateway facts — [docs/GATEWAY_QUESTIONS.md](docs/GATEWAY_QUESTIONS.md).
 
+## ML work rule
+
+- Scope: any task that trains, evaluates or changes a classic ML model — relevance, impact type, urgency, ranking,
+  features, embeddings evaluation, metrics, data preparation. Not LLM prompts.
+- Before starting: open `лекции по Машинному обучению/` in the repo root (local only, never in git), find the
+  relevant lecture via [docs/ML_LECTURES_INDEX.md](docs/ML_LECTURES_INDEX.md), read only the relevant slides, apply
+  their methods. Lectures are the authority on data split, leakage, metrics, validation and preprocessing; they beat generic
+  habits.
+- The case brief and case rules always win over the lectures (only the 6 allowed LLMs; local embeddings are allowed).
+  If a lecture hint conflicts with them or with what the code does — say so.
+- Folder missing → stop and tell the user; do not guess methods from memory.
+- In the report and PR description name the lecture(s) and the advice applied ("per lecture X"); never copy lecture
+  text into the repo.
+
 ## Where things are
 
 ```
@@ -138,5 +152,5 @@ into `main` through a pull request that a human creates and merges.
 ### Do not commit
 
 `.venv`, `node_modules`, `.env`, `alpha.db` (and `*.db-wal`, `*.db-shm`), `__pycache__`, case data (`df_*_hack.csv`,
-bank analytics PDFs and OCR text), model weights (`backend/data/models`, `backend/data/embeddings`), lectures. Never
+bank analytics PDFs and OCR text), model weights (`backend/data/models`, `backend/data/embeddings`), lectures (`лекции по Машинному обучению/`). Never
 put secrets or keys in code, README or commit messages.
