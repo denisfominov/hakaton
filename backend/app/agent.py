@@ -222,6 +222,9 @@ def llm_plan(ctx):
 
 # ---------- самопроверка ----------
 
+NO_BANK_VIEW = "по этой теме позиции банка нет"
+
+
 def self_check(ctx):
     """Полнота и обоснованность. Возвращает список недостающего и предлагаемые доп. шаги."""
     gaps, extra = [], []
@@ -234,10 +237,12 @@ def self_check(ctx):
     if not linked and not impact.get("channels"):
         gaps.append("связь с компанией не найдена — событие может быть нерелевантным")
     if not ctx.data.get("bank_hits"):
-        gaps.append("нет позиции банка по теме")
-        broad = " ".join(filter(None, [CATEGORY_TOPICS.get(ctx.ev.get("category"), ""), ctx.profile.get("industry", "")]))
-        if broad and not any(s.get("args", {}).get("query") == broad for s in ctx.trace):
-            extra.append(("search_bank_analytics", {"query": broad}, "повторный поиск позиции банка по теме и отрасли"))
+        if any(s.get("tool") == "search_bank_analytics" for s in ctx.trace):
+            # C1: поиск уже шёл по самому событию; другой запрос меняет только порядок — повтор не нужен,
+            # честный исход — «позиции нет», а не цитата банка на соседнюю тему
+            gaps.append(NO_BANK_VIEW)
+        else:
+            extra.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция банка по самому событию"))
     v = (ctx.data.get("get_event") or {}).get("verification") or {}
     issues, _agreement = agent_rules.consistency(ctx.r, list((ctx.data.get("bank_hits") or {}).values()))
     searched_news = "search_news" in ctx.data
@@ -346,7 +351,8 @@ def compose(ctx, gaps):
                                         "url": bank_rag.link(h)}})
     bank_view = {"found": bool(bank_items), "items": bank_items, "agreement": agreement,
                  "topics": sorted({bank_rag.topic_label(t) for h in hits[:3] for t in h.get("topics") or []}),
-                 "note": None if bank_items else "В загруженных аналитических материалах банка нет позиции по этой теме."}
+                 "note": None if bank_items else ("По этой теме позиции банка нет: в аналитике банка нет фрагментов, "
+                                                  "близких к самой новости.")}
 
     market = ctx.data.get("get_market_reaction")
     basis = {"sources": list(ctx.sources.values()),

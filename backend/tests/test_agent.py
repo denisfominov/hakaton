@@ -60,15 +60,15 @@ def test_agent_rate_hike_without_llm(client, bank_docs):
     assert run["trace"] == res["trace"]
 
 
-def test_self_check_searches_again_when_bank_view_missing(client, tmp_path, monkeypatch):
+def test_self_check_ends_with_no_bank_view(client, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "BANK_DOCS_DIR", tmp_path)  # материалов банка нет
     res = client.post("/api/agent/insight", json={"profile_id": "uralmet", "event_id": "demo-03", "refresh": True}).json()
     a = check_answer(res)
-    assert not a["bank_view"]["found"] and a["bank_view"]["note"]
+    assert not a["bank_view"]["found"] and a["bank_view"]["note"].startswith("По этой теме позиции банка нет")
     bank_calls = [s for s in res["trace"] if s.get("tool") == "search_bank_analytics"]
-    assert len(bank_calls) == 2, "самопроверка должна повторить поиск с расширенным запросом"
-    assert bank_calls[0]["args"]["query"] != bank_calls[1]["args"]["query"]
-    assert "нет позиции банка по теме" in res["result"]["data_gaps"]
+    # C1: поиск идёт по самому событию, другой запрос меняет только порядок — повтор не нужен, «позиции нет» — итог
+    assert len(bank_calls) == 1
+    assert "по этой теме позиции банка нет" in res["result"]["data_gaps"]
 
 
 def test_client_profile_gets_debt_insight(client, bank_docs):
