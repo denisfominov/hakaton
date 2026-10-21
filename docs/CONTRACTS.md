@@ -1,6 +1,7 @@
 # Контракты между частями системы
 
-Версия контрактов **1.1** (1.1 — добавлен `BankHit`, задача B1). Это форматы, которыми обмениваются части системы
+Версия контрактов **1.2** (1.1 — добавлен `BankHit`, задача B1; 1.2 — контракты четырёх сервисов: `CompanyFacts`,
+`NewsGroup`, `MatchResult`, `Interpretation`, задача C20.1). Это форматы, которыми обмениваются части системы
 и потоки команды ([TASKS.md](TASKS.md)): кто отдаёт объект, кто его принимает и какие поля обязательны.
 
 **Где что лежит:**
@@ -17,6 +18,13 @@
 реестр инструментов агента ──────┴──────────────────► ToolSpec (трассировка, документация)
 ```
 
+Четыре сервиса анализа новостей (docs/ARCHITECTURE.md, «Четыре сервиса»; переход — задачи C20.2–C20.9):
+
+```
+3 CSV банка ──► [1] профиль ──► CompanyFacts ──┐
+источники ────► [2] сбор новостей ──► NewsGroup ┴─► [3] сопоставление ──► MatchResult ──► [4] объяснение ──► Interpretation
+```
+
 | Контракт | Отдаёт (поток) | Принимает | Обязательные поля | Где проверяется |
 |---|---|---|---|---|
 | `CompanyProfile` | A — `clients.profile_from_client`, профили в базе | B (запросы к поиску), C (агент), D (карточка компании) | `id`, `name` | профили синтетики и клиента кейса |
@@ -25,6 +33,10 @@
 | `BankHit` | B — `bank_rag.search_for_event` | C (агент: «Как это оценивает банк», задача C1) | `id`, `source`, `doc`, `title`, `page`, `text`, `url`, `score`, `method`, `reason` | фрагменты по новости о ставке в тестах RAG |
 | `InsightResult` | C — `agent.run` (тот же класс, что `AgentResultOut`) | D (панель «Инсайт»), датасет и оценка | `summary`, `answers` (6 вопросов + `event`, `follow_up`), `checks`, `scores`, `data_gaps`, `confidence`, `priority`, `mode` | запуск агента |
 | `ToolSpec` | C — `agent_tools.TOOLS[*].schema()` | D (трассировка), `/api/agent/tools`, документация | `name`, `description`, `access`, `data`, `input_schema`, `output_schema` | весь реестр инструментов |
+| `CompanyFacts` | сервис 1 `services.company_profile` (C20.3) | сервис 3, агент, интерфейс (профиль) | `client_id`, `profile_id`, `dataset`, `facts` | правила статусов и ссылок — в самой схеме; тест на примере |
+| `NewsGroup` | сервис 2 `services.news_collection` (C20.4) | сервис 3 | `cluster_id`, `lead`, `members`, `verification` | тест на примере |
+| `MatchResult` | сервис 3 `services.news_matching` (C20.5) | сервис 4, агент, лента | `profile_id`, `event_id`, `cluster_ids`, `title`, `score`, `explanation`, `news`, `llm` | тест на примере |
+| `Interpretation` | сервис 4 `services.interpretation` (C20.6) | агент, интерфейс | `profile_id`, `event_id`, `headline`, `uncertainty`, `mode`, `llm` | у каждого утверждения есть ссылка на вход |
 
 ## CompanyProfile
 
@@ -90,6 +102,45 @@
   `bank_sources` — её фрагменты) или `ai` (только внешние данные и выводы ИИ — «не официальная позиция банка»),
   `label` — подпись для показа, `investment` — всегда «Не является инвестиционной рекомендацией.». У запусков,
   сохранённых раньше, и ответов кэша добавляется при выдаче.
+
+## CompanyFacts (сервис 1)
+
+Что известно о компании только из набора банка (приложение 1) и какие факты могут влиять на значимость новостей.
+
+- `facts` — список `ProfileFact`: `id` (`p:okved`, `p:revenue`…), `group` (отрасль, положение, масштаб, деятельность,
+  группа, продукты банка, ВЭД, география, контрагенты, связанные компании, качество данных), `label`, `value`,
+  `status`, `sources`, `method`, `note`.
+- `status`: `confirmed` — значение поля как есть; `derived` — расчёт только по данным набора, `method` обязателен;
+  `no_data` / `insufficient_data` — данных нет или мало, `value` пустое (догадки не подставляются).
+- `sources` — хотя бы один `FactSource`: `file` (файл набора), `record` (`SYNTHETIC_U=U_67`, `PAYER=U_67`…), `fields`.
+  У «нет данных» — поля, где данных не оказалось.
+- `significance_facts` — id фактов, которые могут влиять на значимость новостей; `gaps` — id пробелов. Ссылки только на
+  существующие факты.
+
+## NewsGroup (сервис 2)
+
+Группа публикаций об одном событии: `lead` — самая надёжная публикация (`EventDoc`), `members` — все публикации группы,
+`verification` — достоверность (`score` 0–100, `label`, `independent` — число независимых изданий). О компаниях ничего.
+
+## MatchResult (сервис 3)
+
+Пара «компания × группа публикаций».
+
+- `score` — значимость, всегда скоринг по правилам (`method` = `rules`): баллы 0–100, уровни, `impact_type`,
+  `relevance_factors`, `channels`. LLM балл не меняет.
+- `links` — подтверждённые связи: `fact_id` (факт профиля), `news_quote` (дословная цитата, код проверил, что она
+  есть в тексте), `explanation`.
+- `assumptions` — допущения: `text`, `fact_ids`, `reason` (почему допущение).
+- `explanation`, `facts_used` (id фактов профиля), `news` (публикации: id, издание, ссылка, дата).
+- `llm` — `status`: `done` / `cached` / `not_checked` (модель выключена, нет бюджета) / `failed`; модель, промпт,
+  причина.
+
+## Interpretation (сервис 4)
+
+Объяснение для руководителя из `MatchResult` (и роли читателя): `headline`, `what_happened`, `why_it_matters`,
+`what_to_do` — списки `Statement` (`text`, `kind`: факт, связь, допущение, рекомендация, неопределённость; `refs` — хотя
+бы одна ссылка на вход: `news:<id>`, `p:<факт>`, `link:<n>`, `assumption:<n>`, `score`), `uncertainty` (уровень и
+причины), `not_known` (чего нет во входе), `mode` (`llm` или `template` — без модели), `llm`.
 
 ## ToolSpec
 

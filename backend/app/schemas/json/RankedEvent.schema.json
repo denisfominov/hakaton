@@ -259,5 +259,5 @@
   ],
   "title": "RankedEvent",
   "type": "object",
-  "x-contracts-version": "1.1"
+  "x-contracts-version": "1.2"
 }

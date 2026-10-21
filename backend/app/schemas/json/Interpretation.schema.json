@@ -1,0 +1,210 @@
+{
+  "$defs": {
+    "LlmTrace": {
+      "additionalProperties": true,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "имя@версия промпта",
+          "title": "Prompt"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "почему не проверено или ошибка — понятным текстом",
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "done",
+            "cached",
+            "not_checked",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "LlmTrace",
+      "type": "object"
+    },
+    "Statement": {
+      "description": "Утверждение объяснения. refs — только на элементы MatchResult: news:<event_id>, p:<факт>, link:<n>,\nassumption:<n>, score. Утверждение без опоры на вход не проходит проверку.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "link",
+            "assumption",
+            "recommendation",
+            "uncertainty"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Refs",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "refs"
+      ],
+      "title": "Statement",
+      "type": "object"
+    },
+    "Uncertainty": {
+      "properties": {
+        "level": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "reasons": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "Uncertainty",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/Interpretation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Выход сервиса объяснения: вход — только MatchResult (и роль читателя). Новых фактов не добавляет.",
+  "properties": {
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "headline": {
+      "title": "Headline",
+      "type": "string"
+    },
+    "llm": {
+      "$ref": "#/$defs/LlmTrace"
+    },
+    "mode": {
+      "description": "template — без модели, по шаблону из MatchResult",
+      "enum": [
+        "llm",
+        "template"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "not_known": {
+      "description": "чего нет во входных данных",
+      "items": {
+        "type": "string"
+      },
+      "title": "Not Known",
+      "type": "array"
+    },
+    "profile_id": {
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Role"
+    },
+    "uncertainty": {
+      "$ref": "#/$defs/Uncertainty"
+    },
+    "what_happened": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Statement"
+      },
+      "title": "What Happened",
+      "type": "array"
+    },
+    "what_to_do": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Statement"
+      },
+      "title": "What To Do",
+      "type": "array"
+    },
+    "why_it_matters": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Statement"
+      },
+      "title": "Why It Matters",
+      "type": "array"
+    }
+  },
+  "required": [
+    "profile_id",
+    "event_id",
+    "headline",
+    "uncertainty",
+    "mode",
+    "llm"
+  ],
+  "title": "Interpretation",
+  "type": "object",
+  "x-contracts-version": "1.2"
+}

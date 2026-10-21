@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "FactSource": {
+      "description": "Откуда факт: файл набора банка, запись и поля. По ним факт можно найти в исходных данных.",
+      "properties": {
+        "fields": {
+          "description": "поля, из которых взято или рассчитано значение",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Fields",
+          "type": "array"
+        },
+        "file": {
+          "description": "файл набора: df_Uid_data_hack.csv, df_Uid_payment_hack.csv, df_Fid_Uid_link_hack.csv",
+          "title": "File",
+          "type": "string"
+        },
+        "record": {
+          "description": "ключ записи или выборки: SYNTHETIC_U=U_67; PAYER=U_67; GROUP_ID=…",
+          "title": "Record",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "record",
+        "fields"
+      ],
+      "title": "FactSource",
+      "type": "object"
+    },
+    "ProfileFact": {
+      "description": "Один факт профиля. confirmed — значение поля как есть; derived — расчёт только по данным набора (method\nобязателен); no_data / insufficient_data — данных нет или мало, значение не подставляется.",
+      "properties": {
+        "group": {
+          "enum": [
+            "identity",
+            "industry",
+            "position",
+            "scale",
+            "activity",
+            "group",
+            "geography",
+            "bank_products",
+            "foreign_trade",
+            "counterparties",
+            "affiliates",
+            "data_quality"
+          ],
+          "title": "Group",
+          "type": "string"
+        },
+        "id": {
+          "description": "id для ссылок из сопоставления и объяснения: p:okved",
+          "pattern": "^p:[a-z0-9_.]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "способ расчёта; обязателен для derived",
+          "title": "Method"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "оговорка: «доля в выборке, не доля рынка», заглушка выручки и т.п.",
+          "title": "Note"
+        },
+        "sources": {
+          "description": "для no_data — поля, где данных не оказалось",
+          "items": {
+            "$ref": "#/$defs/FactSource"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "derived",
+            "no_data",
+            "insufficient_data"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "id",
+        "group",
+        "label",
+        "status",
+        "sources"
+      ],
+      "title": "ProfileFact",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/CompanyFacts",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Выход сервиса профиля: что известно о компании из набора банка и какие факты могут влиять на значимость\nновостей. Ничего из новостей, сайтов, внешних баз или знаний модели.",
+  "properties": {
+    "client_id": {
+      "description": "SYNTHETIC_U",
+      "title": "Client Id",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "case — файлы кейса, sample — синтетический пример схемы",
+      "enum": [
+        "case",
+        "sample"
+      ],
+      "title": "Dataset",
+      "type": "string"
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/ProfileFact"
+      },
+      "minItems": 1,
+      "title": "Facts",
+      "type": "array"
+    },
+    "gaps": {
+      "description": "id фактов со статусом no_data / insufficient_data",
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "profile_id": {
+      "description": "case-<uid>",
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "significance_facts": {
+      "description": "id фактов, которые могут влиять на значимость новостей",
+      "items": {
+        "type": "string"
+      },
+      "title": "Significance Facts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "client_id",
+    "profile_id",
+    "dataset",
+    "facts"
+  ],
+  "title": "CompanyFacts",
+  "type": "object",
+  "x-contracts-version": "1.2"
+}

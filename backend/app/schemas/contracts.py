@@ -5,16 +5,22 @@
     аналитика банка ─► BankHit ──────┼──────────────────► агент («Как это оценивает банк»)
     реестр инструментов агента ──────┴──────────────────► ToolSpec (трассировка, документация)
 
+Четыре сервиса анализа новостей (C20, docs/ARCHITECTURE.md «Четыре сервиса»):
+
+    3 CSV банка ──► [1] профиль ──► CompanyFacts ──┐
+    источники ────► [2] сбор новостей ──► NewsGroup ┴─► [3] сопоставление ──► MatchResult ──► [4] объяснение
+                                                                                              ──► Interpretation
+
 Правило: поле можно добавить (необязательным) в своём PR; переименовать, удалить или сделать обязательным —
 только отдельным PR с увеличением CONTRACTS_VERSION, обновлением JSON-схем и docs/CONTRACTS.md.
 """
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "1.1"  # 1.1: добавлен BankHit (B1)
+CONTRACTS_VERSION = "1.2"  # 1.1: добавлен BankHit (B1); 1.2: контракты четырёх сервисов (C20.1)
 
 Level = Literal["low", "medium", "high", "critical"]
 
@@ -168,4 +174,175 @@ class ToolSpec(BaseModel):
     when: str = ""
 
 
-CONTRACTS = {m.__name__: m for m in (CompanyProfile, EventDoc, RankedEvent, BankHit, InsightResult, ToolSpec)}
+# ---------- Сервис 1 → CompanyFacts: профиль только из данных банка (C20.3) ----------
+
+FactStatus = Literal["confirmed", "derived", "no_data", "insufficient_data"]
+FactGroup = Literal["identity", "industry", "position", "scale", "activity", "group", "geography", "bank_products",
+                    "foreign_trade", "counterparties", "affiliates", "data_quality"]
+
+
+class FactSource(BaseModel):
+    """Откуда факт: файл набора банка, запись и поля. По ним факт можно найти в исходных данных."""
+    model_config = ConfigDict(title="FactSource")
+    file: str = Field(description="файл набора: df_Uid_data_hack.csv, df_Uid_payment_hack.csv, df_Fid_Uid_link_hack.csv")
+    record: str = Field(description="ключ записи или выборки: SYNTHETIC_U=U_67; PAYER=U_67; GROUP_ID=…")
+    fields: list[str] = Field(min_length=1, description="поля, из которых взято или рассчитано значение")
+
+
+class ProfileFact(BaseModel):
+    """Один факт профиля. confirmed — значение поля как есть; derived — расчёт только по данным набора (method
+    обязателен); no_data / insufficient_data — данных нет или мало, значение не подставляется."""
+    model_config = ConfigDict(title="ProfileFact")
+    id: str = Field(pattern=r"^p:[a-z0-9_.]+$", description="id для ссылок из сопоставления и объяснения: p:okved")
+    group: FactGroup
+    label: str
+    value: Any = None
+    status: FactStatus
+    sources: list[FactSource] = Field(min_length=1, description="для no_data — поля, где данных не оказалось")
+    method: Optional[str] = Field(None, description="способ расчёта; обязателен для derived")
+    note: Optional[str] = Field(None, description="оговорка: «доля в выборке, не доля рынка», заглушка выручки и т.п.")
+
+    @model_validator(mode="after")
+    def _status_rules(self):
+        if self.status == "derived" and not self.method:
+            raise ValueError(f"{self.id}: у рассчитанного факта нужен способ расчёта (method)")
+        if self.status in ("no_data", "insufficient_data") and self.value not in (None, "", [], {}):
+            raise ValueError(f"{self.id}: при «{self.status}» значение не подставляется")
+        return self
+
+
+class CompanyFacts(BaseModel):
+    """Выход сервиса профиля: что известно о компании из набора банка и какие факты могут влиять на значимость
+    новостей. Ничего из новостей, сайтов, внешних баз или знаний модели."""
+    model_config = ConfigDict(title="CompanyFacts")
+    client_id: str = Field(description="SYNTHETIC_U")
+    profile_id: str = Field(description="case-<uid>")
+    dataset: Literal["case", "sample"] = Field(description="case — файлы кейса, sample — синтетический пример схемы")
+    facts: list[ProfileFact] = Field(min_length=1)
+    significance_facts: list[str] = Field(default_factory=list,
+                                          description="id фактов, которые могут влиять на значимость новостей")
+    gaps: list[str] = Field(default_factory=list, description="id фактов со статусом no_data / insufficient_data")
+
+    @model_validator(mode="after")
+    def _ids_exist(self):
+        ids = {f.id for f in self.facts}
+        missing = [i for i in self.significance_facts + self.gaps if i not in ids]
+        if missing:
+            raise ValueError(f"ссылки на несуществующие факты: {missing}")
+        return self
+
+
+# ---------- Сервис 2 → NewsGroup: новость и её перепечатки (C20.4) ----------
+
+class Verification(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    score: float = Field(ge=0, le=100)
+    label: str
+    independent: int = Field(ge=0, description="независимых изданий (по холдингам)")
+
+
+class NewsGroup(BaseModel):
+    """Выход сервиса сбора новостей: группа публикаций об одном событии. О компаниях ничего не знает."""
+    model_config = ConfigDict(title="NewsGroup")
+    cluster_id: str
+    lead: EventDoc = Field(description="карточка группы — самая надёжная публикация")
+    members: list[EventDoc] = Field(min_length=1, description="все публикации группы, включая lead")
+    verification: Verification
+
+
+# ---------- Сервис 3 → MatchResult: значимость (правила) и связи (LLM) (C20.5) ----------
+
+class MatchScore(BaseModel):
+    """Значимость события для компании — скоринг по правилам на фактах профиля. LLM балл не меняет."""
+    model_config = ConfigDict(extra="allow")
+    method: Literal["rules"] = "rules"
+    relevance: float = Field(ge=0, le=100)
+    impact: float = Field(ge=0, le=100)
+    urgency: float = Field(ge=0, le=100)
+    confidence: float = Field(ge=0, le=100)
+    priority: float = Field(ge=0, le=100)
+    priority_level: Level
+    urgency_level: Level
+    impact_type: Literal["risk", "opportunity", "mixed", "neutral"]
+    relevance_factors: list[Factor] = []
+    channels: list[Channel] = []
+
+
+class FactLink(BaseModel):
+    """Подтверждённая связь: факт профиля + дословная цитата из новости (код проверил, что цитата есть в тексте)."""
+    fact_id: str = Field(pattern=r"^p:")
+    news_quote: str = Field(min_length=1)
+    explanation: str
+
+
+class Assumption(BaseModel):
+    """Допущение: вывод без дословной опоры в новости или без факта профиля. Показывается отдельно от связей."""
+    text: str
+    fact_ids: list[str] = []
+    reason: str = Field(description="почему это допущение: «нет цитаты в тексте», «вывод модели», «факта нет в профиле»")
+
+
+class NewsRef(BaseModel):
+    event_id: str
+    source: str
+    url: Optional[str] = None
+    published_at: str
+
+
+class LlmTrace(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    status: Literal["done", "cached", "not_checked", "failed"]
+    model: Optional[str] = None
+    prompt: Optional[str] = Field(None, description="имя@версия промпта")
+    reason: Optional[str] = Field(None, description="почему не проверено или ошибка — понятным текстом")
+
+
+class MatchResult(BaseModel):
+    """Выход сервиса сопоставления для пары «компания × группа публикаций»."""
+    model_config = ConfigDict(title="MatchResult")
+    profile_id: str
+    event_id: str
+    cluster_ids: list[str] = Field(min_length=1)
+    title: str
+    score: MatchScore
+    links: list[FactLink] = Field(default_factory=list, description="подтверждённые связи")
+    assumptions: list[Assumption] = Field(default_factory=list)
+    explanation: str = Field(description="почему такая оценка: факторы скоринга и, если есть, объяснение LLM")
+    facts_used: list[str] = Field(default_factory=list, description="id фактов профиля, на которые опирается результат")
+    news: list[NewsRef] = Field(min_length=1, description="публикации, на которые опирается результат")
+    llm: LlmTrace
+
+
+# ---------- Сервис 4 → Interpretation: объяснение для руководителя (C20.6) ----------
+
+class Statement(BaseModel):
+    """Утверждение объяснения. refs — только на элементы MatchResult: news:<event_id>, p:<факт>, link:<n>,
+    assumption:<n>, score. Утверждение без опоры на вход не проходит проверку."""
+    text: str
+    kind: Literal["fact", "link", "assumption", "recommendation", "uncertainty"]
+    refs: list[str] = Field(min_length=1)
+
+
+class Uncertainty(BaseModel):
+    level: Literal["low", "medium", "high"]
+    reasons: list[str] = []
+
+
+class Interpretation(BaseModel):
+    """Выход сервиса объяснения: вход — только MatchResult (и роль читателя). Новых фактов не добавляет."""
+    model_config = ConfigDict(title="Interpretation")
+    profile_id: str
+    event_id: str
+    role: Optional[str] = None
+    headline: str
+    what_happened: list[Statement] = []
+    why_it_matters: list[Statement] = []
+    what_to_do: list[Statement] = []
+    uncertainty: Uncertainty
+    not_known: list[str] = Field(default_factory=list, description="чего нет во входных данных")
+    mode: Literal["llm", "template"] = Field(description="template — без модели, по шаблону из MatchResult")
+    llm: LlmTrace
+
+
+CONTRACTS = {m.__name__: m for m in (CompanyProfile, EventDoc, RankedEvent, BankHit, InsightResult, ToolSpec,
+                                     CompanyFacts, NewsGroup, MatchResult, Interpretation)}
