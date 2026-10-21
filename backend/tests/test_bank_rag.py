@@ -95,3 +95,45 @@ def test_rate_direction_only_from_forecasts_and_decisions():
     assert bank_rag.signals("Риторика стала жестче, тон ужесточился.") == []
     assert bank_rag.signals("После десяти последовательных снижений ставки рынок замер.") == []
     assert bank_rag.signals("Мы ожидаем снижения ставки до 12% к концу 2027 года.") == ["rate_down"]
+
+
+RATE_NEWS = {"id": "e1", "title": "Банк России сохранил ключевую ставку",
+             "summary": "Совет директоров Банка России оставил ключевую ставку без изменений, денежно-кредитная политика "
+                        "остаётся жёсткой."}
+UNRELATED_NEWS = [
+    {"id": "u1", "title": "«Аэрофлот» перейдёт на зимнее расписание полётов",
+     "summary": "С 25 октября авиакомпания открывает новые рейсы из Москвы в Иркутск и Омск."},
+    {"id": "u2", "title": "Сборная выиграла товарищеский матч по футболу", "summary": "Победный гол забит на 90-й минуте."},
+    {"id": "u3", "title": "Роспотребнадзор усилит контроль за маркированными товарами",
+     "summary": "Новые индикаторы риска для продавцов без проверки кодов маркировки."},
+]
+
+
+def test_search_for_event_skips_unrelated_news(tmp_path):
+    """B1: у новости не по теме материалов — пусто («позиции банка нет»), даже если запрос агента про ставку."""
+    write_docs(tmp_path)
+    for ev in UNRELATED_NEWS:
+        assert bank_rag.search_for_event(ev, folder=tmp_path) == [], ev["title"]
+        assert bank_rag.search_for_event(ev, "прогноз ключевой ставки", folder=tmp_path) == [], ev["title"]
+    assert bank_rag.search_for_event({"title": ""}, folder=tmp_path) == []
+    assert bank_rag.search_for_event(RATE_NEWS, folder=tmp_path / "нет") == []
+
+
+def test_search_for_event_returns_bank_hit_on_topic(tmp_path):
+    from app.schemas import BankHit
+
+    write_docs(tmp_path)
+    hits = bank_rag.search_for_event(RATE_NEWS, "позиция банка", folder=tmp_path)
+    assert hits and {h["doc"] for h in hits} == {"rates.txt"}, "фрагмент про металлургию к новости о ставке не относится"
+    top = BankHit.model_validate(hits[0])
+    assert top.source == f"bank:{top.id}" and top.url.endswith("#page=1") and top.method == "tfidf"
+    assert top.quote and "ожидаем" in top.quote
+
+
+def test_search_for_event_keeps_shared_rate_signal(tmp_path, monkeypatch):
+    """Общее направление ставки держит фрагмент и при близости ниже порога — но только при базовой близости."""
+    write_docs(tmp_path)
+    monkeypatch.setattr(bank_rag, "EVENT_MIN_TFIDF", 1.01)  # путь «близко к событию» закрыт
+    hits = bank_rag.search_for_event(RATE_NEWS, folder=tmp_path)
+    assert [h["doc"] for h in hits] == ["rates.txt"]
+    assert hits[0]["reason"] == "signals" and hits[0]["shared_signals"] == ["rate_hold"]

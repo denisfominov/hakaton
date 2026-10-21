@@ -1,0 +1,129 @@
+{
+  "$id": "alpha-intelligence/BankHit",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Фрагмент аналитики банка, связанный с самим событием (`bank_rag.search_for_event`): со ссылкой на страницу.\nПустой список — честный исход «по этой теме позиции банка нет».",
+  "properties": {
+    "date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "дата или период материала",
+      "title": "Date"
+    },
+    "doc": {
+      "description": "файл материала в BANK_DOCS_DIR",
+      "title": "Doc",
+      "type": "string"
+    },
+    "id": {
+      "description": "<файл без расширения>#<номер фрагмента>",
+      "title": "Id",
+      "type": "string"
+    },
+    "method": {
+      "enum": [
+        "e5",
+        "tfidf"
+      ],
+      "title": "Method",
+      "type": "string"
+    },
+    "page": {
+      "minimum": 1,
+      "title": "Page",
+      "type": "integer"
+    },
+    "quote": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "предложения с позицией банка; None — во фрагменте её нет",
+      "title": "Quote"
+    },
+    "reason": {
+      "description": "close — близко к событию; signals — общее направление ставки или рубля при базовой близости",
+      "enum": [
+        "close",
+        "signals"
+      ],
+      "title": "Reason",
+      "type": "string"
+    },
+    "score": {
+      "description": "близость к событию: косинус e5 или TF-IDF (см. method)",
+      "title": "Score",
+      "type": "number"
+    },
+    "shared_signals": {
+      "description": "общие с событием сигналы: rate_*, rub_*",
+      "items": {
+        "type": "string"
+      },
+      "title": "Shared Signals",
+      "type": "array"
+    },
+    "signals": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Signals",
+      "type": "array"
+    },
+    "source": {
+      "description": "id для ссылок в ответе агента: bank:<id>",
+      "pattern": "^bank:",
+      "title": "Source",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "topics": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Topics",
+      "type": "array"
+    },
+    "url": {
+      "description": "страница исходного PDF: /api/bank-docs/file/<файл>#page=<стр.>",
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source",
+    "doc",
+    "title",
+    "page",
+    "text",
+    "url",
+    "score",
+    "method",
+    "reason"
+  ],
+  "title": "BankHit",
+  "type": "object",
+  "x-contracts-version": "1.1"
+}

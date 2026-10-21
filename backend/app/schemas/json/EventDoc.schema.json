@@ -195,5 +195,5 @@
   ],
   "title": "EventDoc",
   "type": "object",
-  "x-contracts-version": "1.0"
+  "x-contracts-version": "1.1"
 }

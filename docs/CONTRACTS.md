@@ -1,7 +1,7 @@
 # Контракты между частями системы
 
-Версия контрактов **1.0**. Это форматы, которыми обмениваются части системы и потоки команды
-([TASKS.md](TASKS.md)): кто отдаёт объект, кто его принимает и какие поля обязательны.
+Версия контрактов **1.1** (1.1 — добавлен `BankHit`, задача B1). Это форматы, которыми обмениваются части системы
+и потоки команды ([TASKS.md](TASKS.md)): кто отдаёт объект, кто его принимает и какие поля обязательны.
 
 **Где что лежит:**
 - модели Pydantic — [backend/app/schemas/contracts.py](../backend/app/schemas/contracts.py);
@@ -13,6 +13,7 @@
 ```
 данные кейса ──► CompanyProfile ─┐
 источники ─────► EventDoc ───────┼─► ранжирование ─► RankedEvent ─► агент ─► InsightResult ─► интерфейс
+аналитика банка ─► BankHit ──────┼──────────────────► агент («Как это оценивает банк»)
 реестр инструментов агента ──────┴──────────────────► ToolSpec (трассировка, документация)
 ```
 
@@ -21,6 +22,7 @@
 | `CompanyProfile` | A — `clients.profile_from_client`, профили в базе | B (запросы к поиску), C (агент), D (карточка компании) | `id`, `name` | профили синтетики и клиента кейса |
 | `EventDoc` | B — `pipeline.normalize/save_items`, `load_events` | A (ранжирование), C (агент: факты, RAG новостей) | `id`, `title`, `source`, `source_type`, `published_at`, `reliability` | все события тестовой базы и реальной подборки |
 | `RankedEvent` | A — `pipeline.analyze_events` → `ranked_from_result` | C (выбор событий, обоснование), D (лента, обзор) | `profile_id`, `event_id`, `cluster_ids`, баллы 0–100, уровни, `impact_type`, `fact_status` | ранжирование синтетического клиента |
+| `BankHit` | B — `bank_rag.search_for_event` | C (агент: «Как это оценивает банк», задача C1) | `id`, `source`, `doc`, `title`, `page`, `text`, `url`, `score`, `method`, `reason` | фрагменты по новости о ставке в тестах RAG |
 | `InsightResult` | C — `agent.run` (тот же класс, что `AgentResultOut`) | D (панель «Инсайт»), датасет и оценка | `summary`, `answers` (6 вопросов + `event`, `follow_up`), `checks`, `scores`, `data_gaps`, `confidence`, `priority`, `mode` | запуск агента |
 | `ToolSpec` | C — `agent_tools.TOOLS[*].schema()` | D (трассировка), `/api/agent/tools`, документация | `name`, `description`, `access`, `data`, `input_schema`, `output_schema` | весь реестр инструментов |
 
@@ -44,6 +46,16 @@
 - `cluster_id` — группа дублей, `thread_id` — сюжет на 60 дней.
 - `nlp` — сигналы (ставка, курс, цены с числами и направлением), отрасли, регионы, сущности, `suspicious`
   (инъекция или подозрительный текст).
+
+## BankHit
+
+Фрагмент аналитики банка, связанный с самой новостью. Подробности и подбор порога — [b/BANK_FOR_EVENT.md](b/BANK_FOR_EVENT.md).
+
+- Пустой список — честный исход «по этой теме позиции банка нет».
+- `source` = `bank:<id>` — этим id агент ссылается на фрагмент в ответе.
+- `url` — страница исходного PDF, `quote` — предложения с позицией банка (`null`, если её во фрагменте нет).
+- `method`: `e5` или `tfidf` (без весов e5); `score` — близость к новости этим способом.
+- `reason`: `close` — близко к новости; `signals` — общее направление ставки или рубля (`shared_signals`).
 
 ## RankedEvent
 

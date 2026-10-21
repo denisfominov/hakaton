@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from app import bank_rag, config, embeddings
-from tests.test_bank_rag import write_docs
+from tests.test_bank_rag import RATE_NEWS, UNRELATED_NEWS, write_docs
 
 HAS_WEIGHTS = (config.DATA_DIR / "embeddings" / "multilingual-e5-small" / "model.onnx").exists()
 
@@ -42,3 +42,13 @@ def test_bank_rag_hybrid_with_e5(e5, tmp_path):
     hits = bank_rag.search("ожидания банка по ставке ЦБ", folder=tmp_path)
     assert hits and hits[0]["method"] == "hybrid" and hits[0]["doc"] == "rates.txt"
     assert bank_rag.search("рецепт борща со сметаной", folder=tmp_path, method="e5") == [], "посторонний запрос — пусто"
+
+
+def test_search_for_event_with_e5(e5, tmp_path):
+    """B1 на e5: новость о ставке — фрагмент про ставку; посторонние новости — пусто, даже с запросом про ставку."""
+    write_docs(tmp_path)
+    hits = bank_rag.search_for_event(RATE_NEWS, folder=tmp_path)
+    assert [h["doc"] for h in hits] == ["rates.txt"] and hits[0]["method"] == "e5"
+    assert hits[0]["score"] >= bank_rag.EVENT_MIN_E5
+    for ev in UNRELATED_NEWS:
+        assert bank_rag.search_for_event(ev, "прогноз ключевой ставки", folder=tmp_path) == [], ev["title"]
