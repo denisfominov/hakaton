@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
 import { useApp } from "../context";
+import ServiceChain from "./ServiceChain";
 import type { AgentResult, AgentRun, AgentSource, AgentStep, Claim, ClaimKind } from "../types";
 
 // разделение, которого требует кейс: факт, позиция банка, вывод ИИ (и данные о компании, на которых он основан)
@@ -274,6 +275,8 @@ export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
             {r.role && <p className="mt-1.5 rounded bg-ink-50 px-2 py-1 text-xs text-ink-700"><b className="font-medium">{r.role.label}:</b> {r.role.note}</p>}
             <div className="mt-2 flex flex-wrap gap-1.5">{(Object.keys(KIND) as ClaimKind[]).map((k) => <KindBadge key={k} kind={k} />)}</div>
           </div>
+
+          {r.interpretation && <ServiceChain i={r.interpretation} m={r.match} />}
 
           {a.question && (
             <section className="border-b border-ink-100 bg-sky-50/40 px-5 py-4">

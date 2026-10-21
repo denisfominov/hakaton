@@ -437,7 +437,43 @@ export interface AgentStep {
   rights?: { access: string; data: string };
 }
 
+// сервис 3 (C20.5): значимость — правила, связи — LLM с проверкой кодом
+export interface MatchResult {
+  profile_id: string;
+  event_id: string;
+  title: string;
+  score: { method: "rules"; priority: number; priority_level: Level; relevance: number; impact_type: ImpactType };
+  links: { fact_id: string; news_quote: string; explanation: string }[];
+  assumptions: { text: string; fact_ids: string[]; reason: string }[];
+  explanation: string;
+  facts_used: string[];
+  profile_facts: { id: string; label: string; value: string }[];
+  news: { event_id: string; source: string; url?: string | null; published_at: string; summary?: string | null }[];
+  llm: { status: "done" | "cached" | "not_checked" | "failed"; model?: string | null; reason?: string | null; mock?: boolean };
+}
+
+// сервис 4 (C20.6): объяснение для руководителя только из MatchResult
+export interface Statement {
+  text: string;
+  kind: "fact" | "link" | "assumption" | "recommendation" | "uncertainty";
+  refs: string[];
+}
+
+export interface Interpretation {
+  headline: string;
+  what_happened: Statement[];
+  why_it_matters: Statement[];
+  what_to_do: Statement[];
+  uncertainty: { level: "low" | "medium" | "high"; reasons: string[] };
+  not_known: string[];
+  mode: "llm" | "template";
+  role?: string | null;
+  llm: { status: string; model?: string | null; reason?: string | null; mock?: boolean };
+}
+
 export interface AgentResult {
+  match?: MatchResult | null;
+  interpretation?: Interpretation | null;
   summary: string;
   ai_conclusion?: { text: string; kind: ClaimKind; model: string | null; prompt: string | null; engine: string; sources: string[] } | null;
   features?: { label: string; contribution: number | null; value: number | null; source: "rules" }[];
