@@ -172,6 +172,9 @@ function Features({ r }: { r: AgentResult }) {
 }
 
 // «Инсайт для руководителя»: агент сам планирует шаги, вызывает инструменты и отвечает на 6 вопросов кейса
+// быстрые вопросы: без LLM на них отвечают шаблоны агента (C4), с LLM — модель по собранным данным
+const QUICK_QUESTIONS = ["Что делать?", "Какие риски?", "Какие сроки?", "Что думает банк?"];
+
 export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
   { profileId: string; eventId: string; llmEnabled: boolean; llmLabel: string }) {
   const [run, setRun] = useState<AgentRun | null>(null);
@@ -428,7 +431,13 @@ export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
             <Link to="/bank" className="inline-flex items-center gap-1 text-ink-700 hover:underline">аналитика банка <ArrowRight size={12} /></Link>
           </div>
 
-          <form onSubmit={ask} className="flex gap-2 border-t border-ink-100 px-5 py-3">
+          <div className="flex flex-wrap gap-1.5 border-t border-ink-100 px-5 pt-3 text-xs">
+            {QUICK_QUESTIONS.map((q) => (
+              <button key={q} type="button" className="btn-ghost !px-2 !py-1 text-xs" disabled={busy}
+                onClick={() => { setQuestion(q); go(q, true); }}>{q}</button>
+            ))}
+          </div>
+          <form onSubmit={ask} className="flex gap-2 px-5 py-3">
             <input className="input flex-1 !py-1.5 text-sm" placeholder="Уточнить у агента: например, «что это значит для наших кредитов?»"
               value={question} maxLength={500} onChange={(e) => setQuestion(e.target.value)} />
             <button className="btn-secondary !py-1.5 text-sm" disabled={busy || !question.trim()}><Send size={14} /> Спросить</button>

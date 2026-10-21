@@ -194,7 +194,8 @@ def tool_case_models(ctx):
 
 
 def tool_search_bank(ctx, query="", k=4):
-    hits = bank_rag.search(query, k=int(k))
+    # C1: только фрагменты, близкие к самому событию (B1, контракт BankHit); запрос меняет лишь порядок
+    hits = bank_rag.search_for_event(ctx.ev, query, k=int(k))
     for h in hits:
         ctx.source(f"bank:{h['id']}", type="bank", title=h["title"],
                    detail=f"{h['doc']}, стр. {h['page']}" + (f", {h['date']}" if h.get("date") else ""),
@@ -202,8 +203,8 @@ def tool_search_bank(ctx, query="", k=4):
     found = ctx.data.setdefault("bank_hits", {})
     for h in hits:
         found.setdefault(h["id"], {**h, "query": query})
-    return hits, (f"найдено фрагментов: {len(hits)} ({', '.join(sorted({h['title'][:40] for h in hits}))})"
-                  if hits else "в аналитике банка ничего по запросу")
+    return hits, (f"найдено фрагментов по событию: {len(hits)} ({', '.join(sorted({h['title'][:40] for h in hits}))})"
+                  if hits else "по этой теме позиции банка нет: близких к событию фрагментов в аналитике банка нет")
 
 
 def tool_search_news(ctx, query="", limit=5):
@@ -311,8 +312,9 @@ TOOLS = {t.name: t for t in [
          "bank_internal", when="всегда: связь с компанией"),
     Tool("score_with_models", "свои ML-модели (не LLM): значимость, тип влияния, срочность, вклад признаков компании",
          tool_case_models, NoArgs, ModelsOut, "client_confidential", when="клиент из данных банка и модели обучены"),
-    Tool("search_bank_analytics", "поиск в аналитике Альфа-Банка (RAG по 9 материалам приложения 2)", tool_search_bank,
-         SearchArgs, HITS, "bank_internal", when="позиция банка по теме"),
+    Tool("search_bank_analytics", "позиция Альфа-Банка по самому событию: фрагменты аналитики (9 материалов приложения 2), "
+         "близкие к новости; запрос задаёт только порядок", tool_search_bank,
+         SearchArgs, HITS, "bank_internal", when="позиция банка по теме события"),
     Tool("search_news", "связанные новости: тот же сюжет и подтверждения в других изданиях", tool_search_news, NewsArgs,
          HITS, "public", when="сюжет или одно издание"),
     Tool("search_news_rag", "поиск по текстам новостей (RAG): фрагменты других публикаций по смыслу запроса",
