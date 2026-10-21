@@ -2,166 +2,157 @@
 
 Один промпт — одно окно Claude — один PR. Порядок и зависимости — в [TASKS.md](TASKS.md). Промпты на английском
 (экономия токенов), ответы Claude — по-русски. Перед платным прогоном — сообщение в чат команды: кто, что, сколько ₽.
+Общая шапка каждого промпта: «Read CLAUDE.md and follow it; answer in Russian, plain words». Во всех: не трогать
+`.env` и неотслеживаемые файлы, не печатать ключ шлюза, без force-push, PR не создавать и не сливать.
 
 ## Сегодня
 
-### A8 — отрасль по ОКВЭД · Человек 2 · 0 ₽
+### Q1 — ежедневная платная очередь · Ч1 · 0 ₽ на сборку, прогон — по «go <лимит>»
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian, plain words. Task A8 from docs/TASKS.md.
-Read only: backend/app/lookup.py (OKVED_TEMPLATES, template_by_okved), the industry part of backend/app/catalog.py,
-backend/app/clients.py profile_from_client, docs/GAP_ANALYSIS.md row "1".
-Bug: "46.7" -> "Металлургия" catches all wholesale 46.7x (46.71 fuel, 46.75 chemicals...); 46.90 and 46.38 are wrong too.
-Apply the ML lectures rule (docs/ML_LECTURES_INDEX.md) for the before/after check.
-Give a 5-line brief first (files, test, how we verify), then wait for my yes.
-New branch fix/a8-okved-industry from fresh main. Test: OKVED -> industry for the 5 demo clients and a table of
-OKVED prefixes. Verify: pytest; demo_check; eval_feed_diversity --part test before/after (report, do not tune on test).
-Do not edit CHANGELOG.md; put the CHANGELOG line in the PR description. Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. Task Q1 from docs/TASKS.md. Branch feature/c-daily-paid-queue
+from fresh main; NEW files only (no config.py, schemas, pipeline.py, main.py, requirements, .env.example).
+Read only: scripts/batch_runner.py, app/llm_budget.py, app/llm_router.py, scripts/overnight_stress.py,
+scripts/compare_models.py, docs/OVERNIGHT_STATUS.md, docs/a/LLM_DRAFT_LABELS.md, docs/GAP_ANALYSIS.md.
+Build docs/PAID_QUEUE.md, scripts/daily_paid.py (--plan/--run/--cap/--only/--resume; jobs J1 regression on the 70
+BASELINE runs, J2 unseen news with a ledger, J3 next item of docs/paid/EXPERIMENTS.md, J4 draft labels, J5 noise,
+J6 top-up, J7 cache disabled until "freeze"), scripts/daily_report.py -> docs/paid/<date>.md + TREND.md.
+Caps per job and global, stop on "Budget has been exceeded" / 5 failures / cap, 03:00 MSK split, concurrency <= 4,
+checkpoints in ignored backend/data/daily/. Offline tests with the mock gateway; key never in logs.
+Push, run --plan --cap 425, show the estimate per job, then STOP and wait for my "go <cap>".
 ```
 
-### C1b + C11 — ссылка банка, маршрут, таймаут, блокировка базы · Человек 1 · 0 ₽
+### C1b + C11 — ссылка банка, маршрут, таймаут, блокировка базы · Ч1 · 0 ₽
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Tasks C1b + C11 from docs/TASKS.md (one window).
-Read only: backend/app/agent.py llm_rewrite and run, backend/app/llm_router.py TASKS, backend/app/db.py get_db,
-the agent route in backend/app/main.py, docs/BASELINE.md errors 2, 6, 7, docs/MODEL_COMPARISON.md route table.
-C1b: accept bank refs without the "bank:" prefix, only if the id is a fragment found in this run.
-C11: routes plan Gemma->DeepSeek, analysis DeepSeek->GLM; LLM_TIMEOUT 180; no open DB transaction during a model call.
-5-line brief first, then wait for my yes. Branch fix/c1b-c11-agent-llm from fresh main; config.py/.env.example/main.py
-changes go into a separate small PR branch. No paid calls: tests in mock mode, incl. 2 parallel agent requests.
-Do not edit CHANGELOG.md. Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. Tasks C1b + C11 from docs/TASKS.md (one window, one PR).
+Read only: backend/app/agent.py (llm_rewrite, run), backend/app/llm_router.py TASKS, the timeout use in
+backend/app/llm_client.py, docs/BASELINE.md errors 2, 6, 7, docs/MODEL_COMPARISON.md route table.
+C1b: accept a model bank ref without the "bank:" prefix only if that fragment id was found in this run.
+C11: routes plan Gemma->DeepSeek, analysis DeepSeek->GLM; per-model timeout in the router (GLM 180 s) instead of
+the config default; commit before each model call inside agent.py so the DB is not locked while waiting.
+Do not touch shared files. 5-line brief first, wait for my yes. Branch fix/c1b-c11-agent-llm from fresh main.
+Tests in mock mode incl. 2 parallel agent requests. No paid calls. Do not edit CHANGELOG.md. Push, report, stop.
+```
+
+### C3 + C12 — роли меняют действия, ложный канал курса · Ч1 · 0 ₽
+
+```text
+Read CLAUDE.md and follow it; answer in Russian. Tasks C3 + C12 from docs/TASKS.md (one window). Starts after
+C1b + C11 is merged. Read only: backend/app/roles.py, the action builders in backend/app/analysis.py and
+agent_rules.py, the fx channel detection, docs/GAP_ANALYSIS.md rows 06 and "Роли".
+C3: per channel, role-specific actions and order for cfo, owner, treasury, accountant (no new facts, only from data).
+C12: news about the fuel "демпфер" must not trigger the fx channel.
+5-line brief first, wait for my yes. Branch feature/c3-c12-roles from fresh main. Verify: 5 events x 4 roles for
+U_9250 — identical action sets <= 1 of 5 (now 5 of 5); test for "демпфер"; pytest; demo_check.
+UI: only a role label if it is not visible yet. No paid calls. Do not edit CHANGELOG.md. Push, report, stop.
+```
+
+### A8 — отрасль по ОКВЭД · Ч2 · 0 ₽
+
+```text
+Read CLAUDE.md and follow it; answer in Russian. Task A8 from docs/TASKS.md.
+Read only: backend/app/lookup.py (OKVED_TEMPLATES, template_by_okved), the industry part of backend/app/catalog.py,
+backend/app/clients.py profile_from_client, docs/GAP_ANALYSIS.md section 1 row 1.
+Bug: "46.7" -> "Металлургия" catches all wholesale 46.7x (46.71 fuel, 46.75 chemicals...); 46.90 and 46.38 wrong too.
+Apply the ML lectures rule (docs/ML_LECTURES_INDEX.md) for the before/after check.
+5-line brief first, wait for my yes. Branch fix/a8-okved-industry from fresh main. Test: OKVED -> industry for the
+5 demo clients and a table of prefixes. Verify: pytest; demo_check; eval_feed_diversity --part test before/after
+(report only, do not tune on test). Do not edit CHANGELOG.md. Push, report, stop.
+```
+
+### B4 + A1-bank — страницы-графики в поиске, пары «новость ↔ банк» · Ч2 (+ проверка пар людьми) · 0 ₽
+
+```text
+Read CLAUDE.md and follow it; answer in Russian. Tasks B4 + A1-bank from docs/TASKS.md (one window). Humans have
+checked the 13 "related" pairs in backend/data/real/bank_event_pairs.json (annotator filled).
+Read only: the chunking part of backend/app/bank_rag.py (line ~185, lines < 40 chars dropped), the format of
+backend/data/overnight/f/claims.json, scripts/eval_bank_rag.py, docs/b/BANK_FOR_EVENT.md, docs/b/RAG_EVAL.md.
+B4: make the 13 chart pages searchable (merge short lines; index the vision claims with doc+page); re-map event
+pairs by doc+page after re-chunking. Lectures rule: dev for choices, test once, compare with the current baseline.
+5-line brief first, wait for my yes. Branch feature/b4-chart-pages from fresh main. Verify: eval_bank_rag
+--questions before/after; --event-pairs --part dev, then test once; pytest. No paid calls (ask me first if the
+claims are not enough: ~0.83 RUB). Do not edit CHANGELOG.md. Push, report, stop.
 ```
 
 ### A1 — сборка разметки людей · оба (разметка руками) · 0 ₽
 
 ```text
 Read CLAUDE.md and follow it; answer in Russian. Task A1 from docs/TASKS.md: we finished labeling files 1 and 2.
-Read only docs/a/LABELING.md and backend/scripts/make_label_sets.py (merge part).
-Run python -m scripts.make_label_sets --merge, report pairs count, Cohen's kappa on shared pairs, agreement with the
-draft where it was visible vs hidden. Nothing to commit (data/gold/*.csv is not in git). Report and stop.
-```
-
-### A1-bank — проверка пар «новость ↔ фрагмент банка» · оба · 0 ₽
-
-```text
-Read CLAUDE.md and follow it; answer in Russian. Task A1-bank from docs/TASKS.md.
-Read only backend/data/real/bank_event_pairs.json and the fragment texts via backend/app/bank_rag.py.
-Show me the 13 pairs with related=1 one by one (news title + fragment quote, 3 lines each) and record my verdict;
-then list the 74 related=0 pairs compactly so I can flag mistakes. Set "annotator" to people + date.
-5-line brief first, then wait for my yes. Branch data/a1-bank-pairs from fresh main; re-run
-python -m scripts.eval_bank_rag --event-pairs data/real/bank_event_pairs.json --part dev and report the change.
-Do not edit CHANGELOG.md. Push, no PR. Report and stop.
-```
-
-### C3 + C12 — роли и ложный канал курса · Человек 1 · 0 ₽
-
-```text
-Read CLAUDE.md and follow it; answer in Russian. Tasks C3 + C12 from docs/TASKS.md (one window).
-Read only: backend/app/roles.py, the channel and action parts of backend/app/analysis.py, agent.py compose/role_note,
-docs/GAP_ANALYSIS.md rows "06" and top gaps 5 and 10.
-C3: per channel an action and an indicator per role (treasury, accountant, owner, cfo); UI only a minimal role label.
-C12: the news "Демпфер для авиакеросина" must not get fx_export/fx_import; add a regression test.
-5-line brief first, then wait for my yes. Branch feature/c3-role-templates from fresh main. Verify: pytest; measure
-5 events x 4 roles for U_9250 (same action list now 5 of 5, target <= 1 of 5), provider off. Do not edit CHANGELOG.md.
-Push, no PR. Report and stop.
-```
-
-### B4 — страницы-графики и связь с другими материалами банка · Человек 2 · 0 ₽ (≈ 0,83 ₽, если тезисов не хватит)
-
-```text
-Read CLAUDE.md and follow it; answer in Russian. Task B4 from docs/TASKS.md. Apply the ML lectures rule.
-Read only: backend/app/bank_rag.py (_chunks, search_for_event), backend/scripts/eval_bank_rag.py, docs/b/RAG_EVAL.md,
-docs/b/BANK_FOR_EVENT.md, the structure of backend/data/overnight/f/claims.json (not in git).
-Goal: index the 13 chart pages (glue short lines; use existing vision claims, no new paid run) and link events to
-fragments of other bank materials without losing precision. Tune on dev only, test once.
-5-line brief first, then wait for my yes. Branch feature/b4-bank-coverage from fresh main. Report before/after:
-page hit@3, pages not indexed (13 of 64 now), share of top-10 answers with a bank position (14 of 50 now), off-topic
-quotes (0 now). Do not edit CHANGELOG.md. Push, no PR. Report and stop.
-```
-
-### C9 — самопроверка, которая меняет ход, и вопросы вне шаблонов · Человек 1 · 0 ₽
-
-```text
-Read CLAUDE.md and follow it; answer in Russian. Task C9 from docs/TASKS.md.
-Read only: backend/app/agent.py self_check and run, backend/app/agent_rules.py answer_question, backend/app/agent_tools.py
-tool list, docs/GAP_ANALYSIS.md agent-logic row 4 and criteria 09, 10.
-Self-check must add useful steps: few facts or one outlet -> search confirmations; weak company link -> relationship
-graph; bank disagreement -> fresher bank material; question outside the 5 templates -> news and bank search.
-5-line brief first, then wait for my yes. Branch feature/c9-self-check from fresh main. Verify: pytest; on 5 demo
-clients x top-10 (provider off) report the share of runs where self-check added a step (0 of 50 now) and what it added.
-Do not edit CHANGELOG.md. Push, no PR. Report and stop.
+Read only docs/a/LABELING.md and the merge part of backend/scripts/make_label_sets.py.
+Run python -m scripts.make_label_sets --merge; report pairs count, Cohen's kappa on the shared pairs, agreement
+with the draft where it was shown vs hidden. Nothing to commit (data/gold/*.csv is not in git). Report and stop.
 ```
 
 ## Завтра
 
-### B2 + B3 + B7 — сбор по расписанию, отраслевые ленты, новость о курсе · Человек 2 · 0 ₽
+### C9 + C10 — адаптация самопроверки и полная трассировка · Ч1 · 0 ₽
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Tasks B2 + B3 + B7 from docs/TASKS.md (one PR).
-Read only: backend/app/jobs.py, backend/app/sources.py, backend/data/sources.json, docs/DATA.md, the RSS part of
-backend/app/pipeline.py (ingest_live), backend/scripts/check_sources.py.
-B2: collect RSS every 30 minutes, keep 60 days, foreign share <= 10%. B3: 4-6 industry feeds (metals, construction,
-fuel/energy, food/retail, logistics) only after checking terms of use and robots.txt; record them in docs/DATA.md.
-B7: one real ruble-rate news item with a link in data/real/news.json.
-5-line brief first, then wait for my yes. Branch feature/b2-b3-sources from fresh main. Tests without network;
-demo_check without internet must be 7 of 7. Do not edit CHANGELOG.md. Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. Tasks C9 + C10 from docs/TASKS.md (one window). Starts after
+C3 + C12 is merged. Read only: backend/app/agent.py (self_check, Ctx.step, run), agent_tools.py result shapes,
+docs/GAP_ANALYSIS.md rows "Агентная логика 4", 09, 10, 11 and section 5.
+C9: self_check adds steps when needed: few facts or one outlet -> search_news; weak link -> relationship graph;
+bank disagreement -> fresh bank search; question outside templates -> topic search. Each added step has a reason.
+C10: every tool step keeps a short structured result (found, count, ids); the answer keeps which steps, features
+and sources each conclusion used. docs/SECURITY.md: target role->data scheme and rate limit as prototype limits.
+5-line brief first, wait for my yes. Branch feature/c9-c10-adapt-trace from fresh main. Verify: 5 demo clients x
+top-10 (LLM off): adaptation > 0 of 50, 8 of 8 tool steps with data; pytest. No paid calls. Push, report, stop.
 ```
 
-### C10 — полная трассировка · Человек 1 · 0 ₽
+### Q1, день 2 — регрессия после исправлений · Ч1 · в лимите дня (70 запусков ≈ 27–35 ₽)
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Task C10 from docs/TASKS.md (criterion 11).
-Read only: backend/app/agent.py (Ctx.step, run, compose), backend/app/agent_tools.py run_tool, docs/CONTRACTS.md
-(InsightResult), docs/GAP_ANALYSIS.md row "11".
-Each tool step stores a short structured result (what was found, counts, ids); the final answer records which steps,
-company features and sources each conclusion used. Optional fields only (contract rules).
-5-line brief first, then wait for my yes. Branch feature/c10-trace from fresh main. Test: from one agent_runs row
-restore sources, company features and step results. Do not edit CHANGELOG.md. Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. run daily 425: python -m scripts.daily_paid --plan --cap 425,
+show the estimate per job and what the local counter says is already spent today, then wait for my "go <cap>".
+After "go": start in the background with caffeinate -i, poll every 10-15 minutes with a tiny status command,
+finish with scripts/daily_report.py. Compare J1 with docs/BASELINE.md and the previous day (bank refs accepted,
+claims dropped, numbers outside input, roles). Put the report into my next PR. Stop.
 ```
 
-### B5 — точность склейки дублей · Человек 2 · 0 ₽
+### B2 + B3 + B7 — сбор по расписанию, отраслевые ленты, новость о курсе · Ч2 · 0 ₽
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Task B5 from docs/TASKS.md. Apply the ML lectures rule.
-Read only: backend/app/dedup.py, the live events in a copy of backend/alpha.db, docs/DATA.md dedup part.
-Sample 50 candidate pairs on live news (both merged and near-miss), show them to me compactly for a yes/no verdict,
-then report precision and recall of the current threshold with bootstrap intervals; change the threshold only if the
-dev part says so, check test once. No paid calls.
-5-line brief first, then wait for my yes. Branch feature/b5-dedup-eval from fresh main. Do not edit CHANGELOG.md.
-Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. Tasks B2 + B3 + B7 from docs/TASKS.md (one window). Starts after
+B4 is merged. Read only: backend/app/jobs.py, the RSS part of backend/app/sources.py, backend/data/sources.json,
+docs/DATA.md, docs/GAP_ANALYSIS.md row "Живые источники".
+B2: RSS every 30 minutes in the background thread, keep 60 days, record last_live. B3: 4-6 industry feeds (metals,
+construction, energy, food and retail, logistics) only after checking their terms; add them to THIRD_PARTY_NOTICES.
+B7: one real FX news item in data/real/news.json so demo_check "курс" passes offline.
+5-line brief first, wait for my yes. Branch feature/b2-b3-b7-live from fresh main. Starting the scheduler in
+main.py goes into a separate tiny PR. Verify: scheduler test; check_sources; demo_check. Push, report, stop.
 ```
 
-### C13 — повтор стресс-прогона · Человек 1 · ≈ 27–35 ₽ (платно)
+### A2 + A5 — качество на разметке людей · Ч2 · 0 ₽
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Task C13 from docs/TASKS.md. PAID: cap 35 RUB, announced in team chat.
-Read only: docs/BASELINE.md, backend/scripts/overnight_stress.py, backend/scripts/batch_runner.py.
-Re-run the same 70 runs (3 demo clients x 20 events, 3 roles on 5 events) with the current route in the background via
-batch_runner with the 35 RUB stop; LLM_PROVIDER=gateway only in the command env; never print the key.
-5-line brief with the exact cost estimate first, then wait for my yes. Branch docs/c13-baseline-rerun from fresh main.
-Add a "before / after" table to docs/BASELINE.md; list the top 3 agent findings with a fix plan (fixes — next window).
-Do not edit CHANGELOG.md. Push, no PR. Report spend and stop.
+Read CLAUDE.md and follow it; answer in Russian. Tasks A2 + A5 from docs/TASKS.md. Needs A1 merged into
+data/gold/gold_pairs.csv and A8 merged. Read only: scripts/evaluate_models.py, docs/ML_EVALUATION.md,
+docs/a/LABELING.md, the relevant lectures via docs/ML_LECTURES_INDEX.md.
+A2: P@10, nDCG@10, PR-AUC on human labels for rules, own model and e5; bootstrap intervals; dev for choices,
+test once; draft labels never used as truth. A5: scripts/quality_report.py writes one JSON with these metrics.
+5-line brief first, wait for my yes. Branch feature/a2-a5-quality from fresh main. Verify: pytest; report table in
+docs/ML_EVALUATION.md naming the lectures applied. Push, report, stop.
 ```
 
-### A2 + A5 — метрики на разметке людей и отчёт качества · Человек 2 · 0 ₽
+### D8a — README по формату сдачи · Ч2 · 0 ₽
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Tasks A2 + A5 from docs/TASKS.md. Apply the ML lectures rule.
-Read only: backend/scripts/evaluate_models.py, backend/scripts/ml_data.py, docs/ML_EVALUATION.md, docs/a/LABELING.md.
-Needs >= 100 human pairs in data/gold/gold_pairs.csv (stop and tell me if fewer).
-A2: P@10, nDCG@10, PR-AUC per client for rules, own model, e5 similarity; dev/test split by client, bootstrap CI,
-random baseline. A5: scripts/quality_report.py writes a weekly JSON (metrics, user feedback, agent: bank position share,
-dropped claims). 5-line brief first, then wait for my yes. Branch feature/a2-a5-quality from fresh main.
-Do not edit CHANGELOG.md. Push, no PR. Report and stop.
+Read CLAUDE.md and follow it; answer in Russian. Task D8a from docs/TASKS.md. Starts after B2 + B3 + B7 is merged.
+Read only: the brief's delivery format (docs/GAP_ANALYSIS.md section 7), docs/ARCHITECTURE.md headings,
+.env.example, docker-compose.yml, docs/DEMO.md, scripts/demo_check.py docstring.
+Write README.md in Russian: purpose, architecture (short + link), requirements, run with Docker and for development,
+config and every env variable, components and models used, step-by-step check scenario with demo clients.
+Add a test: every variable in .env.example is mentioned in README. Branch docs/d8a-readme from fresh main.
+Verify: pytest; follow the README from a clean clone (docker compose up --build, demo_check). Push, report, stop.
 ```
 
-### C8 — обоснованность ответов модели · Человек 1 · ≈ 12,5 ₽ (платно; модель-судья — unknown)
+### B5 — точность склейки дублей · Ч2 · 0 ₽ · если останется время
 
 ```text
-Read CLAUDE.md and follow it; answer in Russian. Task C8 from docs/TASKS.md. PAID: cap 15 RUB, announced in team chat.
-Read only: docs/BASELINE.md (after C13), backend/app/agent_rules.py (ground, supported), backend/scripts/batch_runner.py.
-25 agent runs with the model: share of dropped claims, numbers and names not in the input, bank refs accepted; no judge
-model unless I approve its cost separately. Run in the background via batch_runner with the 15 RUB stop; never print
-the key. 5-line brief with the exact cost first, then wait for my yes. Branch docs/c8-groundedness from fresh main;
-report in docs/c/GROUNDEDNESS.md. Do not edit CHANGELOG.md. Push, no PR. Report spend and stop.
+Read CLAUDE.md and follow it; answer in Russian. Task B5 from docs/TASKS.md. Needs B2 merged (live news in the DB).
+Read only: backend/app/dedup.py thresholds, docs/b/, the lectures on metrics via docs/ML_LECTURES_INDEX.md.
+Build a 50-pair sample of live news pairs near the threshold for one human (~10 minutes), then precision and
+recall with bootstrap intervals; choose the threshold on dev, report test once.
+5-line brief first, wait for my yes. Branch feature/b5-dedup-eval from fresh main. Push, report, stop.
 ```
