@@ -8,28 +8,51 @@ Alpha Intelligence — news analytics agent for executives of large corporate cl
 ## Language
 
 The user is not a programmer and reads Russian. Prompts may be in English to save tokens. Every message to the user,
-PR description and user-facing doc: Russian, plain words, short; explain any technical term in one phrase. Code,
-identifiers and commit messages may be English. Existing Russian docs stay Russian.
+PR title and description and user-facing doc: Russian, plain words, short; explain any technical term in one phrase.
+Code, identifiers and commit messages may be English. Existing Russian docs stay Russian.
 
 ## Session start
 
-1. Read this file. Read docs/TASKS.md and docs/GAP_ANALYSIS.md only when the step needs them.
+1. Read this file. Of docs/TASK_REGISTER.md, docs/TASKS.md, docs/GAP_ANALYSIS.md and docs/QUESTIONS.md read only
+   the parts the step needs — always the organizer answers on its topic.
 2. `git checkout main && git pull`.
 3. Propose a plan of the next 5 steps (see "Iteration mode"), then wait.
 
 ## Iteration mode
 
+- Goal: meet the brief and success criteria at a reasonable cost in time and AI limits. First do what most moves us
+  to a finished result, removes a blocker or cuts the risk of a failed demo. No research, reads or checks the step
+  does not need; never skip a requirement or a verification to save limits.
 - Small steps, in the order of the case brief: quality measurement → sources and data → agent → interface →
   delivery → cache warm-up (last).
-- Before each step name: the brief item or success criterion it serves, the files it touches, how we will know it is
-  done. Wait for the user's "yes".
-- Do the step, verify (backend tests, frontend build, run the service, one manual pass of the scenario), report in
-  Russian, stop.
+- Before each step name: the brief item, success criterion or organizer answer it serves; why now; dependencies; the
+  files it touches; rough time; how we will know it is done. Wait for the user's "yes".
+- Do the step, verify (backend tests, frontend build, run the service, one manual pass of the scenario), stop.
+- Report in Russian: what changed; what verification confirmed; what remains; what the user must do — step by step,
+  where and why, blocked vs only recommended (never hand over work you can safely do yourself); 2–4 next steps ranked
+  by benefit to the project.
+- A doc statement contradicts verified facts (code, tests, measurements, PRs, `main`) — fix the statements related to
+  the task and list the corrections in the report; leave unrelated docs alone.
 - If a step would break or rewrite earlier work — stop and ask.
 - Do not change contracts in [docs/CONTRACTS.md](docs/CONTRACTS.md) retroactively.
 - Paid model calls only after the user's word and a cost estimate (team limit 500 ₽/day). For checks use
   `LLM_PROVIDER=off` or `mock` as an environment override; do not edit the user's `.env`.
 - One step = one branch = one PR.
+
+## Tasks and statuses
+
+- One ordered task list — [docs/TASK_REGISTER.md](docs/TASK_REGISTER.md). Separate files: TASKS.md — zones, rules,
+  freeze; GAP_ANALYSIS.md — brief compliance; QUESTIONS.md — organizer answers. This file holds rules, not history.
+- Every task and subtask: what to do and the expected result; how it moves us to the brief or criteria; priority and
+  why; status, dependencies, owner; acceptance criterion and evidence; basis — brief item or organizer answer (`В15`).
+- Priority weighs brief requirements, deadlines, blockers, demo benefit, progress and size. Explain every priority
+  change; do not lower other tasks without a reason.
+- Subtasks only when they make doing or checking easier, with the same fields. A parent is done when all mandatory
+  subtasks are done and verified.
+- Statuses: не начата · в работе · сделано в ветке · ждёт ревью или слияния · сделано и слито · нужна доработка ·
+  временно отложена (условие возобновления) · отброшена (причина). Status comes from facts (code, tests,
+  measurements, PRs, `main`), not from document text. The register moves to these at its next update.
+- Update only the affected rows; never regenerate a whole list or register; keep the team's manual edits.
 
 ## Token economy
 
@@ -96,6 +119,15 @@ Environment variables, template — [.env.example](.env.example) (copy to `.env`
 - Organizer answers live in [docs/QUESTIONS.md](docs/QUESTIONS.md) (verbatim — docs/ORGANIZERS_RAW.md). They override
   our assumptions. Check that file before any task touching case rules: models, data, hosting, Alfa-Business entry,
   delivery format.
+- Answers arrive one or many at a time; process each. Verbatim text with its real date and source — appended to
+  ORGANIZERS_RAW.md; paraphrase, meaning, date, source and affected requirements or tasks — QUESTIONS.md. Never invent
+  a date, source or wording.
+- A new answer replaces an old row only for the same question and a real contradiction: keep the row, mark it
+  `superseded <date of the new answer>` and name the replacing answer. If only our implementation diverges, that is a
+  task, not a supersede.
+- After new answers: check what changes — requirements, code, docs, priorities, dependencies, acceptance criteria;
+  update the affected rows and stamp docs/TASKS.md "План обновлён <date> <time> МСК по ответам от <date>". That plan
+  is the working priority until the next answers.
 - LLM — **only the six models** from appendix 3, under the exact gateway names above. Allow-list: `ALLOWED_MODELS` in
   `backend/app/llm_client.py`; every model call goes through `llm_client`, a model outside the list is rejected before
   the request.
@@ -146,8 +178,8 @@ edit the register in feature PRs.
 3. **Small logical commits with clear messages.** Before pushing run the tests and the frontend build (see above).
 4. **Push:** `git push -u origin <branch>`.
 5. **A human creates the PR in the GitHub UI.** After pushing give the link
-   `https://github.com/denisfominov/hakaton/pull/new/<branch>` and a ready PR description in Russian: what was done,
-   why, how to check.
+   `https://github.com/denisfominov/hakaton/pull/new/<branch>` and a ready Russian PR title and description: goal,
+   what changed, how it was checked.
 6. **A human merges in the GitHub UI.** Never push to `main`, never merge a PR, `force-push` is forbidden.
 7. **One branch per task, not per prompt.** Follow-up prompts on the same task go to the same branch. A new branch —
    only for a new independent task and only from fresh `main`. If a task depends on an unmerged branch, say so; do not
