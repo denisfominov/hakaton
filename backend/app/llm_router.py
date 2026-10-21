@@ -56,6 +56,21 @@ TASKS = {
     "vision": ("изображения и слайды", [QWEN_VL]),
     "general": ("универсальная задача", [QWEN, KIMI]),
 }
+# Запас на рассуждение сверх запрошенного размера ответа, токены. У шлюза max_tokens включает токены рассуждения:
+# при малом лимите рассуждающая модель отдаёт пустой ответ (finish_reason=length). Замер 2026-10-20 на настоящем
+# запросе агента (scripts/overnight_room.py, docs/GATEWAY_QUESTIONS.md): ответ агента у GLM — 11,2 тыс. токенов
+# (9,1 тыс. рассуждение; при 8 тыс. ответа не было), Qwen3.6 — 6,5 тыс., DeepSeek — 4,3 тыс., Kimi — 2,7 тыс.;
+# Gemma не рассуждает. Kimi непредсказуема: в одном замере не рассуждала, в сравнении моделей (scripts/overnight_compare.py)
+# 7 из 7 ответов агента пустые — 4000 токенов рассуждения не хватило; ~2 ₽ за пустой ответ, для ответа агента не берём.
+# Платим только за фактические токены, запас лишь не даёт оборвать ответ.
+REASONING_ROOM = {GLM: 14000, QWEN: 7000, DEEPSEEK: 4000, KIMI: 10000}
+
+
+def output_tokens(model, answer_tokens):
+    """max_tokens для шлюза: запрошенный размер ответа + запас модели на рассуждение."""
+    return int(answer_tokens) + REASONING_ROOM.get(model, 0)
+
+
 # старые роли клиента -> типы задач
 ROLE_TASK = {"fast": "plan", "reasoning": "analysis", "default": "general", "vision": "vision", "research": "relations",
              "text": "long_text"}
