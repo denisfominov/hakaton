@@ -39,10 +39,9 @@ README), отданы по смыслу: профиль компании и сб
 
 ## Сначала (люди, 5 минут)
 
-1. Слить PR `docs/working-rules` (правила работы в CLAUDE.md) и PR этой ветки `docs/qa-2026-10-20-webinar`.
+Сделано 2026-10-21: `docs/working-rules` и `docs/qa-2026-10-20-webinar` слиты (#30, #31); открытых PR нет.
 
 Исправлено 2026-10-21: `docs/gap-and-split` уже слит (#25); ветки `docs/status-update` на GitHub нет (S10).
-Ветки в работе: `docs/working-rules`, `docs/qa-2026-10-20-webinar`.
 
 ## Сегодня
 
