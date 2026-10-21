@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from . import nlp
 from .matching import direct_mentions
+from .scoring import WEAK_RELEVANCE
 
 HORIZONS = {
     "immediate": "Немедленно (дни)",
@@ -1008,7 +1009,19 @@ def build_insight(ev, profile, m, channels, score, cluster_size=1):
     if ev["nlp"].get("suspicious"):
         gaps.append("В тексте найдены инструкции для автоматических систем — они проигнорированы, источник требует проверки.")
 
-    if not channels:
+    # порог значимости (C2): связь слабая и ни один канал не подтверждён профилем (долг, импорт, экспорт) —
+    # короткий честный вывод, действий не предлагаем
+    weak = score["relevance"] < WEAK_RELEVANCE and not any(c.get("via_profile") for c in channels)
+    if weak:
+        actions = []
+        title = main_channel(channels)["title"] if channels else ""
+        if title[1:2].islower():  # «Снижение …» → «снижение …», аббревиатуры («НДС …») не трогаем
+            title = title[0].lower() + title[1:]
+        why = (f"{title} касается компании косвенно" if channels
+               else "прямой связи с профилем компании нет")
+        summary_line = (f"Влияние на компанию слабое (релевантность {score['relevance']} из 100): {why}. "
+                        "Действий не требуется — достаточно мониторинга.")
+    elif not channels:
         if score["relevance"] >= 30:
             summary_line = "Прямого канала влияния не найдено, но тема связана с профилем — стоит держать в поле зрения."
             actions.append(action("Добавить тему в мониторинг",
@@ -1040,4 +1053,5 @@ def build_insight(ev, profile, m, channels, score, cluster_size=1):
         "assumptions": assumptions,
         "data_gaps": gaps,
         "confidence": score["confidence"],
+        "weak_impact": weak,
     }

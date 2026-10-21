@@ -14,6 +14,9 @@ FORMULA = "0,45 × релевантность + 0,25 × влияние + 0,20 ×
 
 SEVERITY_POINTS = {"high": 25, "medium": 15, "low": 8}
 CHANNEL_POINTS = {"high": 10, "medium": 6, "low": 3}
+# ниже порога связь с компанией слабая: приоритет ограничен; если и профиль канал не подтверждает —
+# разбор и агент дают короткий ответ без действий (C2, analysis.build_insight)
+WEAK_RELEVANCE = 25
 
 
 def clamp(x, lo=0, hi=100):
@@ -218,7 +221,7 @@ def score_event(ev, m, channels, semantic=0.0, cluster_sources=1, now=None, extr
     if confidence < 40:
         priority -= 5
         adjustments.append({"label": "Низкая уверенность", "points": -5})
-    if relevance < 25 and priority > relevance + 10:
+    if relevance < WEAK_RELEVANCE and priority > relevance + 10:
         cut = priority - (relevance + 10)
         priority = relevance + 10
         adjustments.append({"label": "Слабая связь с компанией: приоритет ограничен", "points": -round(cut)})

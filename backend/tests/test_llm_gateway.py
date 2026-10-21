@@ -58,7 +58,8 @@ def test_fallback_model_on_error_and_timeout(client, mock, monkeypatch):
 
 def test_budget_hard_limit_degrades_to_rules(client, mock, monkeypatch):
     monkeypatch.setattr(config, "DAILY_BUDGET_RUB", 0.0001)
-    r = run_agent(client, event="demo-07", question="бюджет")["result"]
+    # значимая новость: для слабой (C2) модель не вызывается вовсе, бюджет не при чём
+    r = run_agent(client, event="demo-05", question="бюджет")["result"]
     assert r["mode"] == "rules"
     assert r["llm"]["degraded"]["reason"] == "budget"
     monkeypatch.setattr(config, "DAILY_BUDGET_RUB", 10_000)
