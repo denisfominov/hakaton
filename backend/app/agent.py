@@ -21,7 +21,7 @@ import logging
 import time
 import uuid
 
-from . import agent_rules, agent_tools, bank_rag, clients, llm_client, ner, pipeline, prompts, roles
+from . import agent_rules, agent_tools, bank_rag, clients, llm_client, ner, pipeline, prompts, roles, scoring
 from .agent_tools import TOOLS, run_tool  # noqa: F401 — реестр инструментов (agent_tools.py)
 from .db import dumps, loads, now_iso
 from .schemas import AgentResultOut
@@ -318,7 +318,7 @@ def compose(ctx, gaps):
         "bank_adjusted": [],
         "horizon": insight.get("horizon_label"),
     }
-    if hits and (r["channels"] or insight["risks"] or insight["opportunities"]):
+    if hits and not insight.get("weak_impact") and (r["channels"] or insight["risks"] or insight["opportunities"]):
         # аналитика банка влияет на вывод: подтверждает его, уточняет или показывает расхождение
         tail = {"agree": "оценка банка совпадает с направлением новости — вывод усиливается",
                 "conflict": "оценка банка расходится с новостью — см. проверку на противоречия, вывод требует сверки",
@@ -504,7 +504,9 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     ctx.role = roles.get(role)
     mode, model = "rules", None
     plan = None
-    if use_llm and llm_client.enabled():
+    weak = bool(r["insight"].get("weak_impact"))
+    use_llm = use_llm and llm_client.enabled() and not weak
+    if use_llm:
         try:
             plan, usage = llm_plan(ctx)
             mode, model = "llm", usage.get("model")
@@ -516,7 +518,11 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     if not plan:
         plan = heuristic_plan(ctx)
         plan_by = "правила"
-        ctx.step("plan", "план по признакам события и компании", plan=[{"tool": t, "why": w} for t, _a, w in plan])
+        title = "план по признакам события и компании"
+        if weak:  # порог значимости (C2): короткий честный ответ по правилам, модель не тратим
+            title += (f"; влияние на компанию слабое (релевантность {r['score']['relevance']} < {scoring.WEAK_RELEVANCE})"
+                      " — модель не вызываем, ответ короткий и без действий")
+        ctx.step("plan", title, plan=[{"tool": t, "why": w} for t, _a, w in plan])
     # обязательный минимум: без факта, профиля и анализа влияния ответ на 6 вопросов не собрать
     names = [t for t, _a, _w in plan]
     for must, why in (("get_event", "обязательно: факты события"), ("get_company_profile", "обязательно: контекст компании"),
@@ -565,7 +571,7 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
     run_id = uuid.uuid4().hex[:12]
     ms = int((time.time() - started) * 1000)
     result.update(mode=mode, model=model, question=ctx.question or None)
-    if use_llm and llm_client.enabled():
+    if use_llm:
         u = ctx.usage
         result["llm"] = {"provider": llm_client.provider(), "mock": llm_client.provider() == "mock",
                          "models": sorted({d["model"] for d in u["details"] if d["model"]}),

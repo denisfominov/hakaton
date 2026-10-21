@@ -185,6 +185,8 @@ def analyze(ev, profile, rules_insight, score, conn=None):
     except ValidationError as e:
         raise LLMError(f"ответ не прошёл проверку схемы: {e.error_count()} ошибок")
     result = verify(out, ev, rules_insight)
+    if rules_insight.get("weak_impact"):  # порог значимости (C2): модель не добавляет натянутых действий
+        result.update(actions=[], summary_line=rules_insight["summary_line"], weak_impact=True)
     result["model"] = usage.get("model")  # модель, которая реально ответила (из списка кейса)
     result["prompt"] = usage.get("prompt_version")
     result["impact_type"] = _impact_type(result["risks"], result["opportunities"])
