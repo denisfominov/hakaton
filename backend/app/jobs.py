@@ -1,18 +1,29 @@
-"""Фоновый пересчёт анализа (один поток): после загрузки ленты, правки профиля, переобучения модели и раз в час.
+"""Фоновый поток: сбор новостей по расписанию и пересчёт анализа (после загрузки ленты, правки профиля,
+переобучения модели и раз в час).
 
 Запросы не ждут пересчёта: читают готовый снимок из базы (store.py). Если снимка ещё нет — считают сами
 (как раньше), если снимок старше часа — отдают его и просят этот поток пересчитать.
 В тестах поток не запускается (ALPHA_BACKGROUND=0): там всё считается синхронно и детерминированно.
 """
 import logging
+import os
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 from . import config
 
 log = logging.getLogger("alpha.jobs")
 
-WAKE_SECONDS = 600  # раз в 10 минут проверяем, не устарели ли снимки
+WAKE_SECONDS = 600  # раз в 10 минут проверяем, не устарели ли снимки и не пора ли собрать ленты
+
+# B2.1 (ответы В36, В37, В60, В80): новостей экспертам не дадут — система сама находит свежие события.
+# Ленты собираем раз в LIVE_REFRESH_MINUTES (0 — только по кнопке «Обновить»).
+LIVE_MINUTES = float(os.getenv("LIVE_REFRESH_MINUTES") or "30")
+# Живые новости храним LIVE_KEEP_DAYS дней. Новости, на которые ссылаются люди (избранное, решения, оценки) и
+# обучающие метки, не удаляем; подборку (source_type = curated) не трогаем.
+KEEP_DAYS = int(os.getenv("LIVE_KEEP_DAYS") or "60")
+KEEP_REFS = ("favorites", "actions", "feedback", "auto_labels")
 
 _state = {"thread": None, "stop": threading.Event(), "wake": threading.Event(), "pending": set(),
           "last_run": None, "last_seconds": None, "runs": 0}
@@ -37,6 +48,49 @@ def status():
         pending = sorted("все" if p is None else p for p in _state["pending"])
     return {"enabled": enabled(), "pending": pending, "last_run": _state["last_run"],
             "last_seconds": _state["last_seconds"], "runs": _state["runs"]}
+
+
+def live_due(conn, now=None):
+    """Пора ли собрать ленты: живой загрузки ещё не было или последняя старше LIVE_MINUTES."""
+    from .db import loads
+
+    if LIVE_MINUTES <= 0:
+        return False
+    row = conn.execute("SELECT value FROM settings WHERE key = 'last_live'").fetchone()
+    ts = (loads(row["value"], {}) or {}).get("ts") if row else None
+    if not ts:
+        return True
+    return (now or datetime.now(timezone.utc)) - datetime.fromisoformat(ts) >= timedelta(minutes=LIVE_MINUTES)
+
+
+def prune_live(conn, now=None):
+    """Удалить живые новости старше KEEP_DAYS, на которые никто не ссылается. Возвращает число удалённых."""
+    cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
+    have = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    keep = " ".join(f"AND id NOT IN (SELECT event_id FROM {t} WHERE event_id IS NOT NULL)" for t in KEEP_REFS if t in have)
+    ids = [r["id"] for r in conn.execute(
+        f"SELECT id FROM events WHERE source_type = 'rss' AND published_at < ? {keep}", (cutoff,))]
+    for i in range(0, len(ids), 500):
+        part = ids[i:i + 500]
+        marks = ",".join("?" * len(part))
+        conn.execute(f"DELETE FROM analyses WHERE event_id IN ({marks})", part)
+        conn.execute(f"DELETE FROM events WHERE id IN ({marks})", part)
+    return len(ids)
+
+
+def _collect_live():
+    """Собрать ленты, если пора; удалить устаревшие живые новости. Ошибка источника не останавливает остальные."""
+    from . import pipeline
+    from .db import get_db
+
+    with get_db() as conn:
+        if not live_due(conn):
+            return
+        removed = prune_live(conn)
+        conn.commit()
+        report = pipeline.ingest_live(conn)  # пишет last_live и сбрасывает отпечаток лент — снимки пересчитаются
+    log.info("live: added %s, sources ok %s, removed old %s", sum(r.get("added", 0) for r in report if r.get("ok")),
+             sum(1 for r in report if r.get("ok")), removed)
 
 
 def _run_once():
@@ -67,6 +121,10 @@ def _run_once():
 
 def _loop():
     while not _state["stop"].is_set():
+        try:
+            _collect_live()
+        except Exception:  # noqa: BLE001 — фоновая ошибка не должна убивать поток
+            log.exception("background live collection failed")
         try:
             _run_once()
         except Exception:  # noqa: BLE001 — фоновая ошибка не должна убивать поток
