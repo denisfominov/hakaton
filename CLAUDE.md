@@ -148,6 +148,11 @@ into `main` through a pull request that a human creates and merges.
    `docker`, `agent-llm`) and tags `v1`, `v2`, `v4`–`v7` are an archive, not a base for new work. For delivery a
    human tags `main` and writes the commit hash into README.
 9. **README describes the current state of `main`.** History — only in CHANGELOG.md: one entry per PR, newest first.
+10. **Feature PRs do not edit CHANGELOG.md.** The CHANGELOG line goes into the PR description; one person collects
+    the lines into CHANGELOG.md in one docs PR.
+11. **At most 2 open PRs for the team.** Merge a PR before starting the next task.
+12. **Own files only** (zones in [docs/TASKS.md](docs/TASKS.md)). Shared files — `config.py`, `schemas/`,
+    `pipeline.py`, `main.py`, `requirements*`, `Dockerfile`, `.env.example` — only by small separate PRs.
 
 ### Do not commit
 
