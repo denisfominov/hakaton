@@ -193,7 +193,7 @@ Details — [docs/COMPLIANCE.md](docs/COMPLIANCE.md), gateway facts — [docs/GA
 ## Where things are
 
 ```
-backend/app/       API (main.py) and logic: news pipeline, rules, scoring, agent, LLM layer, bank RAG
+backend/app/       API (main.py) and logic: services/ (profile, news, matching, interpretation), rules, agent, LLM layer, bank RAG
 backend/scripts/   bank PDF OCR, gateway smoke test, cache warm-up, demo check, paid queue, labeling
 backend/tests/     pytest
 backend/data/      real/ (default), synthetic/ (tests), clients/sample/, bank/, gold/, demo_cache/
