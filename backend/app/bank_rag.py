@@ -315,6 +315,69 @@ def search(query, k=4, folder=None, method=None):
             for i in order]
 
 
+# B1: позиция банка — только по теме самого события. Пороги подобраны по цене ошибок на dev-части пар «новость ↔
+# фрагмент» (data/real/bank_event_pairs.json, docs/b/BANK_FOR_EVENT.md): чужая цитата банка втрое дороже честного
+# «позиции нет».
+EVENT_MIN_E5 = 0.88
+EVENT_MIN_TFIDF = 0.12
+EVENT_SIGNALS = {"rate_up", "rate_down", "rate_hold", "rub_strong", "rub_weak"}  # направление ставки и рубля — уже тема
+
+
+def event_text(event):
+    """Текст события для сравнения с фрагментами: заголовок и краткое содержание (без него — начало текста)."""
+    head = event.get("summary") or (event.get("body") or "")[:400]
+    return f"{event.get('title') or ''}. {head}".strip(" .")[:600]
+
+
+def event_signals(event, text=None):
+    """Направление ставки и рубля в событии: из nlp события, а если его нет — по тексту."""
+    found = (event.get("nlp") or {}).get("signals")
+    if not found:
+        text = text or event_text(event)
+        found = nlp.detect_signals(nlp.tokens(text), text)
+    return set(found) & EVENT_SIGNALS
+
+
+def event_scores(event, folder=None, method=None):
+    """Близость события к каждому фрагменту: (индекс, оценки, способ, сигналы события). e5 при весах, иначе TF-IDF;
+    method=tfidf — TF-IDF и при весах (замер запасного режима)."""
+    idx = _ensure(folder)
+    text = event_text(event)
+    if not idx["chunks"] or not text:
+        return idx, None, None, set()
+    if idx["emb"] is not None and method != "tfidf":
+        scores, method = idx["emb"] @ embeddings.encode([text], "query")[0], "e5"
+    else:
+        words = [w for w in ner.lemmas(text) if w not in nlp.STOPWORDS]  # предлоги — не близость к теме
+        scores, method = cosine_similarity(idx["vec"].transform([" ".join(words)]), idx["matrix"])[0], "tfidf"
+    return idx, scores, method, event_signals(event, text)
+
+
+def search_for_event(event, query="", k=4, folder=None):
+    """Фрагменты аналитики банка по самому событию (контракт BankHit): близкие к событию (не ниже порога) или с общим
+    направлением ставки или рубля при базовой близости. query меняет только порядок: фрагмент, найденный по запросу,
+    но далёкий от события, не возвращается. Пусто — честный исход «по этой теме позиции банка нет»."""
+    idx, scores, method, ev_sig = event_scores(event, folder)
+    if scores is None:
+        return []
+    close, floor = (EVENT_MIN_E5, MIN_SCORE_E5) if method == "e5" else (EVENT_MIN_TFIDF, MIN_SCORE)
+    keep = {}
+    for i, c in enumerate(idx["chunks"]):
+        shared = sorted(ev_sig & set(c["signals"]))
+        if scores[i] >= close:
+            keep[i] = ("close", shared)
+        elif shared and scores[i] >= floor:
+            keep[i] = ("signals", shared)
+    rank = {}  # с запросом — сначала то, что нашлось по нему, затем по близости к событию
+    if keep and query.strip():
+        rank = {h["id"]: pos for pos, h in enumerate(search(query, k=len(idx["chunks"]), folder=folder))}
+    order = sorted(keep, key=lambda i: (rank.get(idx["chunks"][i]["id"], len(rank)), -scores[i]))[:k]
+    hint = f"{event.get('title') or ''} {query}"
+    return [{**idx["chunks"][i], "source": f"bank:{idx['chunks'][i]['id']}", "quote": quote(idx["chunks"][i], hint),
+             "url": link(idx["chunks"][i]), "score": round(float(scores[i]), 3), "method": method,
+             "reason": keep[i][0], "shared_signals": keep[i][1]} for i in order]
+
+
 def status(folder=None):
     idx = _ensure(folder)
     return {"folder": str(folder or config.BANK_DOCS_DIR), "documents": idx["docs"], "chunks": len(idx["chunks"]),

@@ -2,6 +2,7 @@
 
     данные кейса ──► CompanyProfile ─┐
     источники ─────► EventDoc ───────┼─► ранжирование ─► RankedEvent ─► агент ─► InsightResult ─► интерфейс
+    аналитика банка ─► BankHit ──────┼──────────────────► агент («Как это оценивает банк»)
     реестр инструментов агента ──────┴──────────────────► ToolSpec (трассировка, документация)
 
 Правило: поле можно добавить (необязательным) в своём PR; переименовать, удалить или сделать обязательным —
@@ -13,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "1.0"
+CONTRACTS_VERSION = "1.1"  # 1.1: добавлен BankHit (B1)
 
 Level = Literal["low", "medium", "high", "critical"]
 
@@ -122,6 +123,30 @@ def ranked_from_result(profile_id, r):
     ).model_dump()
 
 
+# ---------- BankHit: фрагмент аналитики банка по событию (поток B) ----------
+
+class BankHit(BaseModel):
+    """Фрагмент аналитики банка, связанный с самим событием (`bank_rag.search_for_event`): со ссылкой на страницу.
+    Пустой список — честный исход «по этой теме позиции банка нет»."""
+    model_config = ConfigDict(extra="allow", title="BankHit")
+    id: str = Field(description="<файл без расширения>#<номер фрагмента>")
+    source: str = Field(pattern=r"^bank:", description="id для ссылок в ответе агента: bank:<id>")
+    doc: str = Field(description="файл материала в BANK_DOCS_DIR")
+    title: str
+    page: int = Field(ge=1)
+    date: Optional[str] = Field(None, description="дата или период материала")
+    text: str
+    quote: Optional[str] = Field(None, description="предложения с позицией банка; None — во фрагменте её нет")
+    url: str = Field(description="страница исходного PDF: /api/bank-docs/file/<файл>#page=<стр.>")
+    score: float = Field(description="близость к событию: косинус e5 или TF-IDF (см. method)")
+    method: Literal["e5", "tfidf"]
+    reason: Literal["close", "signals"] = Field(description="close — близко к событию; signals — общее направление "
+                                                            "ставки или рубля при базовой близости")
+    shared_signals: list[str] = Field(default_factory=list, description="общие с событием сигналы: rate_*, rub_*")
+    topics: list[str] = []
+    signals: list[str] = []
+
+
 # ---------- InsightResult: ответ агента на 6 вопросов (поток C) ----------
 
 class InsightResult(AgentResultOut):
@@ -143,4 +168,4 @@ class ToolSpec(BaseModel):
     when: str = ""
 
 
-CONTRACTS = {m.__name__: m for m in (CompanyProfile, EventDoc, RankedEvent, InsightResult, ToolSpec)}
+CONTRACTS = {m.__name__: m for m in (CompanyProfile, EventDoc, RankedEvent, BankHit, InsightResult, ToolSpec)}

@@ -1,0 +1,710 @@
+{
+ "about": "Пары «новость ↔ фрагмент аналитики банка» для порога search_for_event (B1, docs/b/BANK_FOR_EVENT.md). Новости — data/real/news.json, по 3 ближайших фрагмента (e5) на новость. related: 1 — фрагмент по теме самой новости, его уместно показать как позицию банка; 0 — другая тема.",
+ "annotator": "Claude, черновая разметка по тексту фрагмента — проверить человеку",
+ "chunk_ids": "id фрагмента зависит от нарезки страниц; при её изменении сверять по doc и page",
+ "pairs": [
+  {
+   "event": "r01",
+   "group": "r01",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r01",
+   "group": "r01",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r01",
+   "group": "r01",
+   "chunk": "ALFA-macro_stat1H26#12",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r02",
+   "group": "r02",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r02",
+   "group": "r02",
+   "chunk": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021#0",
+   "doc": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf",
+   "page": 1,
+   "related": 1,
+   "note": "та же тема (российская сталь), но обзор 2021 года"
+  },
+  {
+   "event": "r02",
+   "group": "r02",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r03",
+   "group": "r03",
+   "chunk": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021#7",
+   "doc": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "r03",
+   "group": "r03",
+   "chunk": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021#9",
+   "doc": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r03",
+   "group": "r03",
+   "chunk": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021#2",
+   "doc": "ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r04",
+   "group": "x5",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "r04",
+   "group": "x5",
+   "chunk": "FI_Strategy_3Q26_22072026#22",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 10,
+   "related": 0
+  },
+  {
+   "event": "r04",
+   "group": "x5",
+   "chunk": "FI_Strategy_3Q26_22072026#24",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 10,
+   "related": 0
+  },
+  {
+   "event": "r05",
+   "group": "x5",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "r05",
+   "group": "x5",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 1,
+   "note": "оборот продуктовой розницы — фон для выручки ритейлера"
+  },
+  {
+   "event": "r05",
+   "group": "x5",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r06",
+   "group": "r06",
+   "chunk": "ALFA-7M26#9",
+   "doc": "ALFA-7M26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r06",
+   "group": "r06",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r06",
+   "group": "r06",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#2",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r07",
+   "group": "r07",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r07",
+   "group": "r07",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "r07",
+   "group": "r07",
+   "chunk": "ALFA-7M26#9",
+   "doc": "ALFA-7M26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r08",
+   "group": "r08",
+   "chunk": "Бонд_Бриф_14092026#10",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r08",
+   "group": "r08",
+   "chunk": "FI_Strategy_3Q26_22072026#26",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 10,
+   "related": 0
+  },
+  {
+   "event": "r08",
+   "group": "r08",
+   "chunk": "FI_Strategy_3Q26_22072026#46",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 19,
+   "related": 0
+  },
+  {
+   "event": "r09",
+   "group": "r09",
+   "chunk": "FI_Strategy_3Q26_22072026#22",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 10,
+   "related": 0
+  },
+  {
+   "event": "r09",
+   "group": "r09",
+   "chunk": "FI_Strategy_3Q26_22072026#4",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r09",
+   "group": "r09",
+   "chunk": "FI_Strategy_3Q26_22072026#55",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 22,
+   "related": 0
+  },
+  {
+   "event": "r10",
+   "group": "r10",
+   "chunk": "FI_Strategy_3Q26_22072026#57",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 23,
+   "related": 0
+  },
+  {
+   "event": "r10",
+   "group": "r10",
+   "chunk": "FI_Strategy_3Q26_22072026#53",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 21,
+   "related": 0
+  },
+  {
+   "event": "r10",
+   "group": "r10",
+   "chunk": "FI_Strategy_3Q26_22072026#24",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 10,
+   "related": 0
+  },
+  {
+   "event": "r11",
+   "group": "pik",
+   "chunk": "FI_Strategy_3Q26_22072026#10",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 5,
+   "related": 0
+  },
+  {
+   "event": "r11",
+   "group": "pik",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r11",
+   "group": "pik",
+   "chunk": "FI_Strategy_3Q26_22072026#16",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "r12",
+   "group": "pik",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r12",
+   "group": "pik",
+   "chunk": "FI_Strategy_3Q26_22072026#10",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 5,
+   "related": 0
+  },
+  {
+   "event": "r12",
+   "group": "pik",
+   "chunk": "Бонд_Бриф_14092026#3",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r13",
+   "group": "r13",
+   "chunk": "Бонд_Бриф_14092026#3",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r13",
+   "group": "r13",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#6",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "r13",
+   "group": "r13",
+   "chunk": "ALFA-consumption#8",
+   "doc": "ALFA-consumption.pdf",
+   "page": 3,
+   "related": 0,
+   "note": "розничные кредиты перед ужесточением условий — другой продукт, не ипотека"
+  },
+  {
+   "event": "r14",
+   "group": "r14",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r14",
+   "group": "r14",
+   "chunk": "ALFA-macro_stat1H26#6",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 1,
+   "note": "спад в строительстве за 1П26"
+  },
+  {
+   "event": "r14",
+   "group": "r14",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r15",
+   "group": "r15",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r15",
+   "group": "r15",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#3",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r15",
+   "group": "r15",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r16",
+   "group": "r16",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r16",
+   "group": "r16",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r16",
+   "group": "r16",
+   "chunk": "ALFA-macro_stat1H26#9",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "r17",
+   "group": "r17",
+   "chunk": "Бонд_Бриф_14092026#4",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r17",
+   "group": "r17",
+   "chunk": "Бонд_Бриф_14092026#3",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r17",
+   "group": "r17",
+   "chunk": "FI_Strategy_3Q26_22072026#49",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 19,
+   "related": 0
+  },
+  {
+   "event": "r18",
+   "group": "r18",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "r18",
+   "group": "r18",
+   "chunk": "ALFA-consumption#6",
+   "doc": "ALFA-consumption.pdf",
+   "page": 2,
+   "related": 0,
+   "note": "рост цен на бензин в инфляции — косвенно, не про авиакеросин"
+  },
+  {
+   "event": "r18",
+   "group": "r18",
+   "chunk": "ALFA-macro_stat1H26#12",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "r19",
+   "group": "r19",
+   "chunk": "Inflation_tracker_02#0",
+   "doc": "Inflation_tracker_02.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r19",
+   "group": "r19",
+   "chunk": "Бонд_Бриф_14092026#4",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r19",
+   "group": "r19",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#3",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r20",
+   "group": "r20",
+   "chunk": "ALFA-consumption#1",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r20",
+   "group": "r20",
+   "chunk": "Бонд_Бриф_14092026#3",
+   "doc": "Бонд_Бриф_14092026.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "r20",
+   "group": "r20",
+   "chunk": "FI_Strategy_3Q26_22072026#34",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 13,
+   "related": 0
+  },
+  {
+   "event": "r21",
+   "group": "r21",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#2",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 1
+  },
+  {
+   "event": "r21",
+   "group": "r21",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#0",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 1
+  },
+  {
+   "event": "r21",
+   "group": "r21",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#4",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 1
+  },
+  {
+   "event": "r22",
+   "group": "r22",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#3",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 1,
+   "related": 1
+  },
+  {
+   "event": "r22",
+   "group": "r22",
+   "chunk": "ALFA-Macro_Insights-Policy_Rate_11Sep#6",
+   "doc": "ALFA-Macro_Insights-Policy_Rate_11Sep.pdf",
+   "page": 2,
+   "related": 1,
+   "note": "тема та же, но на странице в основном таблица"
+  },
+  {
+   "event": "r22",
+   "group": "r22",
+   "chunk": "FI_Strategy_3Q26_22072026#20",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 1
+  },
+  {
+   "event": "k01",
+   "group": "k01",
+   "chunk": "ALFA-macro_stat1H26#2",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 1,
+   "related": 1
+  },
+  {
+   "event": "k01",
+   "group": "k01",
+   "chunk": "ALFA-consumption#6",
+   "doc": "ALFA-consumption.pdf",
+   "page": 2,
+   "related": 1,
+   "note": "ускорение инфляции — причина осторожности ЦБ"
+  },
+  {
+   "event": "k01",
+   "group": "k01",
+   "chunk": "ALFA-macro_stat1H26#9",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 1
+  },
+  {
+   "event": "k02",
+   "group": "k02",
+   "chunk": "ALFA-macro_stat1H26#9",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "k02",
+   "group": "k02",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "k02",
+   "group": "k02",
+   "chunk": "ALFA-7M26#4",
+   "doc": "ALFA-7M26.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "k03",
+   "group": "k03",
+   "chunk": "ALFA-macro_stat1H26#6",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 1
+  },
+  {
+   "event": "k03",
+   "group": "k03",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "k03",
+   "group": "k03",
+   "chunk": "ALFA-7M26#2",
+   "doc": "ALFA-7M26.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "k04",
+   "group": "k04",
+   "chunk": "ALFA-macro_stat1H26#12",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "k04",
+   "group": "k04",
+   "chunk": "ALFA-macro_stat1H26#6",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "k04",
+   "group": "k04",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "k05",
+   "group": "k05",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "k05",
+   "group": "k05",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "k05",
+   "group": "k05",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "k06",
+   "group": "k06",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "k06",
+   "group": "k06",
+   "chunk": "ALFA-macro_stat1H26#6",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 2,
+   "related": 0
+  },
+  {
+   "event": "k06",
+   "group": "k06",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  },
+  {
+   "event": "k07",
+   "group": "k07",
+   "chunk": "FI_Strategy_3Q26_22072026#17",
+   "doc": "FI_Strategy_3Q26_22072026.pdf",
+   "page": 9,
+   "related": 0
+  },
+  {
+   "event": "k07",
+   "group": "k07",
+   "chunk": "ALFA-consumption#3",
+   "doc": "ALFA-consumption.pdf",
+   "page": 1,
+   "related": 0
+  },
+  {
+   "event": "k07",
+   "group": "k07",
+   "chunk": "ALFA-macro_stat1H26#11",
+   "doc": "ALFA-macro_stat1H26.pdf",
+   "page": 3,
+   "related": 0
+  }
+ ]
+}
