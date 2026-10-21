@@ -11,9 +11,26 @@ The user is not a programmer and reads Russian. Prompts may be in English to sav
 PR title and description and user-facing doc: Russian, plain words, short; explain any technical term in one phrase.
 Code, identifiers and commit messages may be English. Existing Russian docs stay Russian.
 
+## Work logic: single source and versions
+
+- This file is the single source of truth for the work logic rules (how the project work is organised). No other
+  copies: other docs and memory notes only link here. At session start read the latest approved version.
+- Organizer answers ([docs/QUESTIONS.md](docs/QUESTIONS.md)) define the case requirements; these rules define how the
+  work is organised. If editions conflict, the latest approved version wins.
+- A version is effective once the user approved it and it is merged into `main`. A change that exists only in a
+  working branch or awaits approval is a proposal: its row says "proposed", never "effective".
+- Every change to the rules: a new row below — number, date, short list of changes; the previous version is marked
+  "superseded by vN". After approval check whether it changes current tasks, their priorities or the order of work;
+  update only those entries and keep their history.
+
+| Version | Date | Status | Changes |
+|---|---|---|---|
+| v2 | 2026-10-21 | proposed in branch `docs/work-logic-v2`; effective from its merge into `main` | this versioning; README for a new participant (update every 7 merged PRs); work while waiting for a background result |
+| v1 | 2026-10-21 | superseded by v2 (once v2 is merged) | iteration mode, task fields and 8 statuses, organizer-answer intake, report format, workflow |
+
 ## Session start
 
-1. Read this file. Of docs/TASK_REGISTER.md, docs/TASKS.md, docs/GAP_ANALYSIS.md and docs/QUESTIONS.md read only
+1. Read this file (effective version — the table above). Of docs/TASK_REGISTER.md, docs/TASKS.md, docs/GAP_ANALYSIS.md and docs/QUESTIONS.md read only
    the parts the step needs — always the organizer answers on its topic.
 2. `git checkout main && git pull`.
 3. Propose a plan of the next 5 steps (see "Iteration mode"), then wait.
@@ -39,10 +56,20 @@ Code, identifiers and commit messages may be English. Existing Russian docs stay
   `LLM_PROVIDER=off` or `mock` as an environment override; do not edit the user's `.env`.
 - One step = one branch = one PR.
 
+## Waiting for a background result
+
+- When a step must wait for a background operation, take from [docs/TASK_REGISTER.md](docs/TASK_REGISTER.md) the
+  highest-priority task that: serves the project's current goals; does not depend on the pending result and does not
+  guess it; touches none of the same files or decisions; is already in the approved scope and needs no separate
+  approval. No random or low-priority filler; never bypass waiting for consent or a required permission.
+- No such task — prepare the next step or review related docs, without changing unrelated parts of the project.
+- When the result arrives: take it into account, check overlaps with the work done meanwhile, then continue.
+
 ## Tasks and statuses
 
 - One ordered task list — [docs/TASK_REGISTER.md](docs/TASK_REGISTER.md). Separate files: TASKS.md — zones, rules,
-  freeze; GAP_ANALYSIS.md — brief compliance; QUESTIONS.md — organizer answers. This file holds rules, not history.
+  freeze; GAP_ANALYSIS.md — brief compliance; QUESTIONS.md — organizer answers. This file holds rules and their
+  versions, not task history.
 - Every task and subtask: what to do and the expected result; how it moves us to the brief or criteria; priority and
   why; status, dependencies, owner; acceptance criterion and evidence; basis — brief item or organizer answer (`В15`).
 - Priority weighs brief requirements, deadlines, blockers, demo benefit, progress and size. Explain every priority
@@ -53,6 +80,17 @@ Code, identifiers and commit messages may be English. Existing Russian docs stay
   временно отложена (условие возобновления) · отброшена (причина). Status comes from facts (code, tests,
   measurements, PRs, `main`), not from document text. The register moves to these at its next update.
 - Update only the affected rows; never regenerate a whole list or register; keep the team's manual edits.
+
+## README for a new participant
+
+- `README.md` lets a person who has just opened the repo understand: what the project does and its state; how the
+  main parts are built and connected; how to run, check it and prepare a demo; which docs and folders hold what;
+  which tasks matter most now and what blocks progress.
+- Only verified facts (files, the running project, the current task register); assumptions marked as such. Short
+  explanations and links, no copies of detailed docs. Name the date or `main` commit the status refers to.
+- Update it in the PR that makes seven PRs merged into `main` since the previous README update (count only merged
+  PRs). Earlier if the launch, main features, structure or priorities it describes change. Check its next steps
+  against the task register.
 
 ## Token economy
 
@@ -188,7 +226,8 @@ edit the register in feature PRs.
    `второй-промпт`, `третий-промпт-(пока-мертв)`, `prompt-4-(почка-от-prompt-2)`, `prompt-5`, `prompt-6`, `prompt-7`,
    `docker`, `agent-llm`) and tags `v1`, `v2`, `v4`–`v7` are an archive, not a base for new work. For delivery a
    human tags `main` and writes the commit hash into README.
-9. **README describes the current state of `main`.** History — only in CHANGELOG.md: one entry per PR, newest first.
+9. **README describes the current state of `main`** (see "README for a new participant"). History — only in
+   CHANGELOG.md: one entry per PR, newest first.
 10. **Feature PRs do not edit CHANGELOG.md.** The CHANGELOG line goes into the PR description; one person collects
     the lines into CHANGELOG.md in one docs PR.
 11. **At most 2 open PRs for the team.** Merge a PR before starting the next task.
