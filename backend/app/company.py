@@ -49,7 +49,10 @@ def _vote_industry(main_okved, reg, wiki, site):
             votes[label] = votes.get(label, 0) + weight
 
     code = (main_okved or {}).get("code") or (reg or {}).get("okved") or ""
-    vote(lookup.template_by_okved(code), 0.5 if code.startswith(HOLDING_OKVED) else 2.0)
+    by_okved = lookup.template_by_okved(code)
+    # общий опт (46.90 и т. п.), как и холдинг, не говорит о товаре: решают Википедия и сайт
+    weak = code.startswith(HOLDING_OKVED) or by_okved == lookup.GENERIC_WHOLESALE
+    vote(by_okved, 0.5 if weak else 2.0)
     if wiki:
         t = catalog.template_for("", wiki.get("extract", "")[:1500])
         vote(t and t["label"], 2.0)
