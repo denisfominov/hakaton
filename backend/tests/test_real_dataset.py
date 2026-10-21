@@ -187,3 +187,26 @@ def test_every_action_explains_why_and_consequences(res):
                 seen += 1
                 assert a["why"] and a["if_done"] and a["if_ignored"], a["title"]
     assert seen > 50
+
+
+# --- C12: канал курса — только когда курс и есть тема новости ---
+
+def test_damper_news_gives_no_fx_channel(res):
+    # формула керосинового демпфера: «…из-за роста котировок и ослабления рубля на 2,3%» — рубль лишь причина
+    for pid in res:
+        assert not keys(res[pid]["r19"]) & {"fx_import", "fx_export"}, pid
+    assert "input_cost_up" in keys(res["aeroflot"]["r19"])  # настоящий канал новости остаётся
+
+
+def test_fx_channel_kept_when_rouble_is_the_topic(raw_news, real_profiles):
+    from app import nlp
+
+    base = {k: v for k, v in raw_news[0].items() if k not in ("id", "title", "summary", "body", "title_original")}
+    fx = {**base, "id": "c12-fx", "title": "Рубль за неделю укрепился до максимума с весны",
+          "summary": "Укрепление рубля снижает рублёвую выручку экспортёров.", "body": "Рубль укрепился на 4%."}
+    ev = sources._curated([fx])
+    r = pipeline.analyze_events(pipeline.prepare_events(ev), real_profiles["severstal"])[0]
+    assert "fx_export" in keys(r)
+    # «укрепил» без рубля, валюты и курса — не сигнал курса
+    toks = nlp.tokens("Сборная укрепила позиции в медальном зачёте")
+    assert not {"rub_strong", "rub_weak"} & set(nlp.detect_signals(toks))

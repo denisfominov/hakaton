@@ -361,6 +361,11 @@ def compose(ctx, gaps):
                 "if_ignored": a.get("if_ignored"), "owner": a.get("owner"), "due_days": a.get("due_days"), "kind": "ai",
                 "sources": ["rules:analysis"], "for_role": bool(role) and roles.owner_matches(role, a.get("owner"))}
                for a in insight["actions"]]
+    if role and actions:  # C3: свои действия роли по каналам события — первыми; без действий — без них
+        mine = [{**a, "kind": "ai", "sources": ["rules:analysis"], "for_role": True}
+                for a in roles.actions_for(role, r["channels"])]
+        titles = {a["title"].lower() for a in mine}
+        actions = mine + [a for a in actions if a["title"].lower() not in titles]
     if role:  # действия этой роли — первыми; остальные остаются (их делают коллеги)
         actions.sort(key=lambda a: not a["for_role"])
     actions = actions[:4]

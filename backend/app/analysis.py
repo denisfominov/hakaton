@@ -590,8 +590,11 @@ def detect_channels(ev, profile, pidx, m):
                            "Просрочка по портфелю застройщиков"],
         })
 
-    # 9. курс рубля
-    if "rub_strong" in sig or "rub_weak" in sig:
+    # 9. курс рубля — только если курс и есть тема новости: рубль, валюта или курс в заголовке или вводке (C12).
+    # Упоминание в тексте как одной из причин (формула топливного демпфера: «…и ослабления рубля на 2,3%») — не канал
+    fx_topic = any(nlp.has_root(nlp.tokens(" ".join([ev.get("title") or "", ev.get("summary") or ""])), r)
+                   for r in nlp.FX_WORDS)
+    if ("rub_strong" in sig or "rub_weak" in sig) and fx_topic:
         strong = "rub_strong" in sig
         if pidx["is_exporter"]:
             channels.append({
