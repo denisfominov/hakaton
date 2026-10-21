@@ -192,15 +192,9 @@ def plan_json(ctx, plan, by):
 
 def untrusted(tag, text):
     """Недоверенный текст (новость, документ) для модели: в теге, без угловых скобок, без строк-инструкций."""
-    lines = [ln for ln in str(text).splitlines() if not nlp_injection(ln)]
-    body = "\n".join(lines).replace("<", "‹").replace(">", "›")
-    return f"<{tag}>\n{body}\n</{tag}>"
+    from .untrusted import wrap
 
-
-def nlp_injection(line):
-    from . import nlp
-
-    return nlp.looks_like_injection(line)
+    return wrap(tag, text)
 
 
 def llm_plan(ctx):
@@ -458,7 +452,7 @@ def bank_ref(raw, bank):
 
 
 def llm_payload(ctx, draft):
-    """Вход модели: только собранный агентом контекст. Он же — вход примера для дообучения своей LLM."""
+    """Вход модели: только собранный агентом контекст."""
     a = draft["answers"]
     bank = bank_texts(ctx)
     # тексты новости и документов банка — недоверенные данные: в тегах, без угловых скобок и строк-инструкций

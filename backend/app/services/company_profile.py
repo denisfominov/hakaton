@@ -92,9 +92,9 @@ def _sector_shares(rows, other, companies):
             continue
         known += float(amt)
         key = industry_of(case_data._str(companies.at[cid, "MAINOKVED_CODE"]))
-        label = SECTOR_LABELS.get(key, "другие отрасли")
-        by_sector[label] = by_sector.get(label, 0.0) + float(amt)
-    shares = {k: round(v / known, 3) for k, v in sorted(by_sector.items(), key=lambda x: -x[1])} if known else {}
+        by_sector[key] = by_sector.get(key, 0.0) + float(amt)
+    shares = [{"key": k, "label": SECTOR_LABELS.get(k, "другие отрасли"), "share": round(v / known, 3)}
+              for k, v in sorted(by_sector.items(), key=lambda x: -x[1])] if known else []
     return shares, (round(1 - known / total, 3) if total else None)
 
 

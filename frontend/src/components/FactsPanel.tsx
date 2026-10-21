@@ -29,7 +29,7 @@ function show(f: ProfileFact): string {
   if (typeof v === "string") return v;
   if (Array.isArray(v)) {
     if (!v.length) return "нет";
-    return v.map((x) => (typeof x === "string" ? x : `${x.id}${x.okved_name ? ` (${x.okved_name.slice(0, 50)})` : ""}${
+    return v.map((x) => (typeof x === "string" ? x : `${x.label ?? x.id}${x.okved_name ? ` (${x.okved_name.slice(0, 50)})` : ""}${
       x.share !== undefined ? ` — ${pct(x.share)}` : ""}`)).join("; ");
   }
   if (v.label) return v.label;
