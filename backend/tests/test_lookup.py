@@ -28,6 +28,30 @@ def test_okved_maps_to_template():
     assert lookup.template_by_okved("99.99") is None
 
 
+def test_wholesale_okved_maps_by_goods():
+    # A8: коды пяти демо-клиентов кейса; опт — по товару, а не «Металлургия» или «Розничная торговля» на весь класс
+    assert lookup.template_by_okved("46.71") == "Нефть, газ и энергетика"            # топливо (U_57706)
+    assert lookup.template_by_okved("42.99") == "Строительство и девелопмент"         # U_9250
+    assert lookup.template_by_okved("46.72") == "Металлургия"                         # металлы и руды (U_200890)
+    assert lookup.template_by_okved("46.90") == lookup.GENERIC_WHOLESALE              # неспециализированный (U_234228)
+    assert lookup.template_by_okved("46.38") == "Оптовая торговля продуктами питания"  # U_102920
+    assert lookup.template_by_okved("46.75.1") == lookup.GENERIC_WHOLESALE            # удобрения — своего шаблона нет
+    assert lookup.template_by_okved("46.46") == "Фармацевтика"
+    assert lookup.template_by_okved("47.11") == "Розничная торговля"
+
+
+def test_every_okved_template_exists_in_catalog():
+    from app import catalog
+    labels = {t["label"] for t in catalog.TEMPLATES}
+    assert {label for _, label in lookup.OKVED_TEMPLATES} <= labels
+
+
+def test_wholesale_templates_not_picked_by_words():
+    # оптовые шаблоны — только по ОКВЭД; подбор по словам по-прежнему даёт розницу
+    from app import catalog
+    assert catalog.template_for("", "Сеть магазинов у дома, торговля продуктами")["label"] == "Розничная торговля"
+
+
 def test_internal_addresses_are_blocked():
     for host in ("localhost", "127.0.0.1", "10.0.0.5", "192.168.1.1"):
         with pytest.raises(lookup.LookupError_):
@@ -158,6 +182,15 @@ def test_holding_okved_does_not_decide_industry():
         {"title": "Магнит — сеть магазинов", "description": "Продукты питания в магазинах у дома", "headings": []})
     assert label == "Розничная торговля"
     assert company._vote_industry({"code": "24.10.3", "name": ""}, None, None, None) == "Металлургия"
+
+
+def test_generic_wholesale_okved_does_not_decide_industry():
+    from app import company
+    # общий опт не говорит о товаре: сайт сильнее; без других источников — общий опт
+    label = company._vote_industry({"code": "46.90", "name": "Торговля оптовая неспециализированная"}, None, None,
+                                   {"title": "Сеть магазинов у дома", "description": "Продукты питания", "headings": []})
+    assert label == "Розничная торговля"
+    assert company._vote_industry({"code": "46.90", "name": ""}, None, None, None) == lookup.GENERIC_WHOLESALE
 
 
 def test_registry_caps_name_takes_spelling_from_wikipedia(client, monkeypatch):
