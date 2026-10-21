@@ -136,6 +136,10 @@ docs/              ARCHITECTURE, CONTRACTS, COMPLIANCE, GATEWAY_QUESTIONS, DATA,
 The team works through `main`: the current version is always in `main`, every task lives in its own branch and gets
 into `main` through a pull request that a human creates and merges.
 
+Every task has an ID in docs/TASK_REGISTER.md; do not start work on a task without a row (add it via Intake: say
+"add task ..." or append to docs/TASK_INBOX.md); name the ID at the start of a step and in the PR description; do not
+edit the register in feature PRs.
+
 1. **Start from a fresh `main`:** `git checkout main && git pull`.
 2. **New task — new branch from fresh `main`:** `git checkout -b <type>/<short-latin-name>`. Types: `feature`, `fix`,
    `docs`. Examples: `feature/bank-rag-e5`, `fix/feed-paging`, `docs/workflow`.
