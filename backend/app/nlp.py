@@ -280,6 +280,9 @@ INVEST_UP = ["вырос", "увелич", "рост"]
 MONTHS = r"(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)"
 
 
+FX_WORDS = ("рубл", "валют", "курс")
+
+
 def detect_signals(toks, raw_text=""):
     found = {}
     for name, roots in SIGNALS.items():
@@ -292,6 +295,10 @@ def detect_signals(toks, raw_text=""):
             found["invest_down"] = ["инвестиции снижаются"]
         elif any(has_root(toks, r) for r in INVEST_UP):
             found["invest_up"] = ["инвестиции растут"]
+    # «укрепил» без рубля, валюты и курса — не курс («сборная укрепила позиции»; C12)
+    if not any(has_root(toks, r) for r in FX_WORDS):
+        found.pop("rub_strong", None)
+        found.pop("rub_weak", None)
     t = normalize_text(raw_text)
     if re.search(r"\b(с|до) \d{1,2} " + MONTHS, t) or re.search(r"до конца (месяца|года|недели|" + MONTHS + ")", t):
         found.setdefault("deadline", []).append("дата в тексте")
