@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разметка новостей</title>
+<style>
+  :root { --ink: #1c1c1e; --muted: #6b6b70; --line: #e4e4e7; --bg: #fafafa; --card: #fff; --accent: #ef3124;
+          --ok: #157f3b; --warn: #a15c00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+  h1 { font-size: 18px; margin: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 10px 0 16px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+  .company { font-size: 13px; color: var(--muted); }
+  .company b { color: var(--ink); }
+  .title { font-size: 19px; font-weight: 600; margin: 4px 0 6px; }
+  .title a { color: inherit; }
+  .news { white-space: pre-wrap; max-height: 260px; overflow: auto; }
+  .draft { border-left: 3px solid var(--warn); padding: 6px 10px; background: #fff8ec; font-size: 14px; margin-top: 10px; }
+  .blind { border-left: 3px solid var(--muted); padding: 6px 10px; background: #f3f3f5; font-size: 14px; margin-top: 10px; }
+  .answer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .answer button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  .answer button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .keys { font-size: 13px; color: var(--muted); }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font: 12px monospace; background: #fff; }
+  .saved { color: var(--ok); }
+  .error { color: var(--accent); }
+  .nav { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  @media (max-width: 520px) { .title { font-size: 17px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Разметка: важна ли новость для компании</h1>
+    <span class="muted" id="who"></span>
+  </header>
+  <div class="bar"><div id="progress"></div></div>
+  <div id="pair"></div>
+  <div class="card keys">
+    <kbd>1</kbd> не важно &nbsp; <kbd>2</kbd> важно &nbsp; <kbd>3</kbd> критично &nbsp; <kbd>Space</kbd> согласен с черновиком
+    &nbsp;·&nbsp; <kbd>R</kbd> риск <kbd>O</kbd> возможность <kbd>N</kbd> нейтрально
+    &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> листать &nbsp; <kbd>Backspace</kbd> снять оценку &nbsp; <kbd>C</kbd> комментарий
+    <div style="margin-top:6px">Вопрос: <b>стоит ли показать эту новость руководителю этой компании?</b>
+      «Важно» — новость заметно влияет на деньги, сроки или риски компании; «критично» — реагировать в ближайшие дни.</div>
+  </div>
+</main>
+<script>
+const LABEL = { "1": "не важно", "2": "важно", "3": "критично" };
+const DRAFT_R = { "0": "не касается (0)", "1": "косвенно (1)", "2": "важно (2)", "3": "критично (3)" };
+const IMPACT = { risk: "риск", opportunity: "возможность", neutral: "нейтрально" };
+const URGENCY = { high: "высокая", medium: "средняя", low: "низкая" };
+let rows = [], i = 0, status = "";
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function render() {
+  const done = rows.filter((r) => r.label).length;
+  document.getElementById("progress").style.width = rows.length ? (100 * done / rows.length) + "%" : "0";
+  const r = rows[i];
+  if (!r) { document.getElementById("pair").innerHTML = '<div class="card">Пар нет.</div>'; return; }
+  const shared = r.shared === "1";
+  const draft = shared
+    ? '<div class="blind">Общая пара: её размечают все четверо, черновик скрыт. Поставьте свою оценку 1, 2 или 3.</div>'
+    : `<div class="draft">Черновик моделей (не эталон): <b>${esc(DRAFT_R[r.draft_r] || r.draft_r)}</b>,
+       ${esc(IMPACT[r.draft_i] || r.draft_i)}, срочность ${esc(URGENCY[r.draft_u] || r.draft_u)}. Согласны — <kbd>Space</kbd>.</div>`;
+  const btn = (k) => `<button data-k="${k}" class="${r.label === k ? "on" : ""}">${k} · ${LABEL[k]}</button>`;
+  const ibtn = (k) => `<button data-i="${k}" class="${r.impact === k ? "on" : ""}">${IMPACT[k]}</button>`;
+  document.getElementById("pair").innerHTML = `
+    <div class="card">
+      <div class="nav"><span class="muted">Пара ${i + 1} из ${rows.length} · размечено ${done}</span>
+        <span class="muted ${status.startsWith("ошибка") ? "error" : "saved"}">${esc(status)}</span></div>
+      <div class="company" style="margin-top:8px"><b>Компания ${esc(r.company)}</b> — ${esc(r.company_info)}</div>
+    </div>
+    <div class="card">
+      <div class="muted">${esc(r.date)} · ${r.source_type === "rss" ? "живая новость (RSS)" : "проверенная подборка"}</div>
+      <div class="title"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a></div>
+      <div class="news">${esc(r.news)}</div>
+      ${draft}
+      <div class="answer">${btn("1")}${btn("2")}${btn("3")}<span style="width:12px"></span>${ibtn("risk")}${ibtn("opportunity")}${ibtn("neutral")}</div>
+      ${r.agreed_draft === "1" ? '<div class="muted" style="margin-top:6px">Согласны с черновиком</div>' : ""}
+      ${r.comment ? `<div class="muted" style="margin-top:6px">Комментарий: ${esc(r.comment)}</div>` : ""}
+    </div>`;
+  document.querySelectorAll("[data-k]").forEach((b) => b.onclick = () => save({ label: b.dataset.k }, true));
+  document.querySelectorAll("[data-i]").forEach((b) => b.onclick = () => save({ impact: b.dataset.i }, false));
+}
+
+async function save(change, advance) {
+  const r = rows[i];
+  const body = { pair_id: r.pair_id, label: r.label, impact: r.impact, comment: r.comment, agreed_draft: false, ...change };
+  if (change.label !== undefined || change.agreed_draft) body.agreed_draft = !!change.agreed_draft;
+  else body.agreed_draft = r.agreed_draft === "1";
+  try {
+    const res = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || res.status);
+    rows[i] = out.row;
+    status = "сохранено " + new Date().toLocaleTimeString("ru-RU");
+    if (advance && rows[i].label) {
+      const next = rows.findIndex((x, j) => j > i && !x.label);
+      if (next >= 0) i = next; else if (i < rows.length - 1) i++;
+    }
+  } catch (e) { status = "ошибка: " + e.message; }
+  render();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || !rows.length) return;
+  const r = rows[i];
+  const code = e.code;
+  if (["Digit1", "Digit2", "Digit3", "Numpad1", "Numpad2", "Numpad3"].includes(code)) save({ label: code.slice(-1) }, true);
+  else if (code === "Space") { e.preventDefault(); if (r.shared !== "1") save({ agreed_draft: true, label: "" }, true); else { status = "ошибка: на общей паре черновик скрыт — нажмите 1, 2 или 3"; render(); } }
+  else if (code === "KeyR") save({ impact: "risk" }, false);
+  else if (code === "KeyO") save({ impact: "opportunity" }, false);
+  else if (code === "KeyN") save({ impact: "neutral" }, false);
+  else if (code === "ArrowRight") { i = Math.min(rows.length - 1, i + 1); status = ""; render(); }
+  else if (code === "ArrowLeft") { i = Math.max(0, i - 1); status = ""; render(); }
+  else if (code === "Backspace") { e.preventDefault(); save({ label: "", impact: "" }, false); }
+  else if (code === "KeyC") { const c = prompt("Комментарий к паре (почему так):", r.comment || ""); if (c !== null) save({ comment: c.slice(0, 500) }, false); }
+});
+
+fetch("/api/rows").then((r) => r.json()).then((d) => {
+  rows = d.rows;
+  document.getElementById("who").textContent = `${d.annotator} · файл ${d.file}`;
+  const first = rows.findIndex((x) => !x.label);
+  i = first >= 0 ? first : 0;
+  render();
+});
+</script>
+</body>
+</html>
