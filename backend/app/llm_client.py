@@ -227,6 +227,14 @@ def _log_call(conn, model, purpose, usage, ms, ok, error, run_id, **extra):
                   json.dumps(extra["gateway"], ensure_ascii=False) if extra.get("gateway") else None))
 
 
+def _release(conn):
+    """Сохранить записанное до ожидания модели и сразу после вызова. Иначе запрос держит запись в базу все
+    60–80 с ответа модели, и параллельные запросы падают с «database is locked»; заодно трата вызова сразу видна
+    счётчику бюджета в других запросах и не теряется, если запрос потом упадёт."""
+    if conn is not None and conn.in_transaction:
+        conn.commit()
+
+
 def _cache_key(cache, model, messages):
     body = json.dumps(messages, ensure_ascii=False, sort_keys=True)
     raw = "|".join([str(cache.get("event_id")), str(cache.get("profile_id")), str(cache.get("prompt_version")), model,
@@ -271,7 +279,7 @@ def _transport(model, messages, purpose, json_mode, max_tokens, temperature):
         headers[config.LLM_AUTH_HEADER] = (f"{config.LLM_AUTH_SCHEME} " if config.LLM_AUTH_SCHEME else "") + config.LLM_API_KEY
     url = config.LLM_BASE_URL.rstrip("/") + "/chat/completions"
     try:
-        r = httpx.post(url, json=body, headers=headers, timeout=config.LLM_TIMEOUT)
+        r = httpx.post(url, json=body, headers=headers, timeout=llm_router.timeout(model))
     except httpx.TimeoutException:
         return 408, None
     except httpx.HTTPError:
@@ -356,12 +364,14 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
             return text, usage
         room = llm_router.output_tokens(name, max_tokens)  # + запас на рассуждение (пустые ответы при малом лимите)
         llm_budget.check(conn, name, prompt_text, room)  # BudgetExceeded — вызова нет, запасная не поможет
+        _release(conn)
         started = time.time()
         try:
             text, usage, attempts = _call_model(name, messages, purpose, json_mode, room, temperature)
         except LLMError as e:
             ms = int((time.time() - started) * 1000)
             _log_call(conn, name, purpose, {}, ms, False, str(e), run_id, fallback_from=fallback_from, **meta)
+            _release(conn)
             errors.append(f"{name}: {e}")
             if isinstance(e, BudgetExceeded) or "ключ" in str(e):
                 raise  # лимит шлюза общий на все модели, ключ тот же — запасная модель не поможет
@@ -373,6 +383,7 @@ def chat(messages, role=None, purpose="", json_mode=False, max_tokens=1500, temp
                   gateway=gateway, **meta)
         if key:
             cache_put(conn, key, meta, name, purpose, text, usage)
+        _release(conn)
         log.info("llm %s %s %s %sms tokens=%s cost=%.4f₽%s", provider(), name, purpose, ms, usage.get("total_tokens"),
                  usage["cost_rub"], f" (запасная вместо {fallback_from})" if fallback_from else "")
         return text, {**usage, "model": name, "ms": ms, "cached": False, "attempts": attempts,

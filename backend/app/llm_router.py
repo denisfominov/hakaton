@@ -49,8 +49,11 @@ TASKS = {
     "classify": ("классификация события", [GEMMA, QWEN]),
     "extract": ("извлечение фактов", [GEMMA, QWEN]),
     "normalize": ("нормализация текста", [GEMMA, KIMI]),
-    "plan": ("план агента", [GEMMA, QWEN]),
-    "analysis": ("глубокий разбор и ответ агента", [GLM, QWEN]),
+    # C11, по сравнению моделей (docs/MODEL_COMPARISON.md, 2026-10-20): DeepSeek вдвое быстрее и дешевле GLM при
+    # меньшей доле выдуманного; GLM — запасная, если DeepSeek вернул не JSON. Запасная плана — DeepSeek вместо Qwen3.6
+    # (в 5 раз дешевле и быстрее при 100% схемы)
+    "plan": ("план агента", [GEMMA, DEEPSEEK]),
+    "analysis": ("глубокий разбор и ответ агента", [DEEPSEEK, GLM]),
     "relations": ("взаимосвязи и граф контрагентов", [DEEPSEEK, KIMI]),
     "long_text": ("большие объёмы текста", [DEEPSEEK, KIMI]),
     "vision": ("изображения и слайды", [QWEN_VL]),
@@ -64,6 +67,22 @@ TASKS = {
 # 7 из 7 ответов агента пустые — 4000 токенов рассуждения не хватило; ~2 ₽ за пустой ответ, для ответа агента не берём.
 # Платим только за фактические токены, запас лишь не даёт оборвать ответ.
 REASONING_ROOM = {GLM: 14000, QWEN: 7000, DEEPSEEK: 4000, KIMI: 10000}
+
+
+# Таймаут ответа модели, с, — не меньше этого, даже если LLM_TIMEOUT меньше. GLM отвечает 60–80 с, у 10% ответов —
+# дольше (docs/MODEL_COMPARISON.md, 2026-10-20): при LLM_TIMEOUT=60 из шаблона .env половина ответов обрывалась.
+MODEL_TIMEOUT = {GLM: 180}
+
+# Значения прежнего шаблона .env (LLM_MODEL_REASONING=z-ai/glm-5.3-flash) повторяют прежний маршрут и выбором
+# не считаются: иначе новая основная модель задачи не применится у всех, кто скопировал шаблон. Свой выбор —
+# LLM_ROUTE_<TASK> или другая модель в LLM_MODEL_REASONING.
+LEGACY_TEMPLATE = {"analysis": GLM}
+
+
+def timeout(model):
+    from . import config
+
+    return max(config.LLM_TIMEOUT, MODEL_TIMEOUT.get(model, 0))
 
 
 def output_tokens(model, answer_tokens):
@@ -93,6 +112,8 @@ def route(task):
     legacy = {"plan": config.LLM_MODEL_FAST, "analysis": config.LLM_MODEL_REASONING,
               "general": config.LLM_MODEL_DEFAULT, "vision": config.LLM_MODEL_VISION}.get(task)
     legacy = (resolve(legacy) or legacy) if legacy else legacy  # имя не из списка остаётся как есть — клиент его отклонит
+    if legacy and LEGACY_TEMPLATE.get(task) == legacy:
+        legacy = None
     if legacy and legacy not in models:
         models = [legacy] + models
     elif legacy:
