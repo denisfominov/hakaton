@@ -85,6 +85,7 @@
 | `sources.py` | встроенные наборы (`data/real`, `data/synthetic`), RSS, каркас коннектора Альфа-Банка (доступа нет) |
 | `pipeline.py` | оркестратор: связывает сервисы, сбрасывает кэш после загрузки новостей, анализ для профиля |
 | `services/news_matching.py` | сервис 3: значимость — скоринг по правилам на фактах профиля (`rules_profile`), связи — разрешённая LLM (задача `match`, промпт `news_match`) с проверкой цитат кодом; `MatchResult` (C20.5) |
+| `services/interpretation.py` | сервис 4: объяснение для руководителя только из `MatchResult` (и роли): LLM (задача `interpret`, промпт `interpretation`) с проверкой ссылок, чисел и названий кодом, без модели — шаблон; `Interpretation` (C20.6) |
 | `untrusted.py` | недоверенный текст для модели: тег `<untrusted_…>`, без строк-инструкций и угловых скобок (агент, сервисы 3–4) |
 | `services/news_collection.py` | сервис 2: загрузка, нормализация, признаки текста, склейка дублей, сюжеты, группы публикаций (`NewsGroup`) — без профиля (C20.4) |
 | `nlp.py` | токены, стемминг, словари категорий, отраслей, регионов и сигналов, защита от инструкций в тексте |
@@ -331,6 +332,7 @@
 | POST | `/api/profiles/{id}/reset` | вернуть демо-профиль к исходному |
 | GET | `/api/profile-options` | варианты для списков профиля (`industry` — отрасль) |
 | POST | `/api/events/{id}/match` | сервис 3: `{profile_id, use_llm}` -> `MatchResult` (балл правил по фактам из набора банка, связи с профилем) |
+| POST | `/api/events/{id}/interpret` | цепочка 1 → 2 → 3 → 4: `{profile_id, role, use_llm}` -> `{match, interpretation}` |
 | GET | `/api/clients/{uid}/facts` | сервис 1: профиль клиента из набора банка (`CompanyFacts`) |
 | GET | `/api/profiles/{id}/facts` | то же по профилю; компания не из набора — 404 |
 | POST | `/api/profiles/restore-presets` | вернуть удалённые встроенные компании |

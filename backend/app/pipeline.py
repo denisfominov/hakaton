@@ -129,6 +129,20 @@ def match_for(conn, profile, event_id, use_llm=False):
     return news_matching.match(facts, r, conn=conn, use_llm=use_llm) if r else None
 
 
+def interpret_for(conn, profile, event_id, role=None, use_llm=False):
+    """Цепочка 1 -> 2 -> 3 -> 4 для одного события: {"match": MatchResult, "interpretation": Interpretation}.
+    Сервис 4 получает только результат сервиса 3 и роль читателя."""
+    from . import roles
+    from .services import interpretation
+
+    match = match_for(conn, profile, event_id, use_llm=use_llm)
+    if not match:
+        return None
+    r = roles.get(role) if role else None
+    reader = {"key": r["key"], "label": r["label"], "focus": r["focus"]} if r else None
+    return {"match": match, "interpretation": interpretation.interpret(match, reader, conn=conn, use_llm=use_llm)}
+
+
 def find_result(conn, profile, event_id):
     for r in analyze_all(conn, profile):
         if r["event"]["id"] == event_id or any(c["id"] == event_id for c in r["cluster"]):

@@ -81,6 +81,7 @@ class AgentIn(BaseModel):
 class MatchIn(BaseModel):
     profile_id: str = Field(..., max_length=40)
     use_llm: bool = False  # True — связи проверяет разрешённая модель (платный вызов, если шлюз включён)
+    role: Literal["", "owner", "ceo", "cfo", "accountant", "treasury"] = ""  # для объяснения (сервис 4)
 
 
 class EntryTokenIn(BaseModel):

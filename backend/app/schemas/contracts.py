@@ -20,7 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "2.0"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2)
+CONTRACTS_VERSION = "2.1"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2);
+# 2.1: MatchResult.profile_facts и NewsRef.summary — сервису 4 хватает результата сервиса 3 (C20.6)
 
 Level = Literal["low", "medium", "high", "critical"]
 
@@ -285,6 +286,14 @@ class NewsRef(BaseModel):
     source: str
     url: Optional[str] = None
     published_at: str
+    summary: Optional[str] = Field(None, description="анонс публикации (до 400 символов) — недоверенный текст новости")
+
+
+class UsedFact(BaseModel):
+    """Факт профиля, на который опирается результат: id, подпись и значение текстом (из CompanyFacts)."""
+    id: str = Field(pattern=r"^p:")
+    label: str
+    value: str
 
 
 class LlmTrace(BaseModel):
@@ -307,6 +316,8 @@ class MatchResult(BaseModel):
     assumptions: list[Assumption] = Field(default_factory=list)
     explanation: str = Field(description="почему такая оценка: факторы скоринга и, если есть, объяснение LLM")
     facts_used: list[str] = Field(default_factory=list, description="id фактов профиля, на которые опирается результат")
+    profile_facts: list[UsedFact] = Field(default_factory=list,
+                                          description="эти факты с подписью и значением — для сервиса 4 и интерфейса")
     news: list[NewsRef] = Field(min_length=1, description="публикации, на которые опирается результат")
     llm: LlmTrace
 

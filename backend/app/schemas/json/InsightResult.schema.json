@@ -1244,5 +1244,5 @@
   ],
   "title": "InsightResult",
   "type": "object",
-  "x-contracts-version": "2.0"
+  "x-contracts-version": "2.1"
 }

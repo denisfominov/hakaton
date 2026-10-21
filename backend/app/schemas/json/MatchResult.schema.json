@@ -311,6 +311,19 @@
           "title": "Source",
           "type": "string"
         },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "анонс публикации (до 400 символов) — недоверенный текст новости",
+          "title": "Summary"
+        },
         "url": {
           "anyOf": [
             {
@@ -330,6 +343,31 @@
         "published_at"
       ],
       "title": "NewsRef",
+      "type": "object"
+    },
+    "UsedFact": {
+      "description": "Факт профиля, на который опирается результат: id, подпись и значение текстом (из CompanyFacts).",
+      "properties": {
+        "id": {
+          "pattern": "^p:",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "value"
+      ],
+      "title": "UsedFact",
       "type": "object"
     }
   },
@@ -389,6 +427,14 @@
       "title": "News",
       "type": "array"
     },
+    "profile_facts": {
+      "description": "эти факты с подписью и значением — для сервиса 4 и интерфейса",
+      "items": {
+        "$ref": "#/$defs/UsedFact"
+      },
+      "title": "Profile Facts",
+      "type": "array"
+    },
     "profile_id": {
       "title": "Profile Id",
       "type": "string"
@@ -413,5 +459,5 @@
   ],
   "title": "MatchResult",
   "type": "object",
-  "x-contracts-version": "2.0"
+  "x-contracts-version": "2.1"
 }

@@ -624,6 +624,17 @@ def event_match(event_id: str, body: MatchIn):
     return out
 
 
+@app.post("/api/events/{event_id}/interpret")
+def event_interpret(event_id: str, body: MatchIn):
+    """Цепочка сервисов 1 -> 2 -> 3 -> 4 (C20.6): сопоставление и объяснение для руководителя по его результату."""
+    with get_db() as conn:
+        profile = get_profile(conn, body.profile_id)
+        out = pipeline.interpret_for(conn, profile, event_id, role=body.role or None, use_llm=body.use_llm)
+    if not out:
+        raise HTTPException(404, "Нет данных компании в наборе банка или события")
+    return out
+
+
 # ---------- агент для ЛПР ----------
 
 @app.post("/api/agent/insight")
