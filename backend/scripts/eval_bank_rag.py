@@ -3,6 +3,10 @@
     cd backend
     python -m scripts.eval_bank_rag
     python -m scripts.eval_bank_rag --questions data/overnight/f/questions_50.json
+    python -m scripts.eval_bank_rag --event-pairs data/real/bank_event_pairs.json --part dev
+
+С --event-pairs — порог bank_rag.search_for_event (B1) на размеченных парах «новость ↔ фрагмент»: деление dev/test
+по сюжетам, цена ошибок 3·FP + FN (лекции 4 и 5), итог — docs/b/BANK_FOR_EVENT.md.
 
 Без --questions — 15 вопросов, написанных людьми (документ, где ответ, — по чтению материалов). Метрики на уровне
 документа: попадание в первую позицию (hit@1), в первые три (hit@3), средний обратный ранг (MRR).
@@ -157,16 +161,116 @@ def report_pages(path, part):
         print(f"| {doc} | {n} | " + " | ".join(f"{sum(d[m])}/{n}" for m in ("tfidf", "e5", "hybrid")) + " |")
 
 
+def _h(text):
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+def split_groups(pairs):
+    """dev / test по сюжетам: пары одной новости и её дублей — в одной части. Сюжеты с подходящим фрагментом и без
+    него делятся поровну (стратификация), порядок внутри — по хешу сюжета."""
+    pos = {p["group"] for p in pairs if p["related"]}
+    parts = {}
+    for stratum in (sorted(pos, key=_h), sorted({p["group"] for p in pairs} - pos, key=_h)):
+        for i, g in enumerate(stratum):
+            parts[g] = "dev" if i % 2 == 0 else "test"
+    return parts
+
+
+def event_pair_rows(path):
+    """Признаки каждой размеченной пары: близость e5 и TF-IDF к событию, общий сигнал, попадание в выдачу search()."""
+    from app import bank_rag
+    from app.config import DATA_DIR
+
+    pairs = json.loads(Path(path).read_text(encoding="utf-8"))["pairs"]
+    news = {n["id"]: n for n in json.loads((DATA_DIR / "real" / "news.json").read_text(encoding="utf-8"))}
+    parts = split_groups(pairs)
+    rows, cache = [], {}
+    for p in pairs:
+        if p["event"] not in cache:
+            ev = news[p["event"]]
+            idx, e5, method, sig = bank_rag.event_scores(ev)
+            _i, tf, _m, _s = bank_rag.event_scores(ev, method="tfidf")
+            pos = {c["id"]: i for i, c in enumerate(idx["chunks"])}
+            now = {h["id"] for h in bank_rag.search(bank_rag.event_text(ev), k=4)}  # как агент ищет сейчас
+            cache[p["event"]] = (pos, e5 if method == "e5" else None, tf, sig, now, idx["chunks"])
+        pos, e5, tf, sig, now, chunks = cache[p["event"]]
+        if p["chunk"] not in pos:
+            print(f"нет фрагмента {p['chunk']} (нарезка изменилась?) — пара пропущена", file=sys.stderr)
+            continue
+        i = pos[p["chunk"]]
+        rows.append({**p, "part": parts[p["group"]], "e5": float(e5[i]) if e5 is not None else None,
+                     "tfidf": float(tf[i]), "shared": bool(sig & set(chunks[i]["signals"])), "now": p["chunk"] in now})
+    return rows
+
+
+def pair_metrics(rows, keep):
+    """Пары: TP, FP, FN, точность, полнота, цена (FP = 3, FN = 1). Новости: с позицией банка из тех, где она есть;
+    с чужой цитатой (хотя бы один показанный фрагмент не по теме)."""
+    tp = sum(1 for r in rows if keep(r) and r["related"])
+    fp = sum(1 for r in rows if keep(r) and not r["related"])
+    fn = sum(1 for r in rows if not keep(r) and r["related"])
+    ev_pos = {r["event"] for r in rows if r["related"]}
+    found = {r["event"] for r in rows if keep(r) and r["related"]}
+    wrong = {r["event"] for r in rows if keep(r) and not r["related"]}
+    return {"tp": tp, "fp": fp, "fn": fn, "precision": tp / (tp + fp) if tp + fp else None,
+            "recall": tp / (tp + fn) if tp + fn else None, "cost": 3 * fp + fn,
+            "events_found": f"{len(found)}/{len(ev_pos)}", "events_wrong": f"{len(wrong)}/{len({r['event'] for r in rows})}"}
+
+
+def _fmt(name, m):
+    f = lambda x: "—" if x is None else f"{x:.2f}"  # noqa: E731
+    return (f"| {name} | {m['tp']} | {m['fp']} | {m['fn']} | {f(m['precision'])} | {f(m['recall'])} | {m['cost']} | "
+            f"{m['events_found']} | {m['events_wrong']} |")
+
+
+def report_event_pairs(path, part):
+    """Порог близости «событие ↔ фрагмент» для search_for_event: подбор на dev по цене ошибок, test — один раз."""
+    from app import bank_rag
+
+    all_rows = event_pair_rows(path)
+    rows = [r for r in all_rows if part == "all" or r["part"] == part]
+    groups = lambda rs: len({r["group"] for r in rs})  # noqa: E731
+    print(f"пар {len(rows)} ({part}), по теме {sum(r['related'] for r in rows)}; сюжетов {groups(rows)}; "
+          f"всего dev {sum(r['part'] == 'dev' for r in all_rows)} пар / {groups([r for r in all_rows if r['part'] == 'dev'])} "
+          f"сюжетов, test {sum(r['part'] == 'test' for r in all_rows)} / {groups([r for r in all_rows if r['part'] == 'test'])}")
+    print("| Правило | TP | FP | FN | точность | полнота | цена 3·FP+FN | новости с позицией | новости с чужой цитатой |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    print(_fmt("сейчас: search() по тексту новости, топ-4", pair_metrics(rows, lambda r: r["now"])))
+    print(_fmt("все 3 фрагмента (без порога)", pair_metrics(rows, lambda r: True)))
+    has_e5 = rows and rows[0]["e5"] is not None
+    if part == "test":  # проверка один раз — только выбранные на dev пороги
+        if has_e5:
+            print(_fmt(f"e5 ≥ {bank_rag.EVENT_MIN_E5} или общий сигнал (выбрано)",
+                       pair_metrics(rows, lambda r: r["e5"] >= bank_rag.EVENT_MIN_E5
+                                    or (r["shared"] and r["e5"] >= bank_rag.MIN_SCORE_E5))))
+        print(_fmt(f"TF-IDF ≥ {bank_rag.EVENT_MIN_TFIDF} или общий сигнал (выбрано, без весов e5)",
+                   pair_metrics(rows, lambda r: r["tfidf"] >= bank_rag.EVENT_MIN_TFIDF
+                                or (r["shared"] and r["tfidf"] >= bank_rag.MIN_SCORE))))
+        return
+    grids = [("tfidf", bank_rag.MIN_SCORE, [round(0.04 + 0.02 * i, 2) for i in range(12)])]
+    if has_e5:
+        grids.insert(0, ("e5", bank_rag.MIN_SCORE_E5, [round(0.84 + 0.005 * i, 3) for i in range(15)]))
+    for key, floor, grid in grids:
+        for with_sig in (False, True):
+            for t in grid:
+                keep = (lambda r, t=t: r[key] >= t or (r["shared"] and r[key] >= floor)) if with_sig else \
+                    (lambda r, t=t: r[key] >= t)
+                print(_fmt(f"{key} ≥ {t}" + (" или общий сигнал" if with_sig else ""), pair_metrics(rows, keep)))
+
+
 def main():
     from app import embeddings
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--questions", help="JSON с вопросами и ожидаемой страницей (scripts/overnight_bank_claims.py)")
+    ap.add_argument("--event-pairs", help="JSON с размеченными парами «новость ↔ фрагмент» (data/real/bank_event_pairs.json)")
     ap.add_argument("--part", default="dev", choices=["dev", "test", "all"],
                     help="dev — для настройки; test — один раз после настройки; all — базовый замер до настроек")
     args = ap.parse_args()
     if not embeddings.available():
         print("веса e5 не найдены: python -m scripts.download_embeddings", file=sys.stderr)
+    if args.event_pairs:
+        return report_event_pairs(args.event_pairs, args.part)
     if args.questions:
         return report_pages(args.questions, args.part)
     for name, qs in (("контрольные (10)", QUESTIONS), ("перефразированные (5)", PARAPHRASES)):
