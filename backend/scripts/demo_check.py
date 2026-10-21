@@ -3,7 +3,7 @@
     cd backend
     python -m scripts.demo_check                 # данные кейса (df_*_hack.csv), клиенты из DEMO.md
     python -m scripts.demo_check --sample        # без данных кейса: синтетические клиенты backend/data/clients/sample
-    python -m scripts.demo_check --online        # плюс свежие новости из RSS и бонус «компания по ИНН» (нужен интернет)
+    python -m scripts.demo_check --online        # плюс свежие новости из RSS (нужен интернет)
 
 База копируется во временную папку (оригинал не меняется), языковая модель выключена (LLM_PROVIDER=off).
 Шаги: список компаний по умолчанию — клиенты кейса; вход из Альфа-Бизнеса (макет) по токену; ставка для клиента с
@@ -18,7 +18,6 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 # клиенты сценариев на данных кейса — как в docs/DEMO.md; на других данных подбираются по признакам
 CASE_CLIENTS = {"rate": "U_9250", "fx": "U_102920", "industry": "U_200890"}
-ALFA_INN = "7728168971"  # АО «Альфа-Банк»: публичная компания для бонуса «по ИНН»
 DONE, SKIP, FAIL = "ГОТОВО", "ПРОПУСК", "ОШИБКА"
 
 
@@ -132,36 +131,14 @@ def run(client, online=False):
     differ = len({tuple(h) for h in heads.values()}) == len(heads)
     step("Первые 3 новости ленты у трёх клиентов разные", DONE if differ else FAIL,
          "; ".join(f"{who[k]}: {', '.join(h)}" for k, h in heads.items()))
-
-    if online:
-        out += check_inn(client)
     return out
-
-
-def check_inn(client):
-    """Бонус: компания по ИНН — автозаполнение из открытых источников, ручная правка, пересчёт ленты, удаление."""
-    res = client.post("/api/companies/lookup", json={"url": "", "inn": ALFA_INN, "name": "", "industry": "",
-                                                     "description": ""})
-    if res.status_code != 200:
-        return [("Компания по ИНН (бонус)", FAIL, f"поиск не удался: {res.status_code} {res.text[:120]}")]
-    s = res.json()["suggestion"]["profile"]
-    p = client.post("/api/profiles", json={**s, "autofilled": True}).json()
-    edited = {**p, "competitors": [c for c in p.get("competitors") or [] if "альфа" not in c.lower()],
-              "autofilled": False}
-    put = client.put(f"/api/profiles/{p['id']}", json=edited)
-    n = len(feed(client, p["id"]))
-    client.delete(f"/api/profiles/{p['id']}")
-    ok = s.get("name") and put.status_code == 200 and n > 0
-    return [("Компания по ИНН (бонус): автозаполнение и правка", DONE if ok else FAIL,
-             f"«{s.get('name')}», отрасль «{s.get('industry')}», источников: "
-             f"{len((s.get('autofill_info') or {}).get('sources') or [])}; новостей в ленте {n}")]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", action="store_true", help="синтетические клиенты вместо данных кейса")
     ap.add_argument("--online", action="store_true",
-                    help="загрузить свежие новости и проверить бонус «компания по ИНН» (нужен интернет)")
+                    help="загрузить свежие новости из RSS (нужен интернет)")
     args = ap.parse_args()
     os.environ["LLM_PROVIDER"] = "off"
     if args.sample:

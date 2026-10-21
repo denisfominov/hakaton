@@ -64,14 +64,11 @@ def results(conn, profiles):
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """Тесты работают без сети: внешние источники о компании по умолчанию «недоступны».
+    """Тесты работают без сети: загрузка лент и API источников (httpx.get) по умолчанию «недоступна».
     Тест, которому нужен ответ источника, подменяет его своей фикстурой поверх этой."""
-    from app import lookup, portals
+    import httpx
 
-    def offline(*_a, **_k):
-        raise portals.PortalError("сеть в тестах отключена")
+    def offline(url, *_a, **_k):
+        raise httpx.ConnectError("сеть в тестах отключена", request=httpx.Request("GET", url))
 
-    for name in ("checko", "zchb", "wikipedia"):
-        monkeypatch.setattr(portals, name, offline)
-    monkeypatch.setattr(lookup, "company_by_inn", lambda inn: offline())
-    monkeypatch.setattr(lookup, "fetch_site", lambda url: offline())
+    monkeypatch.setattr(httpx, "get", offline)

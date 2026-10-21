@@ -39,14 +39,6 @@ class SuggestIn(BaseModel):
     description: str = Field("", max_length=5000)
 
 
-class CompanyLookupIn(BaseModel):
-    url: str = Field("", max_length=300)
-    inn: str = Field("", max_length=20)
-    name: str = Field("", max_length=200)
-    industry: str = Field("", max_length=200)
-    description: str = Field("", max_length=5000)
-
-
 Priority = Literal["high", "medium", "low"]
 Status = Literal["new", "in_progress", "done"]
 
