@@ -6,7 +6,7 @@ import { useLoad } from "../context";
 const rub = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 const num = (v: number) => v.toLocaleString("ru-RU");
 const PROVIDER: Record<string, string> = {
-  off: "языковая модель выключена — работают правила и свои ML-модели",
+  off: "языковая модель выключена — работают правила",
   mock: "тестовый режим (ответы-заглушки): без модели и без сети",
   gateway: "модель подключена (шлюз организаторов)",
 };

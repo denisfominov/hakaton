@@ -20,10 +20,10 @@ WAKE_SECONDS = 600  # раз в 10 минут проверяем, не уста�
 # B2.1 (ответы В36, В37, В60, В80): новостей экспертам не дадут — система сама находит свежие события.
 # Ленты собираем раз в LIVE_REFRESH_MINUTES (0 — только по кнопке «Обновить»).
 LIVE_MINUTES = float(os.getenv("LIVE_REFRESH_MINUTES") or "30")
-# Живые новости храним LIVE_KEEP_DAYS дней. Новости, на которые ссылаются люди (избранное, решения, оценки) и
-# обучающие метки, не удаляем; подборку (source_type = curated) не трогаем.
+# Живые новости храним LIVE_KEEP_DAYS дней. Новости, на которые ссылаются люди (избранное, решения), не удаляем;
+# подборку (source_type = curated) не трогаем.
 KEEP_DAYS = int(os.getenv("LIVE_KEEP_DAYS") or "60")
-KEEP_REFS = ("favorites", "actions", "feedback", "auto_labels")
+KEEP_REFS = ("favorites", "actions")
 
 _state = {"thread": None, "stop": threading.Event(), "wake": threading.Event(), "pending": set(),
           "last_run": None, "last_seconds": None, "runs": 0}

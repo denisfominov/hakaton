@@ -17,8 +17,6 @@ os.environ["LLM_BACKOFF"] = "0"  # повторы без пауз
 os.environ["BANK_DOCS_DIR"] = os.path.join(_tmp, "bank")
 # эмбеддинги e5: в общих тестах — TF-IDF (детерминированно и без весов); отдельный тест проверяет e5, если веса скачаны
 os.environ["EMBEDDINGS"] = "off"
-# свои ML-модели: тесты не зависят от локально обученных весов; тест модели подставляет свои
-os.environ["CASE_MODELS_PATH"] = os.path.join(_tmp, "models", "case_models.pkl")
 # логика проверяется на синтетическом наборе: там заранее известно, какой вывод правильный.
 # реальная подборка проверяется отдельно в test_real_dataset.py
 os.environ["DATASET"] = "synthetic"

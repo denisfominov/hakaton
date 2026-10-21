@@ -152,19 +152,6 @@
       "title": "Matched",
       "type": "object"
     },
-    "ml": {
-      "anyOf": [
-        {
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "поправка своей модели, если есть",
-      "title": "Ml"
-    },
     "priority": {
       "maximum": 100.0,
       "minimum": 0.0,
@@ -259,5 +246,5 @@
   ],
   "title": "RankedEvent",
   "type": "object",
-  "x-contracts-version": "1.2"
+  "x-contracts-version": "2.0"
 }

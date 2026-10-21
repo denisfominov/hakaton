@@ -293,18 +293,6 @@
           "title": "Client Features",
           "type": "array"
         },
-        "market": {
-          "anyOf": [
-            {
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Market"
-        },
         "sources": {
           "items": {
             "$ref": "#/$defs/SourceOut"
@@ -686,10 +674,7 @@
           "type": "string"
         },
         "source": {
-          "enum": [
-            "case_model",
-            "rules"
-          ],
+          "const": "rules",
           "title": "Source",
           "type": "string"
         },
@@ -800,9 +785,7 @@
           "enum": [
             "signals",
             "numbers",
-            "bank",
-            "feedback",
-            "model"
+            "bank"
           ],
           "title": "Type",
           "type": "string"
@@ -1073,9 +1056,7 @@
             "news",
             "bank",
             "client",
-            "rules",
-            "market",
-            "model"
+            "rules"
           ],
           "title": "Type",
           "type": "string"
@@ -1263,5 +1244,5 @@
   ],
   "title": "InsightResult",
   "type": "object",
-  "x-contracts-version": "1.2"
+  "x-contracts-version": "2.0"
 }

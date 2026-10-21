@@ -127,12 +127,12 @@ main.py goes into a separate tiny PR. Verify: scheduler test; check_sources; dem
 
 ```text
 Read CLAUDE.md and follow it; answer in Russian. Tasks A2 + A5 from docs/TASKS.md. Needs A1 merged into
-data/gold/gold_pairs.csv and A8 merged. Read only: scripts/evaluate_models.py, docs/ML_EVALUATION.md,
-docs/a/LABELING.md, the relevant lectures via docs/ML_LECTURES_INDEX.md.
-A2: P@10, nDCG@10, PR-AUC on human labels for rules, own model and e5; bootstrap intervals; dev for choices,
+data/gold/gold_pairs.csv and A8 merged. Read only: docs/a/LABELING.md, the relevant lectures via
+docs/ML_LECTURES_INDEX.md. Own ML model and scripts/evaluate_models.py were removed in C20.2 — write a new script.
+A2: P@10, nDCG@10, PR-AUC on human labels for the rules scoring; bootstrap intervals; dev for choices,
 test once; draft labels never used as truth. A5: scripts/quality_report.py writes one JSON with these metrics.
 5-line brief first, wait for my yes. Branch feature/a2-a5-quality from fresh main. Verify: pytest; report table in
-docs/ML_EVALUATION.md naming the lectures applied. Push, report, stop.
+a new docs/QUALITY.md naming the lectures applied. Push, report, stop.
 ```
 
 ### D8a — README по формату сдачи · Ч2 · 0 ₽

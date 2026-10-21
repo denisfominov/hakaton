@@ -1,5 +1,5 @@
 # Alpha Intelligence в одном контейнере: FastAPI отдаёт API (/api) и собранный фронтенд (/).
-#   docker compose up --build            (рекомендуется: тома, данные кейса, своя LLM — см. docker-compose.yml)
+#   docker compose up --build            (рекомендуется: тома, данные кейса, аналитика банка — см. docker-compose.yml)
 #   docker build -t alpha-intelligence . && docker run -p 8000:8000 -v alpha-data:/data --env-file .env alpha-intelligence
 # Открыть http://localhost:8000. База — в томе /data (переживает пересоздание контейнера).
 

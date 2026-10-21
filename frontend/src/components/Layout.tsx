@@ -76,14 +76,10 @@ function EngineBadge() {
   const [open, setOpen] = useState(false);
   if (!status) return null;
   const parts = ["Правила"];
-  if (status.model?.active) parts.push("своя модель");
   if (status.llm.state === "gateway") parts.push("LLM");
   if (status.llm.state === "mock") parts.push("LLM в тестовом режиме");
   const text = parts.length > 1 ? `Аналитика: ${parts.join(" + ")}` : "Аналитика: правила";
-  const tip = (status.model?.active
-    ? `Своя модель обучена на ${status.model.labels} оценках. Нажмите, чтобы посмотреть подробности`
-    : `Своя модель копит оценки (${status.model?.labels ?? 0} из ${status.model?.min_labels ?? 6}). Нажмите, чтобы узнать, как устроена аналитика`)
-    + `. ${status.llm.label}`;
+  const tip = `Нажмите, чтобы узнать, как устроена аналитика. ${status.llm.label}`;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} title={tip}
@@ -91,7 +87,6 @@ function EngineBadge() {
         className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1.5 text-xs text-ink-700 transition hover:bg-ink-200 lg:py-1">
         <Cpu size={12} />
         <span className="hidden lg:inline">{text}</span>
-        {status.model?.active && <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
       </button>
       {open && <AnalyticsPanel onClose={() => setOpen(false)} />}
     </>

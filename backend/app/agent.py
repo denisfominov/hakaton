@@ -4,11 +4,11 @@
 1. Планирование — какие данные нужны. С LLM план строит разрешённая модель (сама выбирает инструменты из реестра),
    без LLM — эвристический планировщик по признакам события и компании.
 2. Работа с инструментами — реестр agent_tools.py (описание, схемы входа и выхода, права): событие, профиль, данные
-   банка о клиенте, граф связей, анализ влияния правилами, свои ML-модели, RAG по аналитике банка, поиск и RAG по
-   новостям, реакция рынка. Только инструменты из реестра и только с разрешёнными классами данных.
+   банка о клиенте, граф связей, анализ влияния правилами, RAG по аналитике банка, поиск и RAG по новостям.
+   Только инструменты из реестра и только с разрешёнными классами данных.
 3. Контекст — единое хранилище результатов шагов (ContextStore): следующий шаг и итог опираются на него.
 4. Самопроверка и адаптация — полнота (факты, связь с компанией, позиция банка, подтверждения),
-   непротиворечивость (сигналы новости, цифры изданий, позиция банка против новости, оценка пользователя)
+   непротиворечивость (сигналы новости, цифры изданий, позиция банка против новости)
    и обоснованность (у каждого утверждения есть источник). При нехватке или расхождении — повторный поиск
    (до 2 раундов), расхождения показываются пользователю и снижают уверенность.
 5. Ответ — ровно 6 вопросов кейса; у каждого утверждения тип: fact (из новости), bank (позиция банка),
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_runs_pair ON agent_runs(profile_id, event_i
 
 def init(conn):
     conn.executescript(SCHEMA)
-    # с версии 9: вход модели (контекст) — для датасета дообучения своей LLM (scripts/export_sft.py)
+    # с версии 9: вход модели (контекст) — для разбора ответов модели при проверке
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(agent_runs)")]
     if "context" not in cols:
         conn.execute("ALTER TABLE agent_runs ADD COLUMN context TEXT")
@@ -169,22 +169,18 @@ def heuristic_plan(ctx):
         plan.append(("get_client_card", {}, "данные банка: продукты (кредиты, депозиты), ВЭД, место в отрасли"))
         plan.append(("get_relationship_graph", {}, "граф связей: отрасли и регионы контрагентов по платежам, группа"))
     plan.append(("analyze_impact", {}, "связь события с компанией и каналы влияния"))
-    if ctx.profile.get("client_id"):
-        plan.append(("score_with_models", {}, "свои ML-модели: значимость и вклад признаков компании"))
     plan.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция Альфа-Банка по теме события"))
     if ctx.ev.get("thread_id"):
         plan.append(("search_news", {"query": ctx.ev["title"]}, "развитие сюжета в других публикациях"))
     # подтверждения при одном издании, подробности при скудном тексте и поиск под вопрос вне типовых — не в плане,
     # их добавляет самопроверка по тому, чего не хватило в собранных данных (C9)
-    if ctx.profile.get("ticker"):
-        plan.append(("get_market_reaction", {}, "как рынок оценил событие для акций компании"))
     return plan
 
 
 SOURCE_OF_TOOL = {"get_event": "новость", "get_company_profile": "профиль компании", "get_client_card": "данные банка о клиенте",
-                  "get_relationship_graph": "граф контрагентов", "analyze_impact": "правила", "score_with_models": "свои ML-модели",
+                  "get_relationship_graph": "граф контрагентов", "analyze_impact": "правила",
                   "search_bank_analytics": "аналитика Альфа-Банка", "search_news": "другие новости",
-                  "search_news_rag": "тексты новостей", "get_market_reaction": "котировки"}
+                  "search_news_rag": "тексты новостей"}
 
 
 def plan_json(ctx, plan, by):
@@ -330,8 +326,7 @@ def compose(ctx, gaps):
                          ["rules:analysis"]))
 
     hits = sorted((ctx.data.get("bank_hits") or {}).values(), key=lambda h: -h["score"])
-    pred = ctx.data.get("score_with_models")
-    issues, agreement = agent_rules.consistency(r, hits, pred)
+    issues, agreement = agent_rules.consistency(r, hits)
     bank_signals = {s for h in hits for s in h.get("signals") or []}
     role = getattr(ctx, "role", None)
 
@@ -386,29 +381,23 @@ def compose(ctx, gaps):
                  "note": None if bank_items else ("По этой теме позиции банка нет: в аналитике банка нет фрагментов, "
                                                   "близких к самой новости.")}
 
-    market = ctx.data.get("get_market_reaction")
     basis = {"sources": list(ctx.sources.values()),
              "client_features": ([f"{s['label']}: {s['detail']}" if s["key"] in ("leader", "affiliates") else s["label"]
                                   for s in card["signals"]] if card else [])
                                  + [f"{label}: {', '.join((r['matches'] or {}).get(k) or [])}" for k, label in MATCH_LABELS.items()
-                                    if (r["matches"] or {}).get(k)],
-             "market": market}
-    # признаки компании, повлиявшие на вывод: вклад своей модели и совпадения с профилем по правилам
-    features = []
-    if pred:
-        features += [{"label": c["label"], "contribution": c["contribution"], "value": c["value"], "source": "case_model"}
-                     for c in pred["relevance"]["contributions"]]
-    features += [{"label": f"{x['element']}: {x['value']}", "contribution": None, "value": None, "source": "rules"}
-                 for x in insight.get("company_link", [])[:5]]
-    ai_sources = ["rules:analysis"] + (["model:case"] if pred else [])
+                                    if (r["matches"] or {}).get(k)]}
+    # признаки компании, повлиявшие на вывод: совпадения с профилем по правилам
+    features = [{"label": f"{x['element']}: {x['value']}", "contribution": None, "value": None, "source": "rules"}
+                for x in insight.get("company_link", [])[:5]]
+    ai_sources = ["rules:analysis"]
     score = r["score"]
     confidence = score["confidence"]
-    if any(i["type"] in ("numbers", "bank", "signals", "model") for i in issues):
+    if any(i["type"] in ("numbers", "bank", "signals") for i in issues):
         confidence = max(0, confidence - 10)
     return {
         "summary": insight["summary_line"],
         "ai_conclusion": {"text": insight["summary_line"], "kind": "ai", "model": None, "prompt": None,
-                          "engine": "rules" + (" + своя модель" if pred else ""), "sources": ai_sources},
+                          "engine": "rules", "sources": ai_sources},
         "features": features,
         "contradictions": [{**i["pair"], "note": i["text"]} for i in issues if i.get("pair")],
         "plan": getattr(ctx, "plan_json", None),
@@ -544,8 +533,8 @@ def _llm_step(usage):
 
 
 def run(conn, profile, event_id, question="", use_llm=True, models=None, save=True, permissions=None, role=None):
-    """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/compare_models.py);
-    save=False — не писать в agent_runs (сборка датасета на копии базы)."""
+    """models — {"fast": ..., "reasoning": ...}: явные разрешённые модели (scripts/overnight_compare.py);
+    save=False — не писать в agent_runs (прогоны на копии базы)."""
     started = time.time()
     r = pipeline.find_result(conn, profile, event_id)
     if r is None:
@@ -659,21 +648,3 @@ def latest_run(conn, profile_id, event_id, question="", role=""):
                        "AND IFNULL(role, '') = ? ORDER BY created_at DESC LIMIT 1",
                        (profile_id, event_id, question or "", role or "")).fetchone()
     return get_run(conn, row["id"]) if row else None
-
-
-
-
-def training_target(result):
-    """Ответ в схеме LLM_SYSTEM — целевой выход примера для дообучения."""
-    a = result["answers"]
-    out = {"summary": result["summary"],
-           "why_important": [x["text"] for x in a["why_important"]],
-           "risks": [x["text"] for x in a["consequences"]["risks"]],
-           "opportunities": [x["text"] for x in a["consequences"]["opportunities"]],
-           "bank_view": [{"text": x["text"], "source": x["sources"][0]} for x in a["bank_view"]["items"] if x["sources"]],
-           "actions": [{"title": x["title"], "why": x.get("why") or ""} for x in a["actions"]],
-           "scenarios": [{"title": x["title"], "text": x["text"]} for x in (a.get("follow_up") or {}).get("scenarios", [])]}
-    q = a.get("question")
-    if q and q.get("items"):
-        out["answer"] = " ".join(x["text"] for x in q["items"][:3])
-    return out

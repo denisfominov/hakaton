@@ -11,7 +11,7 @@ const KIND: Record<ClaimKind, { label: string; cls: string; hint: string }> = {
   fact: { label: "Факт", cls: "bg-sky-50 text-sky-800 ring-sky-200", hint: "из текста новости, со ссылкой на издание" },
   bank: { label: "Позиция банка", cls: "bg-rose-50 text-rose-800 ring-rose-200", hint: "цитата аналитики Альфа-Банка со страницей материала" },
   client: { label: "Данные о компании", cls: "bg-violet-50 text-violet-800 ring-violet-200", hint: "профиль и данные банка о клиенте" },
-  ai: { label: "Вывод ИИ", cls: "bg-amber-50 text-amber-900 ring-amber-200", hint: "вывод модели, правил и своих ML-моделей" },
+  ai: { label: "Вывод ИИ", cls: "bg-amber-50 text-amber-900 ring-amber-200", hint: "вывод языковой модели или правил" },
 };
 const DATA_LABEL: Record<string, string> = { public: "публичные", bank_internal: "внутренние банка", client_confidential: "данные клиента" };
 
@@ -73,7 +73,7 @@ function Block({ n, title, children }: { n: number; title: string; children: Rea
 }
 
 function SourceRow({ s, n }: { s: AgentSource; n: number }) {
-  const type = { news: "Новость", bank: "Аналитика банка", client: "Данные о компании", rules: "Правила сервиса", market: "Рынок", model: "Своя ML-модель" }[s.type];
+  const type = { news: "Новость", bank: "Аналитика банка", client: "Данные о компании", rules: "Правила сервиса" }[s.type];
   return (
     <li id={`agent-src-${n}`} className="flex gap-2 text-xs">
       <span className="w-6 shrink-0 text-ink-400">[{n}]</span>
@@ -147,26 +147,12 @@ function ContradictionCard({ c }: { c: NonNullable<AgentResult["contradictions"]
 }
 
 function Features({ r }: { r: AgentResult }) {
-  const model = (r.features || []).filter((f) => f.source === "case_model" && f.contribution !== null);
   const rules = (r.features || []).filter((f) => f.source === "rules");
-  if (!model.length && !rules.length) return null;
-  const max = Math.max(0.001, ...model.map((f) => Math.abs(f.contribution || 0)));
+  if (!rules.length) return null;
   return (
     <div className="mb-3 text-xs">
       <div className="mb-1 font-medium text-ink-700">Признаки компании, повлиявшие на вывод</div>
-      {model.length > 0 && (
-        <ul className="mb-2 space-y-1">
-          {model.map((f) => (
-            <li key={f.label}>
-              <div className="flex justify-between gap-2"><span className="text-ink-700">{f.label}</span>
-                <span className={`tabular-nums ${(f.contribution || 0) > 0 ? "text-emerald-700" : "text-rose-700"}`}>{(f.contribution || 0) > 0 ? "+" : ""}{(f.contribution || 0).toFixed(2)}</span></div>
-              <div className="mt-0.5 h-1 rounded-full bg-ink-100"><div className={`h-1 rounded-full ${(f.contribution || 0) > 0 ? "bg-emerald-500" : "bg-rose-500"}`} style={{ width: `${(Math.abs(f.contribution || 0) / max) * 100}%` }} /></div>
-            </li>
-          ))}
-          <li className="text-ink-400">Вклад своей модели (не LLM) по данным клиента; модель черновая, пока нет ручной разметки.</li>
-        </ul>
-      )}
-      {rules.length > 0 && <p className="text-ink-600">Совпадения с профилем: {rules.map((f) => f.label).join(" · ")}</p>}
+      <p className="text-ink-600">Совпадения с профилем: {rules.map((f) => f.label).join(" · ")}</p>
     </div>
   );
 }
@@ -245,21 +231,21 @@ export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
             <b>Ответ из кэша</b>, получен ранее моделью {r.from_cache.model || "—"}
             {r.from_cache.obtained_at ? `, ${new Date(r.from_cache.obtained_at).toLocaleDateString("ru-RU")}` : ""}
             {r.from_cache.prompts.length ? ` (промпты ${r.from_cache.prompts.join(", ")})` : ""}. Сейчас: {llmLabel.toLowerCase()} —
-            перезапуск и новые события разбираются правилами и своими ML-моделями.
+            перезапуск и новые события разбираются правилами.
           </span>
         </div>
       )}
       {r && r.mode === "rules" && !r.llm && !r.from_cache && (
         <div className="flex gap-2 border-b border-ink-100 bg-ink-50 px-5 py-2 text-xs text-ink-600">
           <Info size={14} className="mt-0.5 shrink-0" />
-          {llmLabel}: разбор собран правилами, своими ML-моделями и поиском по источникам — это не ответ LLM.
+          {llmLabel}: разбор собран правилами и поиском по источникам — это не ответ LLM.
         </div>
       )}
       {r?.llm?.degraded && (
         <div className="flex gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-900">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           {r.llm.degraded.reason === "budget"
-            ? "Дневной лимит исчерпан: ответы из правил и кэша. Этот разбор собран правилами и своими моделями."
+            ? "Дневной лимит исчерпан: ответы из правил и кэша. Этот разбор собран правилами."
             : "Модели недоступны (ошибка или таймаут у основной и запасной) — ответ собран правилами."}
         </div>
       )}
@@ -398,9 +384,6 @@ export default function AgentPanel({ profileId, eventId, llmEnabled, llmLabel }:
             <Features r={r} />
             {a.basis.client_features.length > 0 && (
               <p className="mb-2 text-xs text-ink-600"><b className="font-medium">Особенности компании:</b> {a.basis.client_features.join(" · ")}</p>
-            )}
-            {a.basis.market && (
-              <p className="mb-2 text-xs text-ink-600"><b className="font-medium">Рынок:</b> {a.basis.market.ticker} {a.basis.market.ar}% к индексу за {a.basis.market.horizon} дн.</p>
             )}
             <ol className="space-y-1">{a.basis.sources.map((s, i) => <SourceRow key={s.id} s={s} n={i + 1} />)}</ol>
             <div className="mt-3 space-y-1 text-xs">

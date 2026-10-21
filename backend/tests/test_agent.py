@@ -151,25 +151,6 @@ def test_bank_docs_endpoint(client, bank_docs):
     assert bank_rag.search("ставка")  # тот же путь, что и у агента
 
 
-def test_export_sft_dataset(client, bank_docs, tmp_path, monkeypatch):
-    import sys
-
-    from scripts import export_sft
-
-    client.post("/api/agent/insight", json={"profile_id": "sfera", "event_id": "demo-03", "refresh": True})
-    out = tmp_path / "sft.jsonl"
-    monkeypatch.setattr(sys, "argv", ["export_sft", "--out", str(out), "--mode", "rules"])
-    export_sft.main()
-    lines = [json.loads(x) for x in out.read_text(encoding="utf-8").splitlines()]
-    assert lines
-    ex = lines[-1]
-    assert [m["role"] for m in ex["messages"]] == ["system", "user", "assistant"]
-    assert ex["messages"][1]["content"].startswith("<untrusted_news>\nFACTS:")
-    target = json.loads(ex["messages"][2]["content"])
-    assert {"summary", "why_important", "risks", "opportunities", "bank_view", "actions"} <= set(target)
-    assert ex["meta"]["mode"] == "rules"
-
-
 def test_event_details_followup_and_bank_conflict(client, bank_docs):
     res = client.post("/api/agent/insight", json={"profile_id": "uralmet", "event_id": "demo-03", "refresh": True}).json()
     a = check_answer(res)
@@ -203,7 +184,7 @@ def test_numbers_disagreement_is_flagged():
 
     r = {"event": {"nlp": {"signals": {}}}, "cluster": [{"title": "Тарифы вырастут на 13,8%", "source": "А"},
                                                          {"title": "Тарифы вырастут на 12%", "source": "Б"}],
-         "score": {"priority": 40}, "feedback": None}
+         "score": {"priority": 40}}
     issues, agreement = agent_rules.consistency(r, [])
     assert issues[0]["type"] == "numbers" and "13,8%" in issues[0]["text"] and agreement == "none"
 

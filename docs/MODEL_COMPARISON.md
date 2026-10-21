@@ -91,4 +91,3 @@ python -m scripts.overnight_compare --report      # пересобрать та�
 Ответы моделей и входы — `backend/data/overnight/b/` (не в git: производные от данных кейса). Скрипт останавливается
 на лимите 70 ₽ и продолжает с места остановки (`scripts/batch_runner.py`).
 
-Старый способ сравнения на парах из датасета дообучения — `scripts/compare_models.py` (не запускался).

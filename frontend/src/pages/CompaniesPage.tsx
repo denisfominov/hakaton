@@ -1,4 +1,4 @@
-import { Building2, Check, Globe, Hash, LineChart, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
+import { Building2, Check, Globe, Hash, RotateCcw, Search, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -305,11 +305,6 @@ export default function CompaniesPage() {
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
                 <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">{p.client_id ? (p.is_demo ? "Демо-клиент кейса" : "Клиент из базы кейса") : p.is_demo ? "Встроенная" : "Добавлена вручную"}</span>
-                {p.ticker && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-sky-800" title="Публичная компания: новости размечаются по реакции акций">
-                    <LineChart size={11} /> {p.ticker}
-                  </span>
-                )}
                 {p.inn && <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700">ИНН {p.inn}</span>}
                 {p.autofilled && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-800">Профиль не подтверждён</span>}
                 <span className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-500">Заполнено разделов: {filled(p)} из 8</span>

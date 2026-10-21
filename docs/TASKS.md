@@ -19,14 +19,14 @@
 
 **Ч1 — «Агент и интерпретация».** `backend/app/`: `agent*.py`, `agent_rules.py`, `roles.py`, `analysis.py`,
 `scoring.py`, `matching.py`, `llm*.py`, `prompts.py`, `prompts/`, `demo_cache.py`, `entry.py`; скрипты пакетных и платных
-прогонов: `batch_runner.py`, `overnight_*.py`, `compare_models.py`, `smoke_gateway.py`, `warm_cache.py`, `export_sft.py`,
+прогонов: `batch_runner.py`, `overnight_*.py`, `smoke_gateway.py`, `warm_cache.py`,
 новые `daily_paid.py`, `daily_report.py`; данные `data/demo_cache/`; документы `docs/c/`, `docs/paid/`,
 `docs/{BASELINE,MODEL_COMPARISON,GATEWAY_QUESTIONS,COMPLIANCE,SECURITY,PAID_QUEUE}.md`.
 
 **Ч2 — «Данные, поиск и качество».** `backend/app/`: `sources.py`, `dedup.py`, `bank_rag.py`, `embeddings.py`,
-`ml_models.py`, `model.py`, `clients.py`, `company*.py`, `lookup.py`, `catalog.py`, `nlp.py`, `ner.py`, `jobs.py`,
-`threads.py`, `outlets.py`, `market.py`, `portals.py`, `diversity.py`, `overview.py`; остальные `backend/scripts/`; `backend/data/`
-(кроме `demo_cache/`); документы `docs/a/`, `docs/b/`, `docs/{DATA,DATA_QUALITY,ML_EVALUATION}.md`, `README.md`,
+`clients.py`, `company*.py`, `lookup.py`, `catalog.py`, `nlp.py`, `ner.py`, `jobs.py`,
+`threads.py`, `outlets.py`, `portals.py`, `diversity.py`, `overview.py`; остальные `backend/scripts/`; `backend/data/`
+(кроме `demo_cache/`); документы `docs/a/`, `docs/b/`, `docs/{DATA,DATA_QUALITY}.md`, `README.md`,
 `THIRD_PARTY_NOTICES.md`.
 
 Файлы, которых не было в исходном делении (`lookup.py`, `catalog.py`, `nlp.py`, `jobs.py`, `matching.py`, `entry.py`,

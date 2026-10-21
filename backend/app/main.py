@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 import httpx
 
 from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
-               market, model, nlp, outlets, overview, pipeline, prompts, sources, store)
+               nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, FeedbackIn, ModelSettingsIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -97,11 +97,6 @@ async def lifespan(_app):
                              (dumps(p), now_iso(), p["id"]))
         added = pipeline.ingest_dataset(conn)
         log.info("dataset %s loaded, new events: %s", config.DATASET, added)
-        # разметка по реакции рынка (котировки из снимка) и обучение своей модели
-        market.load_snapshot(conn)
-        stats = market.label_all(conn)
-        model.train(conn)
-        log.info("market labels: %s", stats)
     # анализ всех компаний считается в фоне и сохраняется в базе — запросы читают готовое
     jobs.start()
     jobs.request(None)
@@ -255,7 +250,6 @@ def status():
         period = conn.execute("SELECT MIN(published_at) AS a, MAX(published_at) AS b FROM events "
                               "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
-        ms = model.status(conn)
         deleted = deleted_presets(conn)
         n_profiles = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
         row = conn.execute("SELECT value FROM settings WHERE key = 'last_live'").fetchone()
@@ -268,8 +262,6 @@ def status():
         live_outlets = conn.execute("SELECT COUNT(DISTINCT source) AS n FROM events "
                                     "WHERE source_type IN ('rss', 'alfa')").fetchone()["n"]
         llm_state = llm_client.ui_state(conn)
-    model_short = {"active": ms["active"], "trained": ms["trained"], "enabled": ms["enabled"], "weight": ms["weight"],
-                   "labels": ms["labels"]["relevance"], "min_labels": ms["min_labels"]}
     curated, demo = by_type.get("curated", 0), by_type.get("demo", 0)
     live = by_type.get("rss", 0) + by_type.get("alfa", 0)
     builtin = curated or demo
@@ -291,9 +283,8 @@ def status():
             "model": llm_client.model_for("reasoning") if config.llm_enabled() else None,
             **llm_state,
             "note": None if llm_state["state"] in ("gateway", "mock") else
-            f"{llm_state['label']}: аналитика строится правилами, своими моделями и кэшем ответов.",
+            f"{llm_state['label']}: аналитика строится правилами и кэшем ответов.",
         },
-        "model": model_short,
         "clients": {"source": clients.source_kind(), "demo": [clients.profile_id(u) for u in clients.demo_client_ids()]
                     if clients.source_kind() else []},
         "bank_docs": {k: v for k, v in bank_rag.status().items() if k != "folder"},
@@ -454,10 +445,6 @@ def delete_profile(profile_id: str):
         conn.execute("DELETE FROM analyses WHERE profile_id = ?", (profile_id,))
         store.delete(conn, profile_id)
         pipeline._cache.pop(profile_id, None)
-        retrain = conn.execute("DELETE FROM feedback WHERE profile_id = ?", (profile_id,)).rowcount
-        retrain += conn.execute("DELETE FROM auto_labels WHERE profile_id = ?", (profile_id,)).rowcount
-        if retrain:
-            model.train(conn)
     return {"ok": True}
 
 
@@ -473,9 +460,6 @@ def restore_presets():
                              (p["id"], dumps(p), now_iso()))
                 restored.append(p["name"])
         _set_deleted_presets(conn, set())
-        if restored:
-            market.label_all(conn)
-            model.train(conn)
     return {"restored": restored}
 
 
@@ -568,7 +552,6 @@ def event_detail(event_id: str, profile_id: str):
                  "priority_level": x["score"]["priority_level"], "impact_type": x["insight"]["impact_type"],
                  "current": x["event"]["id"] == r["event"]["id"]}
                 for x in sorted(members, key=lambda x: x["event"]["published_at"])]}
-        reaction = market.event_reaction(conn, [c["id"] for c in r["cluster"]], profile_id)
         llm_ui = llm_client.ui_state(conn)
 
     ev = r["event"]
@@ -587,12 +570,7 @@ def event_detail(event_id: str, profile_id: str):
         "insight": insight,
         "rules_insight": r["insight"],
         "llm": llm_state,
-        "rules_relevance": r["rules_relevance"],
         "verification_detail": r["verification"],
-        "market": reaction,
-        "feedback": r["feedback"],
-        "ml": r["ml"],
-        "case_ml": r.get("case_ml"),
         "linked_actions": len(linked),
         "linked_action_titles": linked,
         "related": [{"id": c["id"], "title": c["title"], "source": c["source"], "url": c["url"],
@@ -741,14 +719,6 @@ def agent_run(run_id: str):
     return out
 
 
-@app.get("/api/ml/status")
-def ml_status():
-    """Свои ML-модели (не LLM): обучены ли, какие выбраны, метрики (черновые, пока нет ручной разметки)."""
-    from . import ml_models
-
-    return ml_models.status()
-
-
 @app.get("/api/llm/usage")
 def llm_usage(days: int = Query(14, ge=1, le=90)):
     """Страница «Расход»: токены и стоимость по дням и моделям, лимит, маршруты моделей, версии промптов."""
@@ -850,7 +820,7 @@ def portfolio(days: int = Query(7, ge=1, le=365)):
                 c["n"] += 1
             index = min(100, (top["score"]["priority"] if top else 0) + 4 * len(crit) + 2 * len(att))
             rows.append({
-                "profile_id": pid, "name": p["name"], "industry": p.get("industry", ""), "ticker": p.get("ticker", ""),
+                "profile_id": pid, "name": p["name"], "industry": p.get("industry", ""),
                 "attention_index": index, "relevant": len(rel), "critical_risks": len(crit), "risks": len(risk),
                 "opportunities": len(opp), "attention": len(att),
                 "top_event": card(top, (), tmap) if top else None,
@@ -861,57 +831,6 @@ def portfolio(days: int = Query(7, ge=1, le=365)):
     used = sorted({k for r in rows for k in r["heat"]}, key=lambda k: list(nlp.CATEGORIES).index(k))
     return {"days": days, "formula": PORTFOLIO_FORMULA, "rows": rows,
             "categories": [{"key": k, "label": nlp.CATEGORIES[k]} for k in used]}
-
-
-# ---------- оценки пользователя и своя модель ----------
-
-@app.post("/api/events/{event_id}/feedback")
-def event_feedback(event_id: str, body: FeedbackIn):
-    """Оценка разбора. Сохраняем вместе со снимком признаков и сразу переобучаем модель."""
-    with get_db() as conn:
-        profile = get_profile(conn, body.profile_id)
-        r = pipeline.find_result(conn, profile, event_id)
-        if not r:
-            raise HTTPException(404, "Событие не найдено")
-        saved = model.save_feedback(conn, r["event"]["id"], profile["id"], body.relevant, body.impact_type,
-                                    body.priority, r["features"])
-        model.train(conn)
-        st = model.status(conn)
-    return {"feedback": saved, "model": st}
-
-
-@app.get("/api/model")
-def model_status():
-    with get_db() as conn:
-        return model.status(conn)
-
-
-@app.post("/api/model/train")
-def model_train():
-    with get_db() as conn:
-        model.train(conn)
-        return model.status(conn)
-
-
-@app.post("/api/model/market")
-def model_market(refresh_prices: bool = False):
-    """Разметить новости по реакции рынка и переобучить модель. refresh_prices — сначала докачать котировки."""
-    report = []
-    with get_db() as conn:
-        if refresh_prices:
-            tickers = [p["ticker"].strip().upper() for p in market.public_profiles(conn)]
-            report = market.refresh_prices(conn, tickers)
-        stats = market.label_all(conn)
-        model.train(conn)
-        st = model.status(conn)
-    return {"prices": report, "labels": stats, "model": st}
-
-
-@app.put("/api/model/settings")
-def model_settings(body: ModelSettingsIn):
-    with get_db() as conn:
-        model.set_enabled(conn, body.enabled)
-        return model.status(conn)
 
 
 # ---------- обзор ----------

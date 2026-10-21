@@ -24,7 +24,8 @@ def bank_docs(tmp_path, monkeypatch):
 def test_registry_has_schemas_and_rights(client):
     cat = {t["name"]: t for t in client.get("/api/agent/tools").json()}
     assert {"get_event", "get_company_profile", "get_client_card", "get_relationship_graph", "analyze_impact",
-            "score_with_models", "search_bank_analytics", "search_news", "search_news_rag"} <= set(cat)
+            "search_bank_analytics", "search_news", "search_news_rag"} <= set(cat)
+    assert not {"score_with_models", "get_market_reaction"} & set(cat), "инструментов своей модели и котировок нет"
     for t in cat.values():
         assert t["access"] == "read" and t["data"] in agent_tools.ALL_DATA
         assert t["input_schema"]["type"] == "object" and t["output_schema"]

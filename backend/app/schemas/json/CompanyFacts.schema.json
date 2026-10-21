@@ -179,5 +179,5 @@
   ],
   "title": "CompanyFacts",
   "type": "object",
-  "x-contracts-version": "1.2"
+  "x-contracts-version": "2.0"
 }

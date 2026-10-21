@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     items INTEGER,
     error TEXT
 );
+
+-- служебные значения: последняя загрузка лент, удалённые встроенные компании
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -129,9 +135,7 @@ def init_db():
             conn.execute("ALTER TABLE events ADD COLUMN thread_id TEXT")
         # WAL: чтение не блокируется записью фонового пересчёта
         conn.execute("PRAGMA journal_mode=WAL")
-        from . import agent, catalog, entry, llm_client, market, model, store, threads  # оценки, модель, разметка, снимки, сюжеты
-        model.init(conn)
-        market.init(conn)
+        from . import agent, catalog, entry, llm_client, store, threads  # варианты профиля, снимки, сюжеты, LLM, агент
         catalog.init(conn)
         store.init(conn)
         threads.init(conn)

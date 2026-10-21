@@ -8,11 +8,9 @@ import type {
   CompareRow,
   EventCard,
   EventDetail,
-  Feedback,
   HistoryItem,
   Insight,
   Meta,
-  ModelStatus,
   Outlet,
   Overview,
   Portfolio,
@@ -94,18 +92,6 @@ export const api = {
   profileOptions: (industry: string) => request<ProfileOptions>(`/profile-options?${qs({ industry })}`),
   suggestProfile: (b: { name: string; industry: string; description: string }) =>
     request<ProfileSuggestion>("/profiles/suggest", { method: "POST", body: JSON.stringify(b) }),
-
-  sendFeedback: (profileId: string, id: string, f: Omit<Feedback, "updated_at">) =>
-    request<{ feedback: Feedback | null; model: ModelStatus }>(`/events/${id}/feedback`, {
-      method: "POST", body: JSON.stringify({ profile_id: profileId, ...f }),
-    }),
-  model: () => request<ModelStatus>("/model"),
-  trainModel: () => request<ModelStatus>("/model/train", { method: "POST" }),
-  marketRefresh: (refreshPrices: boolean) =>
-    request<{ prices: { ticker: string; ok: boolean; days?: number; error?: string }[]; model: ModelStatus }>(
-      `/model/market?${qs({ refresh_prices: refreshPrices })}`, { method: "POST" }),
-  setModelEnabled: (enabled: boolean) =>
-    request<ModelStatus>("/model/settings", { method: "PUT", body: JSON.stringify({ enabled }) }),
 
   portfolio: (days: number) => request<Portfolio>(`/portfolio?${qs({ days })}`),
   overview: (profileId: string, f: { days: number; category?: string; impact?: string; level?: string }) =>

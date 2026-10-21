@@ -21,8 +21,6 @@ class ProfileIn(BaseModel):
     risks: list[str] = []
     investment_plans: list[str] = []
     keywords: list[str] = []
-    # тикер на Мосбирже: для публичных компаний новости размечаются по реакции акций (market.py)
-    ticker: str = Field("", max_length=12)
     inn: str = Field("", max_length=12)
     # клиент из данных кейса (clients.py): обезличенный SYNTHETIC_U, продукты банка и сигналы для анализа
     client_id: str = Field("", max_length=40)
@@ -47,18 +45,6 @@ class CompanyLookupIn(BaseModel):
     name: str = Field("", max_length=200)
     industry: str = Field("", max_length=200)
     description: str = Field("", max_length=5000)
-
-
-class FeedbackIn(BaseModel):
-    profile_id: str
-    # None — пользователь не отвечал на этот вопрос
-    relevant: Optional[bool] = None
-    impact_type: Optional[Literal["risk", "opportunity", "neutral"]] = None
-    priority: Optional[Literal["higher", "ok", "lower"]] = None
-
-
-class ModelSettingsIn(BaseModel):
-    enabled: bool
 
 
 Priority = Literal["high", "medium", "low"]
@@ -188,7 +174,7 @@ class BankViewOut(BaseModel):
 
 class SourceOut(BaseModel):
     id: str
-    type: Literal["news", "bank", "client", "rules", "market", "model"]
+    type: Literal["news", "bank", "client", "rules"]
     title: str
     detail: Optional[str] = None
     url: Optional[str] = None
@@ -197,7 +183,6 @@ class SourceOut(BaseModel):
 class BasisOut(BaseModel):
     sources: list[SourceOut]
     client_features: list[str]
-    market: Optional[dict] = None
 
 
 class QuestionOut(BaseModel):
@@ -219,7 +204,7 @@ class AnswersOut(BaseModel):
 
 
 class IssueOut(BaseModel):
-    type: Literal["signals", "numbers", "bank", "feedback", "model"]
+    type: Literal["signals", "numbers", "bank"]
     text: str
     sources: list[str]
     pair: Optional[dict] = None
@@ -260,7 +245,7 @@ class LLMMetaOut(BaseModel):
 class AIConclusionOut(BaseModel):
     text: str
     kind: ClaimKind = "ai"
-    model: Optional[str] = None  # разрешённая модель, сформулировавшая вывод; None — правила и свои модели
+    model: Optional[str] = None  # разрешённая модель, сформулировавшая вывод; None — правила
     prompt: Optional[str] = None  # версия промпта, например agent_answer@v2
     engine: str = "rules"
     sources: list[str]
@@ -268,9 +253,9 @@ class AIConclusionOut(BaseModel):
 
 class FeatureOut(BaseModel):
     label: str
-    contribution: Optional[float] = None  # вклад в вывод своей модели; None — совпадение по правилам
+    contribution: Optional[float] = None  # всегда None: совпадение по правилам, без вклада модели
     value: Optional[float] = None
-    source: Literal["case_model", "rules"]
+    source: Literal["rules"]
 
 
 class SideOut(BaseModel):
