@@ -81,7 +81,40 @@ def test_ai_conclusion_records_model_and_prompt(conn, profiles, bank_docs, monke
     ai = res["result"]["ai_conclusion"]
     from app import prompts
 
-    assert ai["engine"] == "llm" and ai["model"] == "z-ai/glm-5.3-flash" and ai["prompt"] == prompts.get("agent_answer").id
+    assert ai["engine"] == "llm" and ai["model"] == "deepseek/deepseek-v4.1-flash" and ai["prompt"] == prompts.get("agent_answer").id
+
+
+def test_bank_ref_without_prefix_is_accepted_only_for_found_fragment():
+    # C1b: модели пишут id фрагмента без приставки «bank:» — пункт не теряется; чужой фрагмент — отбрасываем
+    bank = {"bank:ALFA-macro_stat1H26#8": "Банк ждёт снижения ставки."}
+    assert agent.bank_ref("ALFA-macro_stat1H26#8", bank) == "bank:ALFA-macro_stat1H26#8"
+    assert agent.bank_ref("[bank:ALFA-macro_stat1H26#8]", bank) == "bank:ALFA-macro_stat1H26#8"
+    assert agent.bank_ref(" bank:ALFA-macro_stat1H26#8 ", bank) == "bank:ALFA-macro_stat1H26#8"
+    assert agent.bank_ref("ALFA-macro_stat1H26#9", bank) is None
+    assert agent.bank_ref("", bank) is None and agent.bank_ref(None, bank) is None
+
+
+def test_model_bank_view_without_prefix_reaches_answer(conn, profiles, bank_docs, monkeypatch):
+    from app import llm_mock
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "mock")
+    real = llm_mock._agent_answer
+
+    def strip_prefix(user):
+        out = real(user)
+        out["bank_view"] = [{"text": "Модель: " + b["text"], "source": b["source"].removeprefix("bank:")}
+                            for b in out["bank_view"]]
+        out["bank_view"].append({"text": "Позиция из чужого документа.", "source": "ALFA-unknown#1"})
+        return out
+
+    monkeypatch.setattr(llm_mock, "_agent_answer", strip_prefix)
+    res = agent.run(conn, profiles["uralmet"], "demo-03", save=False)
+    conn.commit()
+    items = res["result"]["answers"]["bank_view"]["items"]
+    assert res["result"]["ai_conclusion"]["engine"] == "llm"
+    # пункты — от модели (не запасные из правил), ссылка приведена к виду «bank:<id>»
+    assert items and all(i["text"].startswith("Модель:") and i["sources"][0].startswith("bank:") for i in items)
+    assert not any("чужого документа" in i["text"] for i in items)
 
 
 def test_untrusted_text_is_tagged_and_instructions_dropped():

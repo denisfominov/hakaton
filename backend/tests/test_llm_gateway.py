@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config, llm_budget, llm_client, prompts
-from app.llm_router import GEMMA, GLM, QWEN
+from app.llm_router import DEEPSEEK, GEMMA, GLM, QWEN
 from app.main import app
 
 SECRET = "sk-test-SECRET-123456"
@@ -32,7 +32,7 @@ def test_mock_mode_runs_agent_end_to_end(client, mock):
     res = run_agent(client)
     r = res["result"]
     assert r["mode"] == "llm" and r["llm"]["mock"] and r["llm"]["provider"] == "mock"
-    assert {GEMMA, GLM} <= set(r["llm"]["models"]), "план — Gemma, ответ — GLM (роутер)"
+    assert {GEMMA, DEEPSEEK} <= set(r["llm"]["models"]), "план — Gemma, ответ — DeepSeek (роутер)"
     assert {prompts.get("agent_plan").id, prompts.get("agent_answer").id} <= set(r["llm"]["prompts"])
     assert r["llm"]["cost_rub"] > 0 and r["llm"]["tokens"] > 0
     assert r["checks"]["grounding"]["llm_dropped"] == 0, "мок отвечает только по входным данным"
@@ -47,11 +47,14 @@ def test_cache_by_event_profile_prompt_model(client, mock):
 
 
 def test_fallback_model_on_error_and_timeout(client, mock, monkeypatch):
-    monkeypatch.setenv("LLM_MOCK_FAIL", "GLM-5.3-Flash:429;Gemma 4 26B A4B:timeout")
+    monkeypatch.setenv("LLM_MOCK_FAIL", "Gemma 4 26B A4B:timeout")
     res = run_agent(client, event="demo-05")
     steps = {s["kind"]: s for s in res["trace"] if s["kind"] in ("plan", "synthesis")}
-    assert steps["plan"]["model"] == QWEN and steps["plan"]["fallback_from"] == GEMMA
-    assert steps["synthesis"]["model"] == QWEN and steps["synthesis"]["fallback_from"] == GLM
+    assert steps["plan"]["model"] == DEEPSEEK and steps["plan"]["fallback_from"] == GEMMA
+    monkeypatch.setenv("LLM_MOCK_FAIL", "DeepSeek-V4.1-Flash:429")
+    res = run_agent(client, event="demo-06")
+    steps = {s["kind"]: s for s in res["trace"] if s["kind"] in ("plan", "synthesis")}
+    assert steps["synthesis"]["model"] == GLM and steps["synthesis"]["fallback_from"] == DEEPSEEK
     usage = client.get("/api/llm/usage").json()
     assert usage["errors"] and any("429" in e["error"] or "таймаут" in e["error"] for e in usage["errors"])
 
@@ -106,7 +109,7 @@ def test_usage_page_data(client, mock):
     assert u["limit_rub"] < 500 and u["spent_rub"] > 0 and u["by_model"] and u["by_day"]
     assert {r["task"] for r in u["routes"]} >= {"classify", "extract", "analysis", "relations", "vision", "plan"}
     route = {r["task"]: r for r in u["routes"]}
-    assert route["classify"]["primary"] == GEMMA and route["analysis"]["primary"] == GLM
+    assert route["classify"]["primary"] == GEMMA and route["analysis"]["primary"] == "deepseek/deepseek-v4.1-flash"
     assert route["relations"]["primary"] == "deepseek/deepseek-v4.1-flash"
     assert route["vision"]["primary"] == "qwen/qwen3-vl-30b-a3b-instruct"
     assert u["verified"] is True
@@ -168,7 +171,7 @@ def test_input_length_limit_and_gateway_names(gateway, monkeypatch):
     monkeypatch.setattr(llm_client.httpx, "post", fake)
     monkeypatch.setattr(config, "LLM_MAX_INPUT_CHARS", 100)
     monkeypatch.setenv("LLM_NAME_GLM_5_3_FLASH", "zai-org/glm-5.3-flash")
-    llm_client.chat([{"role": "user", "content": "а" * 500}], task="analysis")
+    llm_client.chat([{"role": "user", "content": "а" * 500}], task="analysis", model=GLM)
     assert len(sent["messages"][0]["content"]) < 200 and "сокращён" in sent["messages"][0]["content"]
     assert sent["model"] == "zai-org/glm-5.3-flash"
     monkeypatch.setenv("LLM_NAME_GLM_5_3_FLASH", "gpt-4o")
@@ -226,11 +229,11 @@ def test_gateway_budget_exceeded_no_retry_no_fallback(gateway, monkeypatch):
     monkeypatch.setattr(llm_client.time, "sleep", lambda *_: None)
     with pytest.raises(llm_client.BudgetExceeded, match="Budget has been exceeded"):
         llm_client.chat([{"role": "user", "content": "x"}], task="analysis", conn=conn)
-    assert calls == [GLM], "без повторов и без запасной модели: лимит общий на все модели"
+    assert calls == [DEEPSEEK], "без повторов и без запасной модели: лимит общий на все модели"
     assert llm_budget.usage(conn)["gateway_exhausted"] is True
     with pytest.raises(llm_client.BudgetExceeded):
         llm_client.chat([{"role": "user", "content": "x"}], task="classify", conn=conn)
-    assert calls == [GLM], "до сброса в 03:00 МСК запросов к шлюзу нет"
+    assert calls == [DEEPSEEK], "до сброса в 03:00 МСК запросов к шлюзу нет"
 
 
 def test_gateway_budget_exceeded_plain_text(gateway, monkeypatch):

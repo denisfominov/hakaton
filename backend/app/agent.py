@@ -425,6 +425,17 @@ def bank_texts(ctx):
     return {f"bank:{h['id']}": h["text"][:700] for h in (ctx.data.get("bank_hits") or {}).values()}
 
 
+def bank_ref(raw, bank):
+    """Ссылка модели на фрагмент банка -> id фрагмента из этого запуска или None.
+    Модели пишут id без приставки («ALFA-macro#8») или в скобках («[bank:ALFA-macro#8]»); фрагмент, которого
+    агент не находил в этом запуске, не принимаем."""
+    s = str(raw or "").strip().strip("[]").strip()
+    if not s:
+        return None
+    key = s if s.startswith("bank:") else f"bank:{s}"
+    return key if key in bank else None
+
+
 def llm_payload(ctx, draft):
     """Вход модели: только собранный агентом контекст. Он же — вход примера для дообучения своей LLM."""
     a = draft["answers"]
@@ -469,8 +480,9 @@ def llm_rewrite(ctx, draft):
         texts = grounded(data.get(key) or [])[:5]
         if texts:
             out["answers"]["consequences"][key] = [_item(t, "ai", ["rules:analysis"]) for t in texts]
-    verified = [_item(str(b.get("text")), "bank", [b.get("source")]) for b in (data.get("bank_view") or [])
-                if isinstance(b, dict) and b.get("source") in bank]  # без ссылки на найденный фрагмент — отбрасываем
+    # без ссылки на найденный в этом запуске фрагмент — отбрасываем
+    refs = [(b, bank_ref(b.get("source"), bank)) for b in (data.get("bank_view") or []) if isinstance(b, dict)]
+    verified = [_item(str(b.get("text")), "bank", [ref]) for b, ref in refs if ref]
     dropped += len(data.get("bank_view") or []) - len(verified)
     if verified:
         out["answers"]["bank_view"]["items"] = verified
