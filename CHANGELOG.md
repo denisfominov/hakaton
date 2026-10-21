@@ -3,6 +3,24 @@
 Одна запись на пулл-реквест в `main`, новые — сверху (процесс — CLAUDE.md). Версий `vN` и веток `prompt-N` больше
 нет; записи v1–v10 ниже — архив прежнего процесса.
 
+## 2026-10-21 — ночной прогон через шлюз: PR `fix/c-reasoning-room`, `feature/a-llm-draft-labels`, `feature/c-model-comparison`, `feature/c-baseline-stress`, `feature/b-bank-claims`, `docs/overnight-report`
+
+Одна запись на шесть PR одного прогона — чтобы ветки не конфликтовали в CHANGELOG. Потрачено 260,63 ₽ (`usage.cost`),
+отчёт — docs/OVERNIGHT_REPORT.md.
+
+- `fix/c-reasoning-room`: запас токенов на рассуждение для каждой модели в роутере — ответ агента от GLM больше не
+  пустой. Общий запускатель платных вызовов `scripts/batch_runner.py` (до 4 потоков, продолжение с места остановки,
+  общий счётчик расходов). Замер — docs/GATEWAY_QUESTIONS.md.
+- `feature/a-llm-draft-labels`: черновая разметка 5265 пар «компания × новость» двумя моделями и судьёй (не эталон,
+  не для обучения), лист из 200 пар для проверки человеком — docs/a/LLM_DRAFT_LABELS.md.
+- `feature/c-model-comparison`: сравнение 5 моделей на 30 настоящих запросах агента и маршрут по задачам —
+  docs/MODEL_COMPARISON.md.
+- `feature/c-baseline-stress`: стресс-прогон агента на 20 новых новостях × 3 клиента, список ошибок —
+  docs/BASELINE.md.
+- `feature/b-bank-claims`: тезисы аналитики банка по страницам и 50 проверенных контрольных вопросов —
+  docs/b/BANK_CLAIMS.md.
+- `docs/overnight-report`: отчёт и записка о продолжении (docs/OVERNIGHT_STATUS.md).
+
 ## 2026-10-20 — PR `fix/demo-and-labels`: сценарий показа на клиентах кейса, честные подписи о модели
 
 - `PRESET_PROFILES` по умолчанию `0`: в списке только компании кейса (5 демо-клиентов, остальные — поиском).
