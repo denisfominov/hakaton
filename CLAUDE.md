@@ -93,11 +93,16 @@ Environment variables, template — [.env.example](.env.example) (copy to `.env`
 
 ## Case rules
 
+- Organizer answers live in [docs/QUESTIONS.md](docs/QUESTIONS.md) (verbatim — docs/ORGANIZERS_RAW.md). They override
+  our assumptions. Check that file before any task touching case rules: models, data, hosting, Alfa-Business entry,
+  delivery format.
 - LLM — **only the six models** from appendix 3, under the exact gateway names above. Allow-list: `ALLOWED_MODELS` in
   `backend/app/llm_client.py`; every model call goes through `llm_client`, a model outside the list is rejected before
   the request.
-- No external AI SDKs (openai, anthropic, …) and no ready-made agent frameworks (LangChain, LlamaIndex, AutoGen,
-  CrewAI, …): agent, ranking and conclusions are our own code. Checked by `tests/test_compliance.py`.
+- No external AI SDKs (openai, anthropic, …). Agent frameworks: organizers allowed LangChain / LangGraph
+  (2026-10-21), but the brief (slide 7) asks the team to build the agent logic itself, so we use none (LangChain,
+  LlamaIndex, AutoGen, CrewAI, …): agent, ranking and conclusions are our own code. Checked by
+  `tests/test_compliance.py`.
 
 Details — [docs/COMPLIANCE.md](docs/COMPLIANCE.md), gateway facts — [docs/GATEWAY_QUESTIONS.md](docs/GATEWAY_QUESTIONS.md).
 

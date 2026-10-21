@@ -40,7 +40,9 @@
    транспорт `llm_client` на httpx; других HTTP-клиентов к моделям нет, SDK (openai и т.п.) не используются.
 3. **Нет SDK внешних AI-сервисов и готовых агентных систем.** В зависимостях и коде нет openai, anthropic,
    langchain, llama-index, autogen, crewai, transformers, vllm, ollama и т.п. — проверяется тестами
-   `test_no_forbidden_packages_in_lock`, `test_no_forbidden_imports_in_code`.
+   `test_no_forbidden_packages_in_lock`, `test_no_forbidden_imports_in_code`. LangChain / LangGraph организаторы
+   разрешили (2026-10-21, docs/QUESTIONS.md); не используем по своему решению: по брифу (слайд 7) агентную логику
+   команда реализует сама.
 4. **Своя агентная логика.** Планирование, реестр инструментов, контекст, самопроверка, ранжирование и выводы —
    собственный код (`agent.py`, `agent_rules.py`, `analysis.py`, `scoring.py`, `model.py`).
 5. **Бюджет** (`app/llm_budget.py`). Учёт токенов и стоимости по моделям и дням (таблица `llm_calls`); стоимость —
