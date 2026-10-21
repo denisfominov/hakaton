@@ -681,7 +681,7 @@ def stops_queue(reason):
     return bool(reason) and any(s in reason for s in (GLOBAL, GATEWAY, FAILS, "Budget has been exceeded"))
 
 
-def queue(run_dir, specs, state, now=utcnow):
+def queue(run_dir, specs, state):
     """specs — [(имя, лимит, builder)], builder() -> (jobs, worker, контекст или None). Задачи по порядку; стоп
     очереди — лимит дня, шлюз или 5 неудач подряд; лимит задачи — переход к следующей."""
     jobs_state = state.setdefault("jobs", {})
@@ -964,6 +964,8 @@ def main(argv=None):
     if args.only and "j7" in args.only:
         sys.exit("J7 (кэш для показа) выключен до слова «freeze»: сначала заморозка промптов и смета")
     setup_env()
+    if not args.run:
+        os.environ["LLM_PROVIDER"] = "off"  # смета и статус физически не могут вызвать модель
     if args.plan:
         plan(args.cap, offline=args.offline, quick=args.quick)
     elif args.status:
