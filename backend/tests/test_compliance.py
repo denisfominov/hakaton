@@ -4,9 +4,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # SDK внешних AI-сервисов, готовые агентные и мультиагентные фреймворки, локальный запуск произвольных LLM
-FORBIDDEN = ["openai", "anthropic", "langchain", "langgraph", "llama-index", "llama_index", "autogen", "crewai",
+FORBIDDEN = ["openai", "anthropic", "llama-index", "llama_index", "autogen", "crewai",
              "semantic-kernel", "haystack", "transformers", "vllm", "ollama", "litellm", "google-generativeai",
              "gigachat", "yandex-cloud-ml-sdk", "mistralai", "cohere"]
+# организаторы разрешили (2026-10-21, docs/QUESTIONS.md), но агент свой (бриф, слайд 7) — наше решение, не правило кейса
+FORBIDDEN += ["langchain", "langgraph"]
 
 
 def test_no_forbidden_packages_in_lock():

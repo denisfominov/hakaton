@@ -56,7 +56,7 @@ joblib, threadpoolctl, python-dateutil, pytz, tzdata, huggingface-hub, flatbuffe
 
 Используются **только модели из приложения 3 кейса**; список зашит в [backend/app/llm_client.py](backend/app/llm_client.py),
 модель вне списка отклоняется до запроса. SDK внешних AI-сервисов (OpenAI, Anthropic и др.) и агентные фреймворки
-не используются. Все модели вызываются только через шлюз организаторов; своего сервера моделей нет (сервис Ollama
+не используются (LangChain / LangGraph организаторы разрешили 2026-10-21, но агент у нас свой — docs/QUESTIONS.md). Все модели вызываются только через шлюз организаторов; своего сервера моделей нет (сервис Ollama
 удалён из docker-compose — docs/COMPLIANCE.md).
 
 | Модель | Роль в сервисе | Как подключается |

@@ -299,7 +299,8 @@ robots.txt разбирается своим кодом по правилам Go
   `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`
   (названия кейса вроде «GLM-5.3-Flash» — псевдонимы). Имя сверяется с белым списком `llm_client.ALLOWED_MODELS` до
   запроса, модель вне списка не вызывается (docs/COMPLIANCE.md). SDK внешних AI-сервисов и агентные фреймворки не
-  используются: все вызовы — через `llm_client` на httpx.
+  используются (LangChain / LangGraph разрешены организаторами, но агент свой): все вызовы — через `llm_client` на
+  httpx.
 - Провайдер `LLM_PROVIDER`: `off` (по умолчанию: правила и свои модели), `mock` (ответы в формате шлюза без сети —
   для разработки, тестов и показа без ключа), `gateway` (шлюз организаторов, OpenAI-совместимый Chat Completions;
   проверен smoke-тестом 2026-10-20 — docs/GATEWAY_QUESTIONS.md). Старое значение `local` читается как `gateway`.
