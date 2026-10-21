@@ -299,9 +299,18 @@ class CacheMarkOut(BaseModel):
     note: str
 
 
+class DisclaimerOut(BaseModel):
+    """Подписи под ответом (ответы организаторов В41–В43, задача C17)."""
+    basis: Literal["bank", "ai"]  # bank — вывод опирается на аналитику Альфа-Банка; ai — только внешние данные и ИИ
+    label: str  # подпись для показа под ответом
+    bank_sources: list[str] = []  # bank:<id> фрагментов аналитики банка, на которые опирается вывод
+    investment: str  # всегда: «Не является инвестиционной рекомендацией.»
+
+
 class AgentResultOut(BaseModel):
     summary: str
     ai_conclusion: Optional[AIConclusionOut] = None
+    disclaimer: Optional[DisclaimerOut] = None  # C17; у запусков, сохранённых раньше, добавляется при выдаче
     features: list[FeatureOut] = []
     contradictions: list[ContradictionOut] = []
     plan: Optional[dict] = None  # {goal, by, sources, steps} — явный результат шага планирования

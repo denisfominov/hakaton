@@ -361,3 +361,29 @@ def answer_question(question, result):
     note = ("Ответ собран из найденных агентом данных без языковой модели." if items else
             "В собранных данных прямого ответа нет: уточните вопрос или подключите LLM (LLM_PROVIDER).")
     return {"text": question, "items": items, "note": note}
+
+
+# ---------- подписи под ответом (В41–В43, C17) ----------
+
+INVESTMENT_NOTE = "Не является инвестиционной рекомендацией."
+BANK_LABEL = ("С опорой на аналитику Альфа-Банка: пункты «позиция банка» — из материалов банка, остальные выводы "
+              "сделаны ИИ и не являются официальной позицией банка.")
+AI_LABEL = "Вывод ИИ — не официальная позиция банка: материалов банка по этой теме не найдено."
+
+
+def disclaimer(result):
+    """Опирается ли вывод на аналитику банка (есть пункты «позиция банка» со ссылкой на фрагмент) — и подпись к нему.
+    Дисклеймер об инвестиционной рекомендации — всегда."""
+    items = ((result.get("answers") or {}).get("bank_view") or {}).get("items") or []
+    sources = sorted({s for it in items if it.get("kind") == "bank" for s in it.get("sources") or []
+                      if str(s).startswith("bank:")})
+    if sources:
+        return {"basis": "bank", "label": BANK_LABEL, "bank_sources": sources, "investment": INVESTMENT_NOTE}
+    return {"basis": "ai", "label": AI_LABEL, "bank_sources": [], "investment": INVESTMENT_NOTE}
+
+
+def with_disclaimer(result):
+    """Ответ с подписью: у сохранённых раньше запусков и ответов кэша её нет — считаем по их же пунктам."""
+    if isinstance(result, dict) and not result.get("disclaimer"):
+        result["disclaimer"] = disclaimer(result)
+    return result

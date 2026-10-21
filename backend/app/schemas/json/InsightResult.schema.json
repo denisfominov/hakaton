@@ -591,6 +591,42 @@
       "title": "ContradictionOut",
       "type": "object"
     },
+    "DisclaimerOut": {
+      "description": "Подписи под ответом (ответы организаторов В41–В43, задача C17).",
+      "properties": {
+        "bank_sources": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Bank Sources",
+          "type": "array"
+        },
+        "basis": {
+          "enum": [
+            "bank",
+            "ai"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "investment": {
+          "title": "Investment",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "basis",
+        "label",
+        "investment"
+      ],
+      "title": "DisclaimerOut",
+      "type": "object"
+    },
     "EventDetailsOut": {
       "properties": {
         "category": {
@@ -1105,6 +1141,17 @@
       },
       "title": "Data Gaps",
       "type": "array"
+    },
+    "disclaimer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DisclaimerOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "features": {
       "default": [],

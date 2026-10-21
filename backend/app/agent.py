@@ -586,6 +586,7 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
             q["note"] = "Ответ сформулировала модель по данным, собранным агентом."
         result["answers"]["question"] = q
     result.pop("llm_answer", None)
+    result["disclaimer"] = agent_rules.disclaimer(result)  # после проверки источников: пункты банка окончательные
     run_id = uuid.uuid4().hex[:12]
     ms = int((time.time() - started) * 1000)
     result.update(mode=mode, model=model, question=ctx.question or None)
@@ -614,7 +615,8 @@ def get_run(conn, run_id):
     if not row:
         return None
     return {"run_id": row["id"], "profile_id": row["profile_id"], "event_id": row["event_id"], "ms": row["ms"],
-            "created_at": row["created_at"], "result": loads(row["result"], {}), "trace": loads(row["trace"], [])}
+            "created_at": row["created_at"], "result": agent_rules.with_disclaimer(loads(row["result"], {})),
+            "trace": loads(row["trace"], [])}
 
 
 def latest_run(conn, profile_id, event_id, question="", role=""):

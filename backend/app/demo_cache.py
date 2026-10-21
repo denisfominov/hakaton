@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from . import config, llm_client
+from . import agent_rules, config, llm_client
 
 FORMAT = 1
 
@@ -72,7 +72,7 @@ def lookup(profile_id, event_id, role=""):
                 "role": doc.get("role") or None, "file": p.name,
                 "note": f"Ответ из кэша: получен ранее моделью {doc.get('model')}, {str(doc.get('obtained_at'))[:10]}. "
                         "Языковая модель сейчас не подключена — новые события разбираются правилами и своими моделями."}
-        return {"run_id": "demo-" + p.stem[:40], "ms": 0, "result": {**r, "from_cache": mark},
+        return {"run_id": "demo-" + p.stem[:40], "ms": 0, "result": agent_rules.with_disclaimer({**r, "from_cache": mark}),
                 "trace": doc.get("trace") or [], "cached": True}
     return None
 
