@@ -25,8 +25,8 @@ Code, identifiers and commit messages may be English. Existing Russian docs stay
 
 | Version | Date | Status | Changes |
 |---|---|---|---|
-| v2 | 2026-10-21 | proposed in branch `docs/work-logic-v2`; effective from its merge into `main` | this versioning; README for a new participant (update every 7 merged PRs); work while waiting for a background result |
-| v1 | 2026-10-21 | superseded by v2 (once v2 is merged) | iteration mode, task fields and 8 statuses, organizer-answer intake, report format, workflow |
+| v2 | 2026-10-21 | effective: merged into `main` (PR #40, 2026-10-21) | this versioning; README for a new participant (update every 7 merged PRs); work while waiting for a background result |
+| v1 | 2026-10-21 | superseded by v2 | iteration mode, task fields and 8 statuses, organizer-answer intake, report format, workflow |
 
 ## Session start
 
