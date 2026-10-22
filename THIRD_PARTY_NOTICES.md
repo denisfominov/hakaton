@@ -12,7 +12,7 @@
 | Starlette | 0.41.3 | BSD-3-Clause | основа FastAPI, отдача фронтенда |
 | Uvicorn | 0.32.1 | BSD-3-Clause | ASGI-сервер |
 | Pydantic | 2.10.3 | MIT | схемы запросов и ответов, проверка ответа LLM |
-| HTTPX | 0.28.1 | BSD-3-Clause | HTTP-клиент: LLM (Chat Completions), RSS, ЕГРЮЛ |
+| HTTPX | 0.28.1 | BSD-3-Clause | HTTP-клиент: LLM (Chat Completions), RSS |
 | feedparser | 6.0.11 | BSD-2-Clause | разбор RSS |
 | python-dotenv | 1.0.1 | BSD-3-Clause | загрузка `.env` |
 | pandas | 2.2.3 | BSD-3-Clause | данные клиентов кейса, агрегаты обзора |
@@ -96,8 +96,6 @@ joblib, threadpoolctl, python-dateutil, pytz, tzdata, huggingface-hub, flatbuffe
 | Сервис | Зачем | Ограничения |
 |---|---|---|
 | RSS изданий (`backend/data/sources.json`) | свежие новости | публичные ленты, свой User-Agent, таймауты, без обхода ограничений |
-| ЕГРЮЛ (egrul.nalog.ru), DaData (при ключе) | данные о компании по ИНН | только по действию пользователя |
-| Checko, «За честный бизнес», Википедия, сайт компании | автозаполнение профиля | соблюдаем robots.txt, лимиты размера и времени, внутренние сети запрещены |
 | Шлюз LLM организаторов | разрешённые модели | 500 ₽ в день на ключ команды (сброс в 03:00 МСК), маскирование реквизитов перед отправкой |
 
 ## 7. Смоделированные интеграции

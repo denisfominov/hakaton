@@ -27,16 +27,9 @@ export interface Profile {
   client_id?: string;
   label?: string;
   bank_products?: string[];
-  autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[];
-    sources_log?: SourceLogItem[] };
+  autofill_info?: { template?: string | null; from_description?: Record<string, string[]>; sources?: string[] };
   is_demo?: boolean;
   updated_at?: string;
-}
-
-export interface SourceLogItem {
-  source: string;
-  status: "ok" | "empty" | "error";
-  detail: string;
 }
 
 export type ProfileListField =
@@ -60,12 +53,31 @@ export interface ProfileSuggestion {
   from_description: Record<string, string[]>;
 }
 
-export interface CompanyLookup {
-  suggestion: ProfileSuggestion;
-  registry: null | { source: string; inn: string; ogrn: string; name: string; region: string; registered: string | null };
-  site: null | { source: string; url: string; title: string; description: string };
-  errors: string[];
-  sources_log: SourceLogItem[];
+// сервис 1 (C20.3): профиль только из набора банка — у каждого факта источник
+export interface FactSource {
+  file: string;
+  record: string;
+  fields: string[];
+}
+
+export interface ProfileFact {
+  id: string;
+  group: string;
+  label: string;
+  value: unknown;
+  status: "confirmed" | "derived" | "no_data" | "insufficient_data";
+  sources: FactSource[];
+  method: string | null;
+  note: string | null;
+}
+
+export interface CompanyFacts {
+  client_id: string;
+  profile_id: string;
+  dataset: "case" | "sample";
+  facts: ProfileFact[];
+  significance_facts: string[];
+  gaps: string[];
 }
 
 export interface Verification {

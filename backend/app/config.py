@@ -90,9 +90,6 @@ ALFA_NEWS_API_TOKEN = os.getenv("ALFA_NEWS_API_TOKEN", "")
 # фоновый пересчёт анализа (app/jobs.py); в тестах выключен
 BACKGROUND_JOBS = os.getenv("ALPHA_BACKGROUND", "1") != "0"
 
-# DaData: необязательный ключ для поиска компании по ИНН с ОКВЭД (без него — публичный поиск ЕГРЮЛ)
-DADATA_API_KEY = os.getenv("DADATA_API_KEY", "")
-
 # собранный фронтенд (npm run build): если папка задана и существует, backend отдаёт его на «/» — так работает
 # Docker-образ, где всё в одном контейнере. В разработке пусто: фронтенд отдаёт Vite на :5173
 FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", "")) if os.getenv("FRONTEND_DIST") else None

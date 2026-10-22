@@ -112,3 +112,33 @@ def test_saved_profile_lists_are_alphabetical(client):
     assert p["products"] == ["Арматура", "Металлопрокат", "Трубы"]
     assert p["regions"] == ["Казахстан", "Урал"]
     client.delete(f"/api/profiles/{p['id']}")
+
+
+# ОКВЭД -> отраслевой шаблон (перенесено из lookup.py в C20.3; шаблоны удаляются в C20.7)
+def test_okved_maps_to_template():
+    assert catalog.template_by_okved("46.69.5").startswith("Промышленное оборудование")
+    assert catalog.template_by_okved("24.10") == "Металлургия"
+    assert catalog.template_by_okved("64.19") == "Банки и финансы"
+    assert catalog.template_by_okved("99.99") is None
+
+
+def test_wholesale_okved_maps_by_goods():
+    # A8: коды пяти демо-клиентов кейса; опт — по товару, а не «Металлургия» или «Розничная торговля» на весь класс
+    assert catalog.template_by_okved("46.71") == "Нефть, газ и энергетика"            # топливо (U_57706)
+    assert catalog.template_by_okved("42.99") == "Строительство и девелопмент"         # U_9250
+    assert catalog.template_by_okved("46.72") == "Металлургия"                         # металлы и руды (U_200890)
+    assert catalog.template_by_okved("46.90") == catalog.GENERIC_WHOLESALE              # неспециализированный (U_234228)
+    assert catalog.template_by_okved("46.38") == "Оптовая торговля продуктами питания"  # U_102920
+    assert catalog.template_by_okved("46.75.1") == catalog.GENERIC_WHOLESALE            # удобрения — своего шаблона нет
+    assert catalog.template_by_okved("46.46") == "Фармацевтика"
+    assert catalog.template_by_okved("47.11") == "Розничная торговля"
+
+
+def test_every_okved_template_exists_in_catalog():
+    labels = {t["label"] for t in catalog.TEMPLATES}
+    assert {label for _, label in catalog.OKVED_TEMPLATES} <= labels
+
+
+def test_wholesale_templates_not_picked_by_words():
+    # оптовые шаблоны — только по ОКВЭД; подбор по словам по-прежнему даёт розницу
+    assert catalog.template_for("", "Сеть магазинов у дома, торговля продуктами")["label"] == "Розничная торговля"

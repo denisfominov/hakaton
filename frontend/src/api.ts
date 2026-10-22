@@ -4,7 +4,7 @@ import type {
   BankDoc,
   CaseClient,
   LlmUsage,
-  CompanyLookup,
+  CompanyFacts,
   CompareRow,
   EventCard,
   EventDetail,
@@ -87,8 +87,7 @@ export const api = {
   resetProfile: (id: string) => request<Profile>(`/profiles/${id}/reset`, { method: "POST" }),
   deleteProfile: (id: string) => request<{ ok: boolean }>(`/profiles/${id}`, { method: "DELETE" }),
   restorePresets: () => request<{ restored: string[] }>("/profiles/restore-presets", { method: "POST" }),
-  lookupCompany: (b: { url: string; inn: string; name: string; industry: string; description: string }) =>
-    request<CompanyLookup>("/companies/lookup", { method: "POST", body: JSON.stringify(b) }),
+  profileFacts: (profileId: string) => request<CompanyFacts>(`/profiles/${profileId}/facts`),
   profileOptions: (industry: string) => request<ProfileOptions>(`/profile-options?${qs({ industry })}`),
   suggestProfile: (b: { name: string; industry: string; description: string }) =>
     request<ProfileSuggestion>("/profiles/suggest", { method: "POST", body: JSON.stringify(b) }),

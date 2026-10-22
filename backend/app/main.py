@@ -9,12 +9,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-import httpx
-
-from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, company, config, jobs, llm, llm_budget, llm_client, llm_router, lookup,
+from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, config, jobs, llm, llm_budget, llm_client, llm_router,
                nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, AgentIn, CompanyLookupIn, EntryTokenIn, EntryVerifyIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, EntryTokenIn, EntryVerifyIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -463,30 +461,6 @@ def restore_presets():
     return {"restored": restored}
 
 
-@app.post("/api/companies/lookup")
-def company_lookup(body: CompanyLookupIn):
-    """Найти компанию во всех открытых источниках (ЕГРЮЛ, Checko, «За честный бизнес», сайт, Википедия)
-    и предложить заполненный профиль. Ничего не сохраняет."""
-    inn = re.sub(r"\D", "", body.inn or "")
-    pre_errors = []
-    if inn and not lookup.valid_inn(inn):
-        pre_errors.append("ИНН не проходит проверку контрольной суммы — проверьте цифры")
-        inn = ""
-    url = body.url.strip()
-    if url:
-        try:
-            lookup.normalize_url(url)
-        except lookup.LookupError_ as e:
-            pre_errors.append(str(e))
-            url = ""
-    s, found, log, errors = company.build(inn, url, body.name, body.industry, body.description)
-    errors = pre_errors + errors
-    if not s:
-        raise HTTPException(400, "; ".join(errors) or "Укажите сайт, ИНН или название компании")
-    return {"suggestion": s, "found": company.public_found(found), "sources_log": log, "errors": errors,
-            "registry": found.get("registry"), "site": company.public_found(found).get("site")}
-
-
 # ---------- события ----------
 
 SORTS = {
@@ -770,6 +744,30 @@ def client_card(uid: str):
     if not c:
         raise HTTPException(404, "Клиент не найден в данных")
     return c
+
+
+@app.get("/api/clients/{uid}/facts")
+def client_facts(uid: str):
+    """Сервис 1 (C20.3): профиль только из набора банка — факты с источником, пропуски помечены."""
+    from .services import company_profile
+
+    facts = company_profile.build(uid)
+    if not facts:
+        raise HTTPException(404, "Клиент не найден в данных")
+    return facts
+
+
+@app.get("/api/profiles/{profile_id}/facts")
+def profile_facts(profile_id: str):
+    """Факты профиля компании из набора банка; у компании не из набора — 404."""
+    from .services import company_profile
+
+    with get_db() as conn:
+        p = get_profile(conn, profile_id)
+    facts = company_profile.build(p["client_id"]) if p.get("client_id") else None
+    if not facts:
+        raise HTTPException(404, "Компании нет в наборе данных банка")
+    return facts
 
 
 @app.post("/api/clients/{uid}/profile", status_code=201)

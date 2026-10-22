@@ -24,8 +24,8 @@
 `docs/{BASELINE,MODEL_COMPARISON,GATEWAY_QUESTIONS,COMPLIANCE,SECURITY,PAID_QUEUE}.md`.
 
 **Ч2 — «Данные, поиск и качество».** `backend/app/`: `sources.py`, `dedup.py`, `bank_rag.py`, `embeddings.py`,
-`clients.py`, `company*.py`, `lookup.py`, `catalog.py`, `nlp.py`, `ner.py`, `jobs.py`,
-`threads.py`, `outlets.py`, `portals.py`, `diversity.py`, `overview.py`; остальные `backend/scripts/`; `backend/data/`
+`clients.py`, `case_data.py`, `company_features.py`, `services/company_profile.py`, `catalog.py`, `nlp.py`, `ner.py`, `jobs.py`,
+`threads.py`, `outlets.py`, `diversity.py`, `overview.py`; остальные `backend/scripts/`; `backend/data/`
 (кроме `demo_cache/`); документы `docs/a/`, `docs/b/`, `docs/{DATA,DATA_QUALITY}.md`, `README.md`,
 `THIRD_PARTY_NOTICES.md`.
 

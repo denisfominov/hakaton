@@ -19,11 +19,11 @@
 
 # группы модулей app/ (имя файла без .py)
 NEWS = {"sources", "nlp", "ner", "dedup", "threads", "outlets", "news_collection"}
-PROFILE = {"clients", "company_features", "company_profile", "catalog", "lookup", "portals", "company"}
+PROFILE = {"case_data", "clients", "company_features", "company_profile", "catalog"}
 ANALYSIS = {"matching", "scoring", "analysis", "roles", "news_matching", "interpretation", "agent", "agent_tools",
-            "agent_rules", "model", "ml_models", "market", "bank_rag", "embeddings"}
+            "agent_rules", "bank_rag", "embeddings"}
 LLM = {"llm", "llm_client", "llm_router", "llm_mock", "llm_budget", "llm_errors", "demo_cache"}
-DATA_ACCESS = {"pipeline", "store", "jobs", "main", "sources", "clients", "company_features"}
+DATA_ACCESS = {"pipeline", "store", "jobs", "main", "sources", "case_data", "clients", "company_features"}
 
 # сервис -> модули, которых не должно быть среди его импортов (прямых и через другие модули app)
 FORBIDDEN_IMPORTS = {
