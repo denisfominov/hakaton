@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 
-from . import jobs, store
+from . import config, jobs, store
 from .db import dumps, loads, now_iso
 from .services import news_collection, news_matching
 # сервис 2 (сбор новостей): прежние имена pipeline.* остаются для скриптов и тестов
@@ -79,12 +79,31 @@ def _profile_lock(pid):
         return _profile_locks.setdefault(pid, threading.Lock())
 
 
+def profile_visible(data):
+    """C20.7: в приложении — только клиенты из набора банка; профиль без client_id (введённый вручную раньше) скрыт.
+    Тестовые встроенные компании видны только при PRESET_PROFILES=1."""
+    return bool(data.get("client_id")) or config.PRESET_PROFILES in ("1", "true", "yes", "on")
+
+
+def rules_input(profile):
+    """Что видят правила (сервис 3): у клиента из набора банка — только факты сервиса 1 (rules_profile), запись
+    профиля в базе не используется. Профиль без client_id бывает только в тестах (PRESET_PROFILES=1)."""
+    from .services import company_profile
+
+    if profile.get("client_id"):
+        facts = company_profile.build(profile["client_id"])
+        if facts:
+            return {**news_matching.rules_profile(facts), "id": profile["id"]}
+    return profile
+
+
 def analyze_all(conn, profile, force=False):
     """Результаты анализа компании: память -> снимок в базе -> расчёт (и сохранение снимка).
 
     Снимок старше часа отдаём сразу, а пересчёт просим у фонового потока (свежесть новостей меняется со временем).
     force — посчитать заново (так работает фоновый поток)."""
     pid = profile["id"]
+    profile = rules_input(profile)
     key = store.key_for(conn, profile)
     if not force:
         mem = _cache.get(pid)

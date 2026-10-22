@@ -15,8 +15,6 @@ import type {
   Overview,
   Portfolio,
   Profile,
-  ProfileOptions,
-  ProfileSuggestion,
   Status,
 } from "./types";
 
@@ -81,16 +79,9 @@ export const api = {
   outlets: () => request<Outlet[]>("/outlets"),
 
   profiles: () => request<Profile[]>("/profiles"),
-  createProfile: (p: Omit<Profile, "id">) => request<Profile>("/profiles", { method: "POST", body: JSON.stringify(p) }),
-  updateProfile: (id: string, p: Omit<Profile, "id">) =>
-    request<Profile>(`/profiles/${id}`, { method: "PUT", body: JSON.stringify(p) }),
-  resetProfile: (id: string) => request<Profile>(`/profiles/${id}/reset`, { method: "POST" }),
   deleteProfile: (id: string) => request<{ ok: boolean }>(`/profiles/${id}`, { method: "DELETE" }),
   restorePresets: () => request<{ restored: string[] }>("/profiles/restore-presets", { method: "POST" }),
   profileFacts: (profileId: string) => request<CompanyFacts>(`/profiles/${profileId}/facts`),
-  profileOptions: (industry: string) => request<ProfileOptions>(`/profile-options?${qs({ industry })}`),
-  suggestProfile: (b: { name: string; industry: string; description: string }) =>
-    request<ProfileSuggestion>("/profiles/suggest", { method: "POST", body: JSON.stringify(b) }),
 
   portfolio: (days: number) => request<Portfolio>(`/portfolio?${qs({ days })}`),
   overview: (profileId: string, f: { days: number; category?: string; impact?: string; level?: string }) =>

@@ -56,7 +56,7 @@ def rankings(conn, uids):
     for uid in uids:
         profile = case_env.case_profile(uid)
         if profile:
-            out[uid] = (profile.get("industry") or "", pipeline.analyze_events(events, profile))
+            out[uid] = (profile.get("industry") or "", pipeline.analyze_events(events, pipeline.rules_input(profile)))
     return out
 
 

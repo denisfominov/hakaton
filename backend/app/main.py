@@ -1,7 +1,5 @@
 import json
 import logging
-import re
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -9,11 +7,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, config, jobs, llm, llm_budget, llm_client, llm_router,
+from . import (agent, bank_rag, demo_cache, entry, roles, clients, config, jobs, llm, llm_budget, llm_client, llm_router,
                nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, AgentIn, EntryTokenIn, EntryVerifyIn, MatchIn, ProfileIn, RefreshIn,
-                      SuggestIn)
+from .schemas import (ActionIn, ActionPatch, AgentIn, EntryTokenIn, EntryVerifyIn, MatchIn, ProfileIn, RefreshIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("alpha")
@@ -41,6 +38,18 @@ def presets_wanted():
     return config.PRESET_PROFILES in ("1", "true", "yes", "on")
 
 
+def visible_ids(conn):
+    """id профилей, которые видит приложение (pipeline.profile_visible), в порядке списка компаний."""
+    rows = conn.execute("SELECT id, data FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
+    return [r["id"] for r in rows if pipeline.profile_visible(loads(r["data"], {}))]
+
+
+def client_record(uid, pid):
+    """Запись профиля клиента из набора банка (clients.profile_from_client) в виде строки таблицы profiles."""
+    p = clients.profile_from_client(uid)
+    return {**ProfileIn(**p).model_dump(), "id": pid} if p else None
+
+
 def seed_demo_clients(conn):
     """Демо-клиенты кейса — встроенные профили с постоянными id (ссылки входа, кэш ответов модели)."""
     ids = []
@@ -49,14 +58,21 @@ def seed_demo_clients(conn):
         ids.append(pid)
         if conn.execute("SELECT 1 FROM profiles WHERE id = ?", (pid,)).fetchone():
             continue
-        p = clients.profile_from_client(uid)
-        if not p:
-            continue
-        data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
-        data["id"] = pid
-        conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
-                     (pid, dumps(data), now_iso()))
+        data = client_record(uid, pid)
+        if data:
+            conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 1, ?)",
+                         (pid, dumps(data), now_iso()))
     return ids
+
+
+def refresh_client_profiles(conn):
+    """C20.7: записи профилей клиентов — только из набора банка. Профили, заполненные раньше шаблонами отраслей или
+    вручную, переписываются при старте (избранное и план действий привязаны к id и не меняются)."""
+    for r in conn.execute("SELECT id, data FROM profiles").fetchall():
+        uid = loads(r["data"], {}).get("client_id")
+        data = client_record(uid, r["id"]) if uid else None
+        if data and loads(r["data"], {}) != data:
+            conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?", (dumps(data), now_iso(), r["id"]))
 
 
 def deleted_presets(conn):
@@ -75,6 +91,7 @@ async def lifespan(_app):
     with get_db() as conn:
         presets = preset_profiles()
         ids = [p["id"] for p in presets] + seed_demo_clients(conn)
+        refresh_client_profiles(conn)
         deleted = deleted_presets(conn)
         # при смене набора данных убираем встроенные профили и события другого набора (в том числе публичные компании,
         # которых нет в базе кейса); профили, созданные пользователем, и план действий не трогаем
@@ -118,6 +135,9 @@ def get_profile(conn, profile_id):
     if not row:
         raise HTTPException(404, "Профиль не найден")
     p = loads(row["data"], {})
+    if not pipeline.profile_visible(p):
+        # сведения о компании — только из набора банка (C20.7): профили, введённые вручную раньше, не показываются
+        raise HTTPException(404, "Компании нет в наборе данных банка")
     p["id"] = row["id"]
     p["is_demo"] = bool(row["is_demo"])
     p["updated_at"] = row["updated_at"]
@@ -249,7 +269,7 @@ def status():
                               "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
         deleted = deleted_presets(conn)
-        n_profiles = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
+        n_profiles = len(visible_ids(conn))
         row = conn.execute("SELECT value FROM settings WHERE key = 'last_live'").fetchone()
         last_live = loads(row["value"], None) if row else None
         by_country = {r["c"] or "RU": r["n"] for r in conn.execute(
@@ -349,23 +369,7 @@ def refresh(body: RefreshIn):
 def list_profiles():
     with get_db() as conn:
         # порядок по rowid, иначе после сохранения профиль "уезжает" в конец списка
-        rows = conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
-        return [get_profile(conn, r["id"]) for r in rows]
-
-
-@app.get("/api/profile-options")
-def profile_options(industry: str = ""):
-    """Варианты для выпадающих списков профиля: типичные для отрасли + общие + уже введённые в других профилях."""
-    with get_db() as conn:
-        rows = conn.execute("SELECT data FROM profiles").fetchall()
-        custom = catalog.custom_values(conn)
-    return catalog.options(industry, [loads(r["data"], {}) for r in rows], custom)
-
-
-@app.post("/api/profiles/suggest")
-def suggest_profile(body: SuggestIn):
-    """Черновик профиля новой компании по отрасли и описанию. Ничего не сохраняет."""
-    return catalog.suggest(body.name, body.industry, body.description)
+        return [get_profile(conn, pid) for pid in visible_ids(conn)]
 
 
 @app.get("/api/profiles/{profile_id}")
@@ -374,66 +378,11 @@ def read_profile(profile_id: str):
         return get_profile(conn, profile_id)
 
 
-def _clean_list(values):
-    return [v.strip() for v in values if v and v.strip()]
-
-
-def _profile_data(body: ProfileIn):
-    data = body.model_dump()
-    for k, v in data.items():
-        if isinstance(v, list):
-            # все списки профиля — по алфавиту, без повторов
-            data[k] = catalog.sort_values(list(dict.fromkeys(_clean_list(v))))
-        elif isinstance(v, str):
-            data[k] = v.strip()
-    return data
-
-
-@app.post("/api/profiles", status_code=201)
-def create_profile(body: ProfileIn):
-    data = _profile_data(body)
-    slug = re.sub(r"[^a-z0-9]+", "-", nlp.normalize_text(body.name).encode("ascii", "ignore").decode()).strip("-")
-    pid = (slug[:20] + "-" if slug else "company-") + uuid.uuid4().hex[:6]
-    data["id"] = pid
-    with get_db() as conn:
-        conn.execute("INSERT INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
-                     (pid, dumps(data), now_iso()))
-        catalog.remember_custom(conn, data, now_iso())
-        jobs.request(pid)
-        return get_profile(conn, pid)
-
-
-@app.put("/api/profiles/{profile_id}")
-def update_profile(profile_id: str, body: ProfileIn):
-    with get_db() as conn:
-        get_profile(conn, profile_id)
-        data = _profile_data(body)
-        data["id"] = profile_id
-        # сохранили форму — значит, пользователь проверил автозаполнение
-        data["autofilled"] = False
-        data["autofill_info"] = {}
-        conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?", (dumps(data), now_iso(), profile_id))
-        catalog.remember_custom(conn, data, now_iso())
-        jobs.request(profile_id)
-        return get_profile(conn, profile_id)
-
-
-@app.post("/api/profiles/{profile_id}/reset")
-def reset_profile(profile_id: str):
-    original = next((p for p in preset_profiles() if p["id"] == profile_id), None)
-    if not original:
-        raise HTTPException(400, "Сбросить можно только встроенный профиль")
-    with get_db() as conn:
-        conn.execute("UPDATE profiles SET data = ?, updated_at = ? WHERE id = ?",
-                     (dumps(original), now_iso(), profile_id))
-        return get_profile(conn, profile_id)
-
-
 @app.delete("/api/profiles/{profile_id}")
 def delete_profile(profile_id: str):
     with get_db() as conn:
         p = get_profile(conn, profile_id)
-        if conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"] <= 1:
+        if len(visible_ids(conn)) <= 1:
             raise HTTPException(400, "Нельзя удалить последнюю компанию")
         if p["is_demo"]:
             # встроенную компанию можно вернуть кнопкой «Восстановить встроенные»
@@ -557,9 +506,8 @@ def compare_profiles(event_id: str):
     """Одна новость глазами разных компаний — для демонстрации персонализации."""
     out = []
     with get_db() as conn:
-        rows = conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
-        for row in rows:
-            p = get_profile(conn, row["id"])
+        for pid in visible_ids(conn):
+            p = get_profile(conn, pid)
             r = pipeline.find_result(conn, p, event_id)
             if not r:
                 raise HTTPException(404, "Событие не найдено")
@@ -799,11 +747,9 @@ def client_profile(uid: str):
         for r in conn.execute("SELECT id, data FROM profiles"):
             if loads(r["data"], {}).get("client_id") == uid:
                 return get_profile(conn, r["id"])
-    p = clients.profile_from_client(uid)
-    if not p:
+    data = client_record(uid, clients.profile_id(uid))  # постоянный id: одинаковый у всей команды
+    if not data:
         raise HTTPException(404, "Клиент не найден в данных")
-    data = _profile_data(ProfileIn(**{**p, "autofilled": True}))
-    data["id"] = clients.profile_id(uid)  # постоянный id: одинаковый у всей команды
     with get_db() as conn:
         conn.execute("INSERT OR IGNORE INTO profiles (id, data, is_demo, updated_at) VALUES (?, ?, 0, ?)",
                      (data["id"], dumps(data), now_iso()))
@@ -822,7 +768,7 @@ def portfolio(days: int = Query(7, ge=1, le=365)):
     """Компании × риски за период: кому из клиентов звонить первым. Анализ берётся из готовых снимков (store.py)."""
     rows = []
     with get_db() as conn:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid")]
+        ids = visible_ids(conn)
         tmap = store.threads_for(conn)
         for pid in ids:
             p = get_profile(conn, pid)

@@ -162,6 +162,11 @@ def topic_query(ctx):
     return " ".join(parts + title_nouns + ([ctx.question] if ctx.question else [])).strip()
 
 
+# цепочка сервисов 3 -> 4 (C20.7): у клиента из набора банка — всегда и именно в этом порядке
+CHAIN = [("match_company_news", {}, "сервис 3: связи события с фактами профиля из набора банка"),
+         ("explain_for_executive", {}, "сервис 4: объяснение для руководителя по результату сопоставления")]
+
+
 def heuristic_plan(ctx):
     plan = [("get_event", {}, "узнать, что произошло: факты, источники, достоверность"),
             ("get_company_profile", {}, "контекст компании: отрасль, контрагенты, регионы, риски")]
@@ -169,6 +174,8 @@ def heuristic_plan(ctx):
         plan.append(("get_client_card", {}, "данные банка: продукты (кредиты, депозиты), ВЭД, место в отрасли"))
         plan.append(("get_relationship_graph", {}, "граф связей: отрасли и регионы контрагентов по платежам, группа"))
     plan.append(("analyze_impact", {}, "связь события с компанией и каналы влияния"))
+    if ctx.profile.get("client_id"):
+        plan += CHAIN
     plan.append(("search_bank_analytics", {"query": topic_query(ctx)}, "позиция Альфа-Банка по теме события"))
     if ctx.ev.get("thread_id"):
         plan.append(("search_news", {"query": ctx.ev["title"]}, "развитие сюжета в других публикациях"))
@@ -296,23 +303,32 @@ def compose(ctx, gaps):
                              [f"news:{s}" for s in list(others)[:3]]), "confirmed": True})
 
     why = []
-    if card and card.get("position"):
-        place = clients.position_text(card["position"])
-        if place:
-            why.append(_item(f"Масштаб компании. {place}", "client", ["client:bank"]))
-    for link in insight.get("company_link", [])[:5]:
-        why.append(_item(f"{link['element']}: {link['value']}", "client", ["client:profile"]))
-    for c in r["channels"]:
-        if c.get("via_profile"):
-            why.append(_item(f"Чувствительность компании: {c['via_profile']}", "client",
-                             ["client:bank"] if "данные банка" in c["via_profile"] else ["client:profile"]))
-    if card:
-        for sgn in card["signals"]:
-            if sgn["key"] in ("debt", "deposits", "foreign_trade") and any(
-                    k in [c["key"] for c in r["channels"]] for k in {"debt": ("rate_up", "rate_hold", "rate_down"),
-                                                                     "deposits": ("rate_deposits",),
-                                                                     "foreign_trade": ("fx_import", "fx_export")}[sgn["key"]]):
-                why.append(_item(f"{sgn['label']}: {sgn['detail']}", "client", ["client:bank"]))
+    interp = ctx.data.get("explain_for_executive")
+    if interp:  # C20.7: «почему важно» — объяснение сервиса 4 по результату сопоставления (сервис 3)
+        for st in interp["why_it_matters"]:
+            if st["kind"] in ("link", "fact"):  # подтверждённая связь или балл правил по фактам профиля
+                why.append(_item(st["text"], "client", ["client:match", "client:facts"]))
+            else:
+                text = st["text"] if st["text"].lower().startswith("допущение") else f"Допущение: {st['text']}"
+                why.append(_item(text, "ai", ["client:match"]))
+    else:
+        if card and card.get("position"):
+            place = clients.position_text(card["position"])
+            if place:
+                why.append(_item(f"Масштаб компании. {place}", "client", ["client:bank"]))
+        for link in insight.get("company_link", [])[:5]:
+            why.append(_item(f"{link['element']}: {link['value']}", "client", ["client:profile"]))
+        for c in r["channels"]:
+            if c.get("via_profile"):
+                why.append(_item(f"Чувствительность компании: {c['via_profile']}", "client",
+                                 ["client:bank"] if "данные банка" in c["via_profile"] else ["client:profile"]))
+        if card:
+            for sgn in card["signals"]:
+                if sgn["key"] in ("debt", "deposits", "foreign_trade") and any(
+                        k in [c["key"] for c in r["channels"]] for k in {"debt": ("rate_up", "rate_hold", "rate_down"),
+                                                                         "deposits": ("rate_deposits",),
+                                                                         "foreign_trade": ("fx_import", "fx_export")}[sgn["key"]]):
+                    why.append(_item(f"{sgn['label']}: {sgn['detail']}", "client", ["client:bank"]))
     seen = set()
     why = [x for x in why if not (x["text"] in seen or seen.add(x["text"]))][:7]
     if not why:
@@ -396,6 +412,8 @@ def compose(ctx, gaps):
         "contradictions": [{**i["pair"], "note": i["text"]} for i in issues if i.get("pair")],
         "plan": getattr(ctx, "plan_json", None),
         "role": role_note(role, consequences, actions) if role else None,
+        "match": ctx.data.get("match_company_news"),  # сервис 3 (C20.5): балл правил, связи и допущения
+        "interpretation": interp,  # сервис 4 (C20.6): объяснение для руководителя по результату сервиса 3
         "answers": {"what_happened": what, "event": {**details, "category": ctx.ev.get("category")},
                     "why_important": why, "consequences": consequences, "actions": actions, "follow_up": follow,
                     "bank_view": bank_view, "basis": basis, "question": None},
@@ -489,7 +507,7 @@ def llm_rewrite(ctx, draft):
     out["ai_conclusion"].update(model=usage.get("model"), prompt=usage.get("prompt_version"), engine="llm")
     client_src = ["client:bank"] if "client:bank" in ctx.sources else ["client:profile"]
     why = grounded(data.get("why_important") or [])[:5]
-    if why:
+    if why and not ctx.data.get("explain_for_executive"):  # при цепочке сервисов «почему важно» — от сервиса 4
         out["answers"]["why_important"] = [_item(t, "client", client_src) for t in why]
     for key in ("risks", "opportunities"):
         texts = grounded(data.get(key) or [])[:5]
@@ -535,10 +553,12 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
         return None
     ctx = Ctx(conn, profile, r, question.strip(), models, permissions)
     ctx.role = roles.get(role)
+    ctx.use_llm = False  # сервисы 3 и 4 зовут модель только в режиме LLM (ниже)
     mode, model = "rules", None
     plan = None
     weak = bool(r["insight"].get("weak_impact"))
     use_llm = use_llm and llm_client.enabled() and not weak
+    ctx.use_llm = use_llm
     if use_llm:
         try:
             plan, usage = llm_plan(ctx)
@@ -562,6 +582,8 @@ def run(conn, profile, event_id, question="", use_llm=True, models=None, save=Tr
                       ("analyze_impact", "обязательно: связь с компанией")):
         if must not in names:
             plan.insert(0, (must, {}, why))
+    if profile.get("client_id"):  # сервисы 3 и 4 — после остальных шагов, в своём порядке
+        plan = [p for p in plan if p[0] not in {t for t, _a, _w in CHAIN}] + CHAIN
     ctx.plan_json = plan_json(ctx, plan[:MAX_STEPS], plan_by)
     ctx.trace[0]["plan_json"] = ctx.plan_json
     for tool, args, why in plan[:MAX_STEPS]:

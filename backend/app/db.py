@@ -135,8 +135,7 @@ def init_db():
             conn.execute("ALTER TABLE events ADD COLUMN thread_id TEXT")
         # WAL: чтение не блокируется записью фонового пересчёта
         conn.execute("PRAGMA journal_mode=WAL")
-        from . import agent, catalog, entry, llm_client, store, threads  # варианты профиля, снимки, сюжеты, LLM, агент
-        catalog.init(conn)
+        from . import agent, entry, llm_client, store, threads  # снимки, сюжеты, LLM, агент
         store.init(conn)
         threads.init(conn)
         llm_client.init(conn)
