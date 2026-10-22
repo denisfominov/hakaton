@@ -197,12 +197,24 @@ def tool_match(ctx):
     facts = company_profile.build(uid) if uid else None
     if not facts:
         return None, "у компании нет данных в наборе банка"
-    m = news_matching.match(facts, ctx.r, conn=ctx.conn, use_llm=getattr(ctx, "use_llm", False))
+    # C21: позиция банка — фрагменты по самой новости (найдены без профиля); если поиск по банку уже был — те же
+    # фрагменты, иначе ищем здесь. Нет прав на аналитику банка — сервис 3 работает без неё
+    hits = None
+    if "bank_internal" in ctx.permissions:
+        hits = sorted((ctx.data.get("bank_hits") or {}).values(), key=lambda h: -h["score"])
+        if not hits and "search_bank_analytics" not in ctx.data:
+            hits = bank_rag.search_for_event(ctx.ev, "", k=4)
+        for h in hits:
+            ctx.source(f"bank:{h['id']}", type="bank", title=h["title"],
+                       detail=f"{h['doc']}, стр. {h['page']}" + (f", {h['date']}" if h.get("date") else ""),
+                       url=bank_rag.link(h))
+    m = news_matching.match(facts, ctx.r, conn=ctx.conn, use_llm=getattr(ctx, "use_llm", False), bank_hits=hits)
     ctx.source("client:facts", type="client", title="Профиль из данных банка (сервис 1)",
                detail=f"фактов {len(facts['facts'])}, пробелов {len(facts['gaps'])}")
     ctx.source("client:match", type="client", title="Сопоставление с профилем (сервис 3)",
                detail=f"связей {len(m['links'])}, допущений {len(m['assumptions'])}, проверка моделью: {m['llm']['status']}")
-    return m, f"связей {len(m['links'])}, допущений {len(m['assumptions'])}; проверка моделью: {m['llm']['status']}"
+    return m, (f"связей {len(m['links'])}, допущений {len(m['assumptions'])}, фрагментов банка {len(m['bank'])}; "
+               f"проверка моделью: {m['llm']['status']}")
 
 
 def tool_interpret(ctx):

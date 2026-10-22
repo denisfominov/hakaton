@@ -13,6 +13,9 @@
   есть во входе; иначе связь становится допущением, а допущение с неизвестным фактом или числом не из входа
   отбрасывается. Без модели (выключена, нет бюджета) — связи «не проверено моделью», балл остаётся.
 - Текст новостей — недоверенные данные: в запросе он в теге <untrusted_news> (untrusted.wrap).
+- **Позиция банка** (C21, решение Р2): фрагменты аналитики банка, найденные оркестратором только по тексту новости
+  (bank_rag.search_for_event, без профиля), приходят аргументом bank_hits; сервис сверяет их направление с новостью по
+  сигналам (ставка, курс, цены, спрос) и кладёт в MatchResult.bank. Сам файлы банка не читает.
 """
 import re
 
@@ -138,6 +141,28 @@ def rules_explanation(scored):
             + (why or "прямой связи с фактами профиля не найдено") + ".")
 
 
+# ---------- позиция банка: вход от оркестратора, сверка по сигналам ----------
+
+def bank_relation(hit_signals, event_signals):
+    """agree — то же направление, conflict — противоположное (nlp.SIGNAL_OPPOSITE), context — без прямой связи."""
+    hit_signals, event_signals = set(hit_signals or []), set(event_signals or [])
+    if any({s, e} == set(p) for p in nlp.SIGNAL_OPPOSITE for s in hit_signals for e in event_signals):
+        return "conflict"
+    return "agree" if hit_signals & event_signals else "context"
+
+
+def bank_refs(bank_hits, event, limit=4):
+    """BankHit (bank_rag.search_for_event) -> BankRef для MatchResult и общее согласие банка с новостью."""
+    ev_signals = (event.get("nlp") or {}).get("signals") or {}
+    refs = [{"source": h["source"], "title": h["title"], "doc": h["doc"], "page": h["page"], "date": h.get("date"),
+             "url": h["url"], "quote": h.get("quote"), "relation": bank_relation(h.get("signals"), ev_signals)}
+            for h in (bank_hits or [])[:limit]]
+    if not refs:
+        return refs, "absent"
+    relations = {r["relation"] for r in refs}
+    return refs, "conflict" if "conflict" in relations else "agree" if "agree" in relations else "none"
+
+
 # ---------- связи: модель + проверка кодом ----------
 
 def _fmt(v):
@@ -242,8 +267,9 @@ def ask_model(facts, scored, conn=None):
                                       "mock": llm_client.provider() == "mock"}
 
 
-def match(facts, scored, conn=None, use_llm=True):
-    """MatchResult для одной группы публикаций: балл правил (scored — элемент score_groups) + связи от модели."""
+def match(facts, scored, conn=None, use_llm=True, bank_hits=None):
+    """MatchResult для одной группы публикаций: балл правил (scored — элемент score_groups) + связи от модели +
+    позиция банка (bank_hits — фрагменты по самой новости от оркестратора; None — поиск по банку не запускали)."""
     ev, members, s = scored["event"], scored["cluster"], scored["score"]
     if use_llm and llm_client.enabled():
         links, assumptions, llm_expl, trace = ask_model(facts, scored, conn)
@@ -254,6 +280,7 @@ def match(facts, scored, conn=None, use_llm=True):
     used = facts_used(facts, scored)
     used += [x["fact_id"] for x in links if x["fact_id"] not in used]
     f = known(facts)
+    bank, agreement = bank_refs(bank_hits, ev)
     return MatchResult.model_validate({
         "profile_id": facts["profile_id"], "event_id": ev["id"], "cluster_ids": [m["id"] for m in members],
         "title": ev["title"],
@@ -268,4 +295,4 @@ def match(facts, scored, conn=None, use_llm=True):
         "profile_facts": [{"id": i, "label": f[i]["label"], "value": _fmt(f[i]["value"])} for i in used if i in f],
         "news": [{"event_id": m["id"], "source": m["source"], "url": m.get("url"), "published_at": m["published_at"],
                   "summary": (m.get("summary") or "")[:400] or None} for m in members],
-        "llm": trace}).model_dump()
+        "llm": trace, "bank": bank, "bank_agreement": agreement}).model_dump()

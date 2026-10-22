@@ -13,9 +13,8 @@ import re
 
 from . import nlp, scoring
 
-# «ставку сохранили, риторика жёстче» (hold + up) противоречием не считаем ни в новости, ни против банка
-OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rub_strong", "rub_weak"),
-            ("price_up", "price_down"), ("demand_up", "demand_down")]
+# противоположные сигналы новости и банка — общий словарь nlp (им же пользуется сервис 3 при сверке с банком)
+OPPOSITE = nlp.SIGNAL_OPPOSITE
 # внутри одной новости противоречием считаем только ставку и курс: рост и снижение цен или спроса в одном тексте
 # обычно относятся к разным товарам. «Сохранили ставку, риторика жёстче» (hold + up) — не противоречие
 EVENT_OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rub_strong", "rub_weak")]

@@ -20,9 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "2.2"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2);
+CONTRACTS_VERSION = "2.3"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2);
 # 2.1: MatchResult.profile_facts и NewsRef.summary — сервису 4 хватает результата сервиса 3 (C20.6);
-# 2.2: InsightResult.match и .interpretation — агент вызывает сервисы 3 и 4 (C20.7)
+# 2.2: InsightResult.match и .interpretation — агент вызывает сервисы 3 и 4 (C20.7);
+# 2.3: MatchResult.bank и .bank_agreement, Statement.kind «bank» — аналитика банка в цепочке сервисов (C21)
 
 Level = Literal["low", "medium", "high", "critical"]
 
@@ -297,6 +298,20 @@ class UsedFact(BaseModel):
     value: str
 
 
+class BankRef(BaseModel):
+    """Фрагмент аналитики Альфа-Банка по самой новости (найден без профиля): цитата с позицией банка и её отношение
+    к новости по сигналам (ставка, курс, цены, спрос). Недоверенный текст документа."""
+    source: str = Field(pattern=r"^bank:", description="id для ссылок: bank:<файл>#<фрагмент>")
+    title: str
+    doc: str
+    page: int = Field(ge=1)
+    date: Optional[str] = None
+    url: str = Field(description="страница исходного PDF")
+    quote: Optional[str] = Field(None, description="предложения с позицией банка; None — во фрагменте её нет")
+    relation: Literal["agree", "conflict", "context"] = Field(
+        description="agree — то же направление, что в новости; conflict — противоположное; context — дополняет")
+
+
 class LlmTrace(BaseModel):
     model_config = ConfigDict(extra="allow")
     status: Literal["done", "cached", "not_checked", "failed"]
@@ -321,15 +336,18 @@ class MatchResult(BaseModel):
                                           description="эти факты с подписью и значением — для сервиса 4 и интерфейса")
     news: list[NewsRef] = Field(min_length=1, description="публикации, на которые опирается результат")
     llm: LlmTrace
+    bank: list[BankRef] = Field(default_factory=list, description="позиция банка по самой новости (C21)")
+    bank_agreement: Literal["agree", "conflict", "none", "absent"] = Field(
+        "absent", description="банк и новость: согласны, расходятся, без прямой связи; absent — фрагментов нет")
 
 
 # ---------- Сервис 4 → Interpretation: объяснение для руководителя (C20.6) ----------
 
 class Statement(BaseModel):
     """Утверждение объяснения. refs — только на элементы MatchResult: news:<event_id>, p:<факт>, link:<n>,
-    assumption:<n>, score. Утверждение без опоры на вход не проходит проверку."""
+    assumption:<n>, bank:<фрагмент>, score. Утверждение без опоры на вход не проходит проверку."""
     text: str
-    kind: Literal["fact", "link", "assumption", "recommendation", "uncertainty"]
+    kind: Literal["fact", "link", "assumption", "recommendation", "uncertainty", "bank"]
     refs: list[str] = Field(min_length=1)
 
 

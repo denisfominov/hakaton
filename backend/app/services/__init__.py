@@ -23,7 +23,8 @@ PROFILE = {"case_data", "clients", "company_features", "company_profile", "catal
 ANALYSIS = {"matching", "scoring", "analysis", "roles", "news_matching", "interpretation", "agent", "agent_tools",
             "agent_rules", "bank_rag", "embeddings"}
 LLM = {"llm", "llm_client", "llm_router", "llm_mock", "llm_budget", "llm_errors", "demo_cache"}
-DATA_ACCESS = {"pipeline", "store", "jobs", "main", "sources", "case_data", "clients", "company_features"}
+# bank_rag читает файлы аналитики банка: сервисы 3 и 4 получают её фрагменты аргументами (C21)
+DATA_ACCESS = {"pipeline", "store", "jobs", "main", "sources", "case_data", "clients", "company_features", "bank_rag"}
 
 # сервис -> модули, которых не должно быть среди его импортов (прямых и через другие модули app)
 FORBIDDEN_IMPORTS = {

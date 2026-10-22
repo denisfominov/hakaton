@@ -28,6 +28,80 @@
       "title": "Assumption",
       "type": "object"
     },
+    "BankRef": {
+      "description": "Фрагмент аналитики Альфа-Банка по самой новости (найден без профиля): цитата с позицией банка и её отношение\nк новости по сигналам (ставка, курс, цены, спрос). Недоверенный текст документа.",
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "doc": {
+          "title": "Doc",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "предложения с позицией банка; None — во фрагменте её нет",
+          "title": "Quote"
+        },
+        "relation": {
+          "description": "agree — то же направление, что в новости; conflict — противоположное; context — дополняет",
+          "enum": [
+            "agree",
+            "conflict",
+            "context"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "source": {
+          "description": "id для ссылок: bank:<файл>#<фрагмент>",
+          "pattern": "^bank:",
+          "title": "Source",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "description": "страница исходного PDF",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "title",
+        "doc",
+        "page",
+        "url",
+        "relation"
+      ],
+      "title": "BankRef",
+      "type": "object"
+    },
     "Channel": {
       "additionalProperties": true,
       "properties": {
@@ -382,6 +456,26 @@
       "title": "Assumptions",
       "type": "array"
     },
+    "bank": {
+      "description": "позиция банка по самой новости (C21)",
+      "items": {
+        "$ref": "#/$defs/BankRef"
+      },
+      "title": "Bank",
+      "type": "array"
+    },
+    "bank_agreement": {
+      "default": "absent",
+      "description": "банк и новость: согласны, расходятся, без прямой связи; absent — фрагментов нет",
+      "enum": [
+        "agree",
+        "conflict",
+        "none",
+        "absent"
+      ],
+      "title": "Bank Agreement",
+      "type": "string"
+    },
     "cluster_ids": {
       "items": {
         "type": "string"
@@ -459,5 +553,5 @@
   ],
   "title": "MatchResult",
   "type": "object",
-  "x-contracts-version": "2.2"
+  "x-contracts-version": "2.3"
 }

@@ -450,12 +450,16 @@ export interface MatchResult {
   profile_facts: { id: string; label: string; value: string }[];
   news: { event_id: string; source: string; url?: string | null; published_at: string; summary?: string | null }[];
   llm: { status: "done" | "cached" | "not_checked" | "failed"; model?: string | null; reason?: string | null; mock?: boolean };
+  // C21: позиция банка по самой новости — вход сервиса 3
+  bank?: { source: string; title: string; doc: string; page: number; date?: string | null; url: string;
+    quote?: string | null; relation: "agree" | "conflict" | "context" }[];
+  bank_agreement?: "agree" | "conflict" | "none" | "absent";
 }
 
 // сервис 4 (C20.6): объяснение для руководителя только из MatchResult
 export interface Statement {
   text: string;
-  kind: "fact" | "link" | "assumption" | "recommendation" | "uncertainty";
+  kind: "fact" | "link" | "assumption" | "recommendation" | "uncertainty" | "bank";
   refs: string[];
 }
 

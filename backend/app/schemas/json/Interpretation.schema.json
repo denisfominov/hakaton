@@ -59,7 +59,7 @@
       "type": "object"
     },
     "Statement": {
-      "description": "Утверждение объяснения. refs — только на элементы MatchResult: news:<event_id>, p:<факт>, link:<n>,\nassumption:<n>, score. Утверждение без опоры на вход не проходит проверку.",
+      "description": "Утверждение объяснения. refs — только на элементы MatchResult: news:<event_id>, p:<факт>, link:<n>,\nassumption:<n>, bank:<фрагмент>, score. Утверждение без опоры на вход не проходит проверку.",
       "properties": {
         "kind": {
           "enum": [
@@ -67,7 +67,8 @@
             "link",
             "assumption",
             "recommendation",
-            "uncertainty"
+            "uncertainty",
+            "bank"
           ],
           "title": "Kind",
           "type": "string"
@@ -206,5 +207,5 @@
   ],
   "title": "Interpretation",
   "type": "object",
-  "x-contracts-version": "2.2"
+  "x-contracts-version": "2.3"
 }
