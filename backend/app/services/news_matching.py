@@ -134,7 +134,7 @@ def rules_explanation(scored):
     s = scored["score"]
     factors = sorted(s.get("relevance_factors") or [], key=lambda x: -x["points"])[:3]
     why = "; ".join(f"{x['label'].lower()}: {x['detail']}" if x.get("detail") else x["label"].lower() for x in factors)
-    return (f"Значимость по правилам — {s['priority']}/100 ({s['priority_level']}): "
+    return (f"Значимость по правилам — {s['priority']:.0f}/100 ({s['priority_level']}): "
             + (why or "прямой связи с фактами профиля не найдено") + ".")
 
 
@@ -224,7 +224,7 @@ def ask_model(facts, scored, conn=None):
     """Связи от модели. Возвращает (links, assumptions, explanation, llm_trace)."""
     prompt = prompts.get("news_match")
     s = scored["score"]
-    score_block = (f"SCORE: приоритет {s['priority']}/100 ({s['priority_level']}), тип влияния "
+    score_block = (f"SCORE: приоритет {s['priority']:.0f}/100 ({s['priority_level']}), тип влияния "
                    f"{scored['insight']['impact_type']}; факторы: "
                    + "; ".join(f"{x['label']} {x['points']}" for x in s.get("relevance_factors") or []))
     messages = [{"role": "system", "content": prompt.text},

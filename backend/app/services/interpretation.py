@@ -38,7 +38,7 @@ def match_text(match, role=None):
     lines = [f"TITLE [news:{match['news'][0]['event_id']}]: {match['title']}"]
     for n in match["news"][:4]:
         lines.append(f"NEWS [news:{n['event_id']}] {n['source']}, {n['published_at'][:10]}: {n.get('summary') or ''}")
-    lines.append(f"SCORE [score]: приоритет {s['priority']}/100 ({s['priority_level']}), тип влияния {s['impact_type']}, "
+    lines.append(f"SCORE [score]: приоритет {s['priority']:.0f}/100 ({s['priority_level']}), тип влияния {s['impact_type']}, "
                  f"срочность {s['urgency_level']}; {match['explanation']}")
     for f in match.get("profile_facts") or []:
         lines.append(f"FACT [{f['id']}] {f['label']}: {f['value']}")
@@ -103,7 +103,7 @@ def template(match, role=None, trace=None):
     not_known = ["прямой связи новости с фактами профиля в тексте нет"] if not match["links"] else []
     return Interpretation.model_validate({
         "profile_id": match["profile_id"], "event_id": match["event_id"], "role": (role or {}).get("key"),
-        "headline": f"{match['title']} — значимость {LEVEL_LABEL[level]} ({s['priority']}/100)",
+        "headline": f"{match['title']} — значимость {LEVEL_LABEL[level]} ({s['priority']:.0f}/100)",
         "what_happened": happened, "why_it_matters": why, "what_to_do": todo,
         "uncertainty": {"level": unc_level, "reasons": reasons}, "not_known": not_known, "mode": "template",
         "llm": trace or {"status": "not_checked", "reason": "объяснение по шаблону, без языковой модели"}}).model_dump()
