@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Alpha Intelligence — news analytics agent for executives of large corporate clients (hackathon "Alfa Hack", track
-"News analytics"). Backend: FastAPI + SQLite. Frontend: React + Vite + Tailwind. Case brief: the PDF in the repo root
-(not in git). More: [README.md](README.md), module map — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), tasks —
+"News analytics"). Backend: FastAPI + SQLite. Frontend: React + Vite + Tailwind. Case brief: `CASE.md` in the repo root —
+text of `текст кейса.docx` (both local only, not in git). More: [README.md](README.md), module map — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), tasks —
 [docs/TASKS.md](docs/TASKS.md).
 
 ## Language
