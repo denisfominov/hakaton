@@ -65,6 +65,12 @@ def action(title, description, owner, due_days, priority="medium", why="", if_do
     }
 
 
+
+def unknown_direction_note(pidx):
+    """Оговорка к каналам экспорта, когда направление торговли неизвестно (ФТС даёт только страны, В18)."""
+    return (" Допущение: данные ФТС не говорят, вывозит компания товар или ввозит."
+            if pidx.get("trade_direction_unknown") else "")
+
 def detect_channels(ev, profile, pidx, m):
     """Главная таблица правил. Каждый канал = одна причинно-следственная связь."""
     sig = ev["nlp"]["signals"]
@@ -188,6 +194,9 @@ def detect_channels(ev, profile, pidx, m):
     # 4. сбой отгрузок на экспорт (зарубежное направление или прямо сказано про экспорт/порты)
     toks = ev["nlp"]["tokens"]
     export_route = bool(set(ev_regions) & nlp.FOREIGN) or nlp.has_root(toks, "экспорт") or nlp.has_root(toks, "порт")
+    if pidx.get("trade_direction_unknown"):
+        # C22: экспорт известен только по странам ФТС — канал лишь для новостей о странах ВЭД клиента или их союзе
+        export_route = nlp.same_trade_area(ev_regions, pidx.get("trade_countries"))
     if "supply_disruption" in sig and pidx["is_exporter"] and products and export_route and category != "companies":
         reg = ", ".join(sorted(set(ev_regions) & nlp.FOREIGN)) or "экспортных портов"
         channels.append({
@@ -195,7 +204,7 @@ def detect_channels(ev, profile, pidx, m):
             "severity": "medium",
             "title": f"Задержка экспортных отгрузок ({reg})",
             "description": f"Ограничения на направлении {reg} могут задержать отгрузку продукции ({short(products)}) "
-                           "и привести к штрафам по контрактам.",
+                           "и привести к штрафам по контрактам." + unknown_direction_note(pidx),
             "chain": ["Снижение пропускной способности маршрута", "Задержка отгрузок покупателям",
                       "Штрафы, рост оборотного капитала, потеря доли"],
             "horizon": "immediate",
@@ -699,12 +708,14 @@ def detect_channels(ev, profile, pidx, m):
             })
 
     # 11. снижение пошлин на рынке сбыта
-    if "duty_down" in sig and products and pidx["is_exporter"]:
+    if "duty_down" in sig and products and pidx["is_exporter"] and (
+            not pidx.get("trade_direction_unknown") or nlp.same_trade_area(ev_regions, pidx.get("trade_countries"))):
         reg = ", ".join(sorted(set(ev_regions) & nlp.FOREIGN)) or "целевом рынке"
         channels.append({
             "key": "export_niche", "type": "opportunity", "area": "market", "severity": "high",
             "title": f"Открывается экспортная ниша ({reg})",
-            "description": f"Снижение пошлин на {short(products)} делает продукцию компании конкурентнее на рынке {reg}.",
+            "description": f"Снижение пошлин на {short(products)} делает продукцию компании конкурентнее на рынке {reg}."
+                           + unknown_direction_note(pidx),
             "chain": ["Снижение импортной пошлины", f"Продукция дешевле для покупателей ({reg})", "Рост экспортных продаж"],
             "horizon": "medium",
             "actions": [
