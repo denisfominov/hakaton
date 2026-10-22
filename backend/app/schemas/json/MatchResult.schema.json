@@ -1,0 +1,417 @@
+{
+  "$defs": {
+    "Assumption": {
+      "description": "Допущение: вывод без дословной опоры в новости или без факта профиля. Показывается отдельно от связей.",
+      "properties": {
+        "fact_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Fact Ids",
+          "type": "array"
+        },
+        "reason": {
+          "description": "почему это допущение: «нет цитаты в тексте», «вывод модели», «факта нет в профиле»",
+          "title": "Reason",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "reason"
+      ],
+      "title": "Assumption",
+      "type": "object"
+    },
+    "Channel": {
+      "additionalProperties": true,
+      "properties": {
+        "area": {
+          "enum": [
+            "financial",
+            "market",
+            "operational",
+            "regulatory",
+            "strategic"
+          ],
+          "title": "Area",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "risk",
+            "opportunity"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "type",
+        "area",
+        "severity",
+        "title"
+      ],
+      "title": "Channel",
+      "type": "object"
+    },
+    "FactLink": {
+      "description": "Подтверждённая связь: факт профиля + дословная цитата из новости (код проверил, что цитата есть в тексте).",
+      "properties": {
+        "explanation": {
+          "title": "Explanation",
+          "type": "string"
+        },
+        "fact_id": {
+          "pattern": "^p:",
+          "title": "Fact Id",
+          "type": "string"
+        },
+        "news_quote": {
+          "minLength": 1,
+          "title": "News Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact_id",
+        "news_quote",
+        "explanation"
+      ],
+      "title": "FactLink",
+      "type": "object"
+    },
+    "Factor": {
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "points": {
+          "title": "Points",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "points"
+      ],
+      "title": "Factor",
+      "type": "object"
+    },
+    "LlmTrace": {
+      "additionalProperties": true,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "имя@версия промпта",
+          "title": "Prompt"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "почему не проверено или ошибка — понятным текстом",
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "done",
+            "cached",
+            "not_checked",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "LlmTrace",
+      "type": "object"
+    },
+    "MatchScore": {
+      "additionalProperties": true,
+      "description": "Значимость события для компании — скоринг по правилам на фактах профиля. LLM балл не меняет.",
+      "properties": {
+        "channels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Channel"
+          },
+          "title": "Channels",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "impact": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Impact",
+          "type": "number"
+        },
+        "impact_type": {
+          "enum": [
+            "risk",
+            "opportunity",
+            "mixed",
+            "neutral"
+          ],
+          "title": "Impact Type",
+          "type": "string"
+        },
+        "method": {
+          "const": "rules",
+          "default": "rules",
+          "title": "Method",
+          "type": "string"
+        },
+        "priority": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Priority",
+          "type": "number"
+        },
+        "priority_level": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Priority Level",
+          "type": "string"
+        },
+        "relevance": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Relevance",
+          "type": "number"
+        },
+        "relevance_factors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Factor"
+          },
+          "title": "Relevance Factors",
+          "type": "array"
+        },
+        "urgency": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Urgency",
+          "type": "number"
+        },
+        "urgency_level": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Urgency Level",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relevance",
+        "impact",
+        "urgency",
+        "confidence",
+        "priority",
+        "priority_level",
+        "urgency_level",
+        "impact_type"
+      ],
+      "title": "MatchScore",
+      "type": "object"
+    },
+    "NewsRef": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "published_at": {
+          "title": "Published At",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "event_id",
+        "source",
+        "published_at"
+      ],
+      "title": "NewsRef",
+      "type": "object"
+    }
+  },
+  "$id": "alpha-intelligence/MatchResult",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Выход сервиса сопоставления для пары «компания × группа публикаций».",
+  "properties": {
+    "assumptions": {
+      "items": {
+        "$ref": "#/$defs/Assumption"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Cluster Ids",
+      "type": "array"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "explanation": {
+      "description": "почему такая оценка: факторы скоринга и, если есть, объяснение LLM",
+      "title": "Explanation",
+      "type": "string"
+    },
+    "facts_used": {
+      "description": "id фактов профиля, на которые опирается результат",
+      "items": {
+        "type": "string"
+      },
+      "title": "Facts Used",
+      "type": "array"
+    },
+    "links": {
+      "description": "подтверждённые связи",
+      "items": {
+        "$ref": "#/$defs/FactLink"
+      },
+      "title": "Links",
+      "type": "array"
+    },
+    "llm": {
+      "$ref": "#/$defs/LlmTrace"
+    },
+    "news": {
+      "description": "публикации, на которые опирается результат",
+      "items": {
+        "$ref": "#/$defs/NewsRef"
+      },
+      "minItems": 1,
+      "title": "News",
+      "type": "array"
+    },
+    "profile_id": {
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "score": {
+      "$ref": "#/$defs/MatchScore"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "event_id",
+    "cluster_ids",
+    "title",
+    "score",
+    "explanation",
+    "news",
+    "llm"
+  ],
+  "title": "MatchResult",
+  "type": "object",
+  "x-contracts-version": "1.2"
+}
