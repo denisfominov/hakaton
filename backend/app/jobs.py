@@ -106,6 +106,8 @@ def _run_once():
         for r in rows:
             pid = r["id"]
             profile = {**loads(r["data"], {}), "id": pid, "is_demo": bool(r["is_demo"]), "updated_at": r["updated_at"]}
+            if not pipeline.profile_visible(profile):
+                continue  # скрытый профиль (введён вручную до C20.7) не анализируем
             m = store.meta(conn, pid)
             key = store.key_for(conn, profile)
             forced = None in pending or pid in pending
