@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -64,12 +65,10 @@ def group_duplicates(items, threshold=THRESHOLD):
     if len(items) > 1:
         texts = [_normalize(f"{i['title']} {i['summary'][:200]}") for i in items]
         matrix = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True).fit_transform(texts)
-        similarity = cosine_similarity(matrix)
-        for a in range(len(items)):
-            for b in range(a + 1, len(items)):
-                if (similarity[a, b] >= threshold and items[a]["source_id"] != items[b]["source_id"]
-                        and _close_in_time(items[a], items[b])):
-                    join(a, b)
+        similarity = np.triu(cosine_similarity(matrix) >= threshold, k=1)
+        for a, b in np.argwhere(similarity):
+            if items[a]["source_id"] != items[b]["source_id"] and _close_in_time(items[a], items[b]):
+                join(a, b)
 
     clusters = {}
     for i in range(len(items)):
@@ -78,9 +77,10 @@ def group_duplicates(items, threshold=THRESHOLD):
     groups = []
     for members in clusters.values():
         main = _main(members)
+        first = min(members, key=lambda m: (_earliest(m), m["id"]))
         times = [t for t in map(_time, members) if t]
         groups.append({
-            "id": main["id"],
+            "id": first["id"],
             "main": main,
             "items": [m["id"] for m in members],
             "sources": sorted({m["source"] for m in members}),
@@ -102,5 +102,5 @@ if __name__ == "__main__":
     for g in merged[:12]:
         print(f"{len(g['items'])} items, sources: {', '.join(g['sources'])}")
         for item_id in g["items"]:
-            print(f"   {'*' if item_id == g['id'] else ' '} [{by_id[item_id]['source_id']}] {by_id[item_id]['title'][:90]}")
+            print(f"   {'*' if item_id == g['main']['id'] else ' '} [{by_id[item_id]['source_id']}] {by_id[item_id]['title'][:90]}")
         print()

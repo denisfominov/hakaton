@@ -20,7 +20,7 @@ def test_same_event_from_different_sources_is_merged():
     groups = group_duplicates(items)
     assert groups_of(items) == [["a", "b"], ["c"]]
     merged = next(g for g in groups if len(g["items"]) == 2)
-    assert merged["id"] == "b" and merged["sources"] == ["RBC", "TASS"]
+    assert merged["id"] == "a" and merged["main"]["id"] == "b" and merged["sources"] == ["RBC", "TASS"]
 
 
 def test_similar_titles_in_one_source_stay_apart():
