@@ -7,13 +7,9 @@ import logging
 import threading
 import time
 
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-from . import analysis, embeddings, jobs, matching, nlp, scoring, store
+from . import jobs, store
 from .db import dumps, loads, now_iso
-from .services import news_collection
+from .services import news_collection, news_matching
 # сервис 2 (сбор новостей): прежние имена pipeline.* остаются для скриптов и тестов
 from .services.news_collection import (FOREIGN_SHARE, extract, fact_status, load_events, log_fetch,  # noqa: F401
                                        normalize, prepare_events, recluster, refresh_nlp, save_items)
@@ -58,24 +54,6 @@ def ingest_live(conn):
 
 
 # ---------- анализ для профиля ----------
-
-def semantic_scores(events, profile):
-    """Смысловая близость новости к профилю. e5 (если веса есть): близость относительно ленты — новости выше медианы
-    получают баллы, верхние 5% — максимум (как сильная близость по TF-IDF). Иначе — TF-IDF косинус."""
-    if not events:
-        return {}
-    if embeddings.available():
-        prof = embeddings.encode([matching.profile_text(profile)[:2000]], "query")[0]
-        sims = embeddings.encode([" ".join([e["title"], e.get("summary") or ""])[:1500] for e in events], "passage") @ prof
-        lo, hi = np.percentile(sims, 50), np.percentile(sims, 95)
-        rel = np.clip((sims - lo) / max(float(hi - lo), 1e-6), 0, 1)
-        return {e["id"]: float(r / 6) for e, r in zip(events, rel)}  # 1/6 -> 10 баллов, как у TF-IDF
-    docs = [nlp.stem_text(matching.profile_text(profile))]
-    docs += [nlp.stem_text(" ".join([e["title"], e.get("summary") or "", e.get("body") or ""])) for e in events]
-    m = TfidfVectorizer(sublinear_tf=True).fit_transform(docs)
-    sims = cosine_similarity(m[0], m[1:])[0]
-    return {e["id"]: float(s) for e, s in zip(events, sims)}
-
 
 def _save_snapshot(pid, key, results, seconds):
     """Снимок пишем своим коротким соединением: чтение анализа не должно оставлять открытую транзакцию
@@ -133,33 +111,22 @@ def analyze_all(conn, profile, force=False):
 
 
 def analyze_events(events, profile):
-    """Для каждого кластера считаем матчинг, каналы, баллы и аналитику по правилам."""
-    pidx = matching.profile_index(profile)
-    sem = semantic_scores(events, profile)
+    """Группы публикаций (сервис 2) -> скоринг по правилам (сервис 3) для профиля; по убыванию приоритета."""
+    return news_matching.score_groups(profile, news_collection.groups(events))
 
-    results = []
-    # группы публикаций — выход сервиса 2: карточка — самая надёжная публикация, остальные — «похожие публикации»
-    for g in news_collection.groups(events):
-        ev, members, verif = g["lead"], g["members"], g["verification"]
-        m = matching.find_matches(ev, profile, pidx)
-        channels = analysis.detect_channels(ev, profile, pidx, m)
-        n_sources = len({x["source"] for x in members})
-        score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
-                                    semantic_method=embeddings.method())
-        insight = analysis.build_insight(ev, profile, m, channels, score, n_sources)
-        results.append({
-            "event": ev,
-            "cluster": members,
-            "matches": m,
-            "channels": channels,
-            "score": score,
-            "insight": insight,
-            "verification": verif,
-            "fact_status": fact_status(ev, members, verif),
-        })
 
-    results.sort(key=lambda r: -r["score"]["priority"])
-    return results
+def match_for(conn, profile, event_id, use_llm=False):
+    """Цепочка сервисов для одного события: профиль из набора банка (1) + группы публикаций (2) -> MatchResult (3).
+    None — у компании нет данных в наборе банка или события нет."""
+    from .services import company_profile
+
+    facts = company_profile.build(profile.get("client_id") or "")
+    if not facts:
+        return None
+    scored = news_matching.score_groups(news_matching.rules_profile(facts),
+                                        news_collection.groups(store.events_for(conn)))
+    r = next((x for x in scored if any(c["id"] == event_id for c in x["cluster"])), None)
+    return news_matching.match(facts, r, conn=conn, use_llm=use_llm) if r else None
 
 
 def find_result(conn, profile, event_id):

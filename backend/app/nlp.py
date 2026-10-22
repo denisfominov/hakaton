@@ -307,21 +307,8 @@ def detect_signals(toks, raw_text=""):
 
 # --- защита от инструкций внутри новостей ------------------------------------
 
-INJECTION_PATTERNS = [
-    r"игнорир\w* (все )?(предыдущ|прошл)\w* инструкц",
-    r"ignore (all )?(previous|prior) instructions",
-    r"системн\w* (промпт|инструкц)",
-    r"system prompt",
-    r"для (автоматических|ии|ai)[- ]?(систем|моделей|ассистент)",
-    r"присвой\w* .{0,40}приоритет",
-    r"ты\s*[-—]\s*(теперь|больше не)",
-    r"you are now",
-]
-
-
-def looks_like_injection(text):
-    t = normalize_text(text)
-    return any(re.search(p, t) for p in INJECTION_PATTERNS)
+# признак попытки дать инструкции ИИ в тексте — общий модуль untrusted.py (им же пользуются сервисы 3–4)
+from .untrusted import INJECTION_PATTERNS, looks_like_injection  # noqa: E402,F401
 
 
 def has_money_or_percent(text):

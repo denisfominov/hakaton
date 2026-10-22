@@ -38,10 +38,14 @@ def profile_text(p):
 def profile_index(p):
     """То, что не зависит от новости — считаем один раз на профиль."""
     core_text = " ".join([p.get("industry", "")] + (p.get("subindustries") or []) + (p.get("products") or []))
-    industries = set(nlp.detect_industries(nlp.tokens(core_text)))
+    # профиль из данных банка (сервис 1 -> news_matching.rules_profile): отрасль — ключ по ОКВЭД, не слова
+    industries = set(nlp.detect_industries(nlp.tokens(core_text))) | set(p.get("industry_keys") or [])
     supplier_text = " ".join(p.get("suppliers") or [])
     # от чего зависим как покупатель: логистика, сырьё и т.д.
     input_industries = set(nlp.detect_industries(nlp.tokens(supplier_text)))
+    # отрасли контрагентов по платежам (данные банка): направление платежа не говорит, поставщик это или покупатель (В22)
+    payment_sectors = set(p.get("payment_sectors") or []) - industries
+    input_industries |= payment_sectors
 
     regions = nlp.normalize_regions(p.get("regions") or [])
     supplier_regions = {}
@@ -75,7 +79,7 @@ def profile_index(p):
         # ФТС не говорит, импорт это или экспорт: курс рубля касается расчётов в обе стороны
         is_importer = is_exporter = True
 
-    primary = nlp.detect_industries(nlp.tokens(p.get("industry", "")))
+    primary = list(p.get("industry_keys") or []) or nlp.detect_industries(nlp.tokens(p.get("industry", "")))
     # продаёт то, что клиенты покупают на инвестиции (станки, оборудование, техника)
     capex_toks = nlp.tokens(" ".join([p.get("industry", "")] + (p.get("products") or [])
                                      + (p.get("subindustries") or [])))
@@ -85,6 +89,7 @@ def profile_index(p):
         "is_bank": is_bank,
         "industries": industries,
         "input_industries": input_industries,
+        "input_from": "payments" if payment_sectors and not supplier_text else "suppliers",
         "regions": regions,
         "domestic": bool(regions - nlp.FOREIGN),
         "supplier_regions": supplier_regions,
@@ -140,6 +145,7 @@ def find_matches(ev, p, pidx):
 
     m["industries"] = sorted(set(ev["nlp"]["industries"]) & pidx["industries"])
     m["input_industries"] = sorted(set(ev["nlp"]["industries"]) & pidx["input_industries"])
+    m["input_from"] = pidx.get("input_from", "suppliers")
     m["regions"] = sorted(ev_regions & pidx["regions"])
     m["federal"] = "Россия" in ev_regions and pidx["domestic"]
     # поставщики из регионов, которые фигурируют в новости. Регион без совпадения по отрасли не считаем,

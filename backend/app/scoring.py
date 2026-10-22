@@ -75,7 +75,8 @@ def relevance_factors(m, channels, semantic, offtopic=False, semantic_method="tf
         add("industry", "Отрасль", 20 if len(m["industries"]) == 1 else 24, f"Совпадает с профилем: {names}")
     elif m["input_industries"]:
         names = ", ".join(nlp.INDUSTRIES[i][0] for i in m["input_industries"])
-        add("industry", "Смежная отрасль", 10, f"Отрасль поставщиков компании: {names}")
+        whose = "контрагентов по платежам" if m.get("input_from") == "payments" else "поставщиков компании"
+        add("industry", "Смежная отрасль", 10, f"Отрасль {whose}: {names}")
 
     prod = m["products"] + [s for s in m["subindustries"] if s not in m["products"]]
     if prod:

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from . import (agent, bank_rag, demo_cache, entry, roles, catalog, clients, config, jobs, llm, llm_budget, llm_client, llm_router,
                nlp, outlets, overview, pipeline, prompts, sources, store)
 from .db import dumps, get_db, init_db, loads, now_iso
-from .schemas import (ActionIn, ActionPatch, AgentIn, EntryTokenIn, EntryVerifyIn, ProfileIn, RefreshIn,
+from .schemas import (ActionIn, ActionPatch, AgentIn, EntryTokenIn, EntryVerifyIn, MatchIn, ProfileIn, RefreshIn,
                       SuggestIn)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -611,6 +611,17 @@ def run_llm(event_id: str, profile_id: str):
     with get_db() as conn:
         pipeline.save_llm(conn, r["event"]["id"], profile, insight)
     return {"insight": insight}
+
+
+@app.post("/api/events/{event_id}/match")
+def event_match(event_id: str, body: MatchIn):
+    """Сервис 3 (C20.5): значимость по правилам на фактах из набора банка и связи с профилем (use_llm — от модели)."""
+    with get_db() as conn:
+        profile = get_profile(conn, body.profile_id)
+        out = pipeline.match_for(conn, profile, event_id, use_llm=body.use_llm)
+    if not out:
+        raise HTTPException(404, "Нет данных компании в наборе банка или события")
+    return out
 
 
 # ---------- агент для ЛПР ----------

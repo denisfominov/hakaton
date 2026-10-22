@@ -235,8 +235,9 @@ def groups(events):
     out = []
     for cluster_id, members in by_cluster.items():
         members.sort(key=lambda e: (-e["reliability"], e["published_at"]))
-        out.append({"cluster_id": cluster_id, "lead": members[0], "members": members,
-                    "verification": outlets.verify(members, members[0]["nlp"].get("suspicious", False))})
+        verif = outlets.verify(members, members[0]["nlp"].get("suspicious", False))
+        out.append({"cluster_id": cluster_id, "lead": members[0], "members": members, "verification": verif,
+                    "fact_status": fact_status(members[0], members, verif)})
     return out
 
 

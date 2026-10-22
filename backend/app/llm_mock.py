@@ -78,6 +78,30 @@ def _event_rewrite(user):
     }
 
 
+MATCH_FACTS = {"p:okved", "p:sector", "p:region", "p:city", "p:fts.countries", "p:bank_products"}
+
+
+def _news_match(user):
+    """Связи новости с фактами (сервис 3): факт, слово которого есть в новости, + предложение новости как цитата."""
+    news = re.search(r"<untrusted_news>\n(.*?)\n</untrusted_news>", user, re.DOTALL)
+    text = news.group(1) if news else ""
+    sentences = [x for x in re.split(r"(?<=[.!?])\s+|\n", text) if len(x.strip()) > 15]
+    links = []
+    for fid, label, value in re.findall(r"^\[(p:[\w.]+)\] ([^:]+): (.+)$", user, re.MULTILINE):
+        if fid not in MATCH_FACTS and not fid.startswith("p:payments."):
+            continue
+        words = [w.lower()[:5] for w in re.findall(r"[А-Яа-яЁё]{5,}", value)][:6]
+        hit = next((x for x in sentences if any(w in x.lower() for w in words)), None)
+        if hit and len(links) < 3:
+            links.append({"fact_id": fid, "news_quote": hit.strip()[:200],
+                          "explanation": f"Новость касается факта компании «{label.strip()}»."})
+    return {"links": links,
+            "assumptions": [{"text": "Последствия для компании зависят от деталей, которых в новости нет.",
+                             "fact_ids": [], "reason": "вывод модели без опоры в тексте (мок-режим)"}],
+            "explanation": ("Связи найдены по совпадению фактов профиля и текста новости (мок-режим)." if links
+                            else "Прямой связи новости с фактами профиля не найдено (мок-режим).")}
+
+
 def respond(model, messages, purpose="", max_tokens=1500):
     """Ответ в формате Chat Completions, как его вернул бы шлюз."""
     for rule in filter(None, (os.getenv("LLM_MOCK_FAIL") or "").split(";")):
@@ -90,7 +114,9 @@ def respond(model, messages, purpose="", max_tokens=1500):
             return {"_status": int(kind) if kind.isdigit() else 500}
     system = next((m["content"] for m in messages if m["role"] == "system" and isinstance(m["content"], str)), "")
     user = next((m["content"] for m in messages if m["role"] == "user" and isinstance(m["content"], str)), "")
-    if purpose == "agent_plan" or "планировщик" in system:
+    if purpose == "news_match":
+        content = json.dumps(_news_match(user), ensure_ascii=False)
+    elif purpose == "agent_plan" or "планировщик" in system:
         content = json.dumps(_agent_plan(system, user), ensure_ascii=False)
     elif purpose == "agent_answer" or "FACTS:" in user:
         content = json.dumps(_agent_answer(user), ensure_ascii=False)
