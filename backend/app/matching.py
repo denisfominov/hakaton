@@ -75,6 +75,9 @@ def profile_index(p):
     if bank_loans and not is_bank:
         debt_sensitive = True
     foreign_trade = "foreign_trade" in (p.get("client_signals") or [])
+    # C22: из данных банка известны только страны ВЭД (ФТС, В18) — экспорт по ним лишь допущение
+    trade_countries = sorted(nlp.normalize_regions(p.get("trade_countries") or []))
+    direction_unknown = foreign_trade and "экспорт" not in export_text and not (client_regions & nlp.FOREIGN)
     if foreign_trade:
         # ФТС не говорит, импорт это или экспорт: курс рубля касается расчётов в обе стороны
         is_importer = is_exporter = True
@@ -101,6 +104,8 @@ def profile_index(p):
         "bank_loans": bank_loans,
         "bank_deposits": "Депозиты" in bank_products,
         "foreign_trade": foreign_trade,
+        "trade_countries": trade_countries,
+        "trade_direction_unknown": direction_unknown,
         "sells_capex": sells_capex,
     }
 

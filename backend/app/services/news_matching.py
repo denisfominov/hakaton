@@ -58,6 +58,7 @@ def rules_profile(facts):
         "products": list(val("p:activity") or []),
         "regions": regions, "bank_products": list(val("p:bank_products") or []),
         "client_signals": ["foreign_trade"] if val("p:fts") == "да" else [],
+        "trade_countries": list(val("p:fts.countries") or []),
         "payment_sectors": sorted(sectors), "facts_profile": True,
     }
 
