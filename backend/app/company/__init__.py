@@ -1,1 +1,1 @@
-"""Слой 1: профиль компании и группы из CSV кейса."""
+"""Layer 1: company and group profile from the case CSVs."""
