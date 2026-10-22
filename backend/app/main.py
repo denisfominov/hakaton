@@ -38,6 +38,12 @@ def presets_wanted():
     return config.PRESET_PROFILES in ("1", "true", "yes", "on")
 
 
+def visible_ids(conn):
+    """id профилей, которые видит приложение (pipeline.profile_visible), в порядке списка компаний."""
+    rows = conn.execute("SELECT id, data FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
+    return [r["id"] for r in rows if pipeline.profile_visible(loads(r["data"], {}))]
+
+
 def client_record(uid, pid):
     """Запись профиля клиента из набора банка (clients.profile_from_client) в виде строки таблицы profiles."""
     p = clients.profile_from_client(uid)
@@ -129,7 +135,7 @@ def get_profile(conn, profile_id):
     if not row:
         raise HTTPException(404, "Профиль не найден")
     p = loads(row["data"], {})
-    if not p.get("client_id") and not presets_wanted():
+    if not pipeline.profile_visible(p):
         # сведения о компании — только из набора банка (C20.7): профили, введённые вручную раньше, не показываются
         raise HTTPException(404, "Компании нет в наборе данных банка")
     p["id"] = row["id"]
@@ -263,7 +269,7 @@ def status():
                               "WHERE source_type = 'curated'").fetchone()
         last = [dict(r) for r in conn.execute("SELECT * FROM fetch_log ORDER BY id DESC LIMIT 12")]
         deleted = deleted_presets(conn)
-        n_profiles = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
+        n_profiles = len(visible_ids(conn))
         row = conn.execute("SELECT value FROM settings WHERE key = 'last_live'").fetchone()
         last_live = loads(row["value"], None) if row else None
         by_country = {r["c"] or "RU": r["n"] for r in conn.execute(
@@ -363,9 +369,7 @@ def refresh(body: RefreshIn):
 def list_profiles():
     with get_db() as conn:
         # порядок по rowid, иначе после сохранения профиль "уезжает" в конец списка
-        rows = conn.execute("SELECT id, data FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
-        return [get_profile(conn, r["id"]) for r in rows
-                if loads(r["data"], {}).get("client_id") or presets_wanted()]
+        return [get_profile(conn, pid) for pid in visible_ids(conn)]
 
 
 @app.get("/api/profiles/{profile_id}")
@@ -378,7 +382,7 @@ def read_profile(profile_id: str):
 def delete_profile(profile_id: str):
     with get_db() as conn:
         p = get_profile(conn, profile_id)
-        if conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"] <= 1:
+        if len(visible_ids(conn)) <= 1:
             raise HTTPException(400, "Нельзя удалить последнюю компанию")
         if p["is_demo"]:
             # встроенную компанию можно вернуть кнопкой «Восстановить встроенные»
@@ -502,9 +506,8 @@ def compare_profiles(event_id: str):
     """Одна новость глазами разных компаний — для демонстрации персонализации."""
     out = []
     with get_db() as conn:
-        rows = conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid").fetchall()
-        for row in rows:
-            p = get_profile(conn, row["id"])
+        for pid in visible_ids(conn):
+            p = get_profile(conn, pid)
             r = pipeline.find_result(conn, p, event_id)
             if not r:
                 raise HTTPException(404, "Событие не найдено")
@@ -765,7 +768,7 @@ def portfolio(days: int = Query(7, ge=1, le=365)):
     """Компании × риски за период: кому из клиентов звонить первым. Анализ берётся из готовых снимков (store.py)."""
     rows = []
     with get_db() as conn:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM profiles ORDER BY is_demo DESC, rowid")]
+        ids = visible_ids(conn)
         tmap = store.threads_for(conn)
         for pid in ids:
             p = get_profile(conn, pid)
