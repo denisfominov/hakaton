@@ -29,7 +29,12 @@ GENERIC = {"Цитата", "Допущение", "Связь", "Риск", "Во
 def refs_allowed(match):
     return ({f"news:{n['event_id']}" for n in match["news"]} | set(match["facts_used"])
             | {f"link:{i}" for i in range(len(match["links"]))}
-            | {f"assumption:{i}" for i in range(len(match["assumptions"]))} | {"score"})
+            | {f"assumption:{i}" for i in range(len(match["assumptions"]))} | {"score"}
+            | {b["source"] for b in match.get("bank") or [] if b.get("quote")})
+
+
+RELATION = {"agree": "совпадает с направлением новости", "conflict": "расходится с новостью — сверьте даты материала",
+            "context": "дополняет картину, прямого подтверждения или опровержения нет"}
 
 
 def match_text(match, role=None):
@@ -46,11 +51,20 @@ def match_text(match, role=None):
         lines.append(f"LINK [link:{i}] факт {x['fact_id']}; цитата: «{x['news_quote']}»; {x['explanation']}")
     for i, x in enumerate(match["assumptions"]):
         lines.append(f"ASSUMPTION [assumption:{i}] {x['text']} (почему допущение: {x['reason']})")
+    for b in match.get("bank") or []:
+        if b.get("quote"):
+            lines.append(f"BANK [{b['source']}] {b['title']} ({b.get('date') or 'дата не указана'}, стр. {b['page']}), "
+                         f"связь: {b['relation']}: «{b['quote']}»")
     lines.append(f"LLM_LINKS: {match['llm']['status']}" + (f" — {match['llm'].get('reason')}" if match["llm"].get("reason") else ""))
     out = wrap("untrusted_match", "\n".join(lines))
     if role:
         out += f"\nРОЛЬ: {role.get('label')} — акцент: {role.get('focus', '')}"
     return out
+
+
+def bank_quotes(match, limit=2):
+    """Фрагменты банка с цитатой позиции — их можно показывать как «позицию банка»."""
+    return [b for b in match.get("bank") or [] if b.get("quote")][:limit]
 
 
 def computed_uncertainty(match):
@@ -67,6 +81,9 @@ def computed_uncertainty(match):
         level = max(level, 1)
     if match["assumptions"]:
         reasons.append(f"допущений: {len(match['assumptions'])}")
+    if match.get("bank_agreement") == "conflict":
+        reasons.append("позиция банка расходится с новостью")
+        level = max(level, 1)
     return LEVELS[level], reasons
 
 
@@ -91,6 +108,9 @@ def template(match, role=None, trace=None):
             for i, x in enumerate(match["assumptions"])]
     if not why:
         why.append(_st(match["explanation"], "fact", ["score"] + match["facts_used"][:3]))
+    why += [_st(f"Позиция Альфа-Банка («{b['title']}», {b.get('date') or 'дата не указана'}, стр. {b['page']}): "
+                f"«{b['quote']}» — {RELATION[b['relation']]}.", "bank", [b["source"]])
+            for b in bank_quotes(match)]
     level = s["priority_level"]
     todo_text = {"critical": "Разобрать влияние в ближайшие дни: проверить, какие договоры, расчёты и планы оно задевает.",
                  "high": "Оценить влияние на неделе: проверить затронутые расчёты и планы.",
@@ -101,6 +121,8 @@ def template(match, role=None, trace=None):
     todo = [_st(todo_text, "recommendation", ["score"])]
     unc_level, reasons = computed_uncertainty(match)
     not_known = ["прямой связи новости с фактами профиля в тексте нет"] if not match["links"] else []
+    if not bank_quotes(match):
+        not_known.append("позиции банка по этой теме в его аналитике нет")
     return Interpretation.model_validate({
         "profile_id": match["profile_id"], "event_id": match["event_id"], "role": (role or {}).get("key"),
         "headline": f"{match['title']} — значимость {LEVEL_LABEL[level]} ({s['priority']:.0f}/100)",
@@ -129,7 +151,7 @@ def check(out, match, role=None):
     allowed_refs = refs_allowed(match)
     source = json.dumps(match, ensure_ascii=False) + (json.dumps(role, ensure_ascii=False) if role else "")
     nums, stems = {n.replace(",", ".") for n in NUM.findall(source)}, _stem_set(source)
-    kinds = {"what_happened": {"fact"}, "why_it_matters": {"link", "assumption", "fact", "uncertainty"},
+    kinds = {"what_happened": {"fact"}, "why_it_matters": {"link", "assumption", "fact", "uncertainty", "bank"},
              "what_to_do": {"recommendation"}}
     sections, dropped = {}, 0
     for key, ok_kinds in kinds.items():
@@ -146,6 +168,9 @@ def check(out, match, role=None):
             kind = x.get("kind") if x.get("kind") in ok_kinds else sorted(ok_kinds)[0]
             if key == "why_it_matters" and kind == "link" and not any(r.startswith("link:") for r in refs):
                 kind = "assumption"  # «связь» без подтверждённой связи — допущение
+            if kind == "bank" and not any(r.startswith("bank:") for r in refs):
+                dropped += 1  # «позиция банка» без найденного фрагмента не показывается
+                continue
             items.append({"text": text, "kind": kind, "refs": refs})
         sections[key] = items
     return sections, dropped
@@ -171,6 +196,9 @@ def interpret(match, role=None, conn=None, use_llm=True):
     base = template(match, role)
     if not sections.get("why_it_matters"):
         sections["why_it_matters"] = base["why_it_matters"]  # модель не дала проверяемых утверждений — шаблон
+    elif not any(st["kind"] == "bank" for st in sections["why_it_matters"]):
+        # позиция банка есть во входе, а модель её не назвала — добавляем цитату банка как есть
+        sections["why_it_matters"] += [st for st in base["why_it_matters"] if st["kind"] == "bank"]
     for key in ("what_happened", "what_to_do"):
         sections[key] = sections.get(key) or base[key]
     computed, reasons = computed_uncertainty(match)

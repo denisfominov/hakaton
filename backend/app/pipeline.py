@@ -145,7 +145,12 @@ def match_for(conn, profile, event_id, use_llm=False):
     scored = news_matching.score_groups(news_matching.rules_profile(facts),
                                         news_collection.groups(store.events_for(conn)))
     r = next((x for x in scored if any(c["id"] == event_id for c in x["cluster"])), None)
-    return news_matching.match(facts, r, conn=conn, use_llm=use_llm) if r else None
+    if not r:
+        return None
+    # C21: позиция банка — фрагменты аналитики по самой новости (без профиля), вход сервиса 3
+    from . import bank_rag
+
+    return news_matching.match(facts, r, conn=conn, use_llm=use_llm, bank_hits=bank_rag.search_for_event(r["event"]))
 
 
 def interpret_for(conn, profile, event_id, role=None, use_llm=False):

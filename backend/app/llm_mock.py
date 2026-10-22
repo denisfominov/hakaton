@@ -111,6 +111,8 @@ def _interpretation(user):
     why = [{"text": f"{expl} Цитата: «{quote}».", "kind": "link", "refs": [lid, fid, news]}
            for lid, fid, quote, expl in links[:3]]
     why += [{"text": f"Допущение: {text}", "kind": "assumption", "refs": [aid]} for aid, text in assumptions[:2]]
+    for bid, title, quote in re.findall(r"^BANK \[(bank:[^\]]+)\] (.+?) \(.*?«(.+)»$", user, re.MULTILINE)[:2]:
+        why.append({"text": f"Позиция банка («{title}»): «{quote}»", "kind": "bank", "refs": [bid]})
     return {"headline": title.group(2) if title else "Событие",
             "what_happened": [{"text": title.group(2), "kind": "fact", "refs": [news]}] if title else [],
             "why_it_matters": why,

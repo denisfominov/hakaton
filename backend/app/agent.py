@@ -306,6 +306,8 @@ def compose(ctx, gaps):
     interp = ctx.data.get("explain_for_executive")
     if interp:  # C20.7: «почему важно» — объяснение сервиса 4 по результату сопоставления (сервис 3)
         for st in interp["why_it_matters"]:
+            if st["kind"] == "bank":
+                continue  # позиция банка — в блоке «Как это оценивает банк» из того же результата сервиса 3
             if st["kind"] in ("link", "fact"):  # подтверждённая связь или балл правил по фактам профиля
                 why.append(_item(st["text"], "client", ["client:match", "client:facts"]))
             else:
@@ -380,12 +382,22 @@ def compose(ctx, gaps):
 
     # цитата — предложение, где банк высказывает позицию; фрагменты из подписей к графикам пропускаем
     bank_items = []
-    for h in hits:
-        q = bank_rag.quote(h, h.get("query", ""))
-        if q and len(bank_items) < 3:
-            bank_items.append({**_item(q, "bank", [f"bank:{h['id']}"]),
-                               "link": {"doc": h["doc"], "title": h["title"], "page": h["page"], "date": h.get("date"),
-                                        "url": bank_rag.link(h)}})
+    match = ctx.data.get("match_company_news")
+    if match and match.get("bank_agreement") != "absent":
+        # C21: позиция банка — из результата сервиса 3 (те же фрагменты и цитаты, что видит объяснение сервиса 4)
+        for b in match["bank"]:
+            if b.get("quote") and len(bank_items) < 3:
+                bank_items.append({**_item(b["quote"], "bank", [b["source"]]),
+                                   "link": {"doc": b["doc"], "title": b["title"], "page": b["page"], "date": b.get("date"),
+                                            "url": b["url"]}})
+        agreement = {"agree": "agree", "conflict": "conflict"}.get(match["bank_agreement"], "none")
+    else:
+        for h in hits:
+            q = bank_rag.quote(h, h.get("query", ""))
+            if q and len(bank_items) < 3:
+                bank_items.append({**_item(q, "bank", [f"bank:{h['id']}"]),
+                                   "link": {"doc": h["doc"], "title": h["title"], "page": h["page"], "date": h.get("date"),
+                                            "url": bank_rag.link(h)}})
     bank_view = {"found": bool(bank_items), "items": bank_items, "agreement": agreement,
                  "topics": sorted({bank_rag.topic_label(t) for h in hits[:3] for t in h.get("topics") or []}),
                  "note": None if bank_items else ("По этой теме позиции банка нет: в аналитике банка нет фрагментов, "

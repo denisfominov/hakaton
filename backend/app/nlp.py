@@ -314,3 +314,9 @@ from .untrusted import INJECTION_PATTERNS, looks_like_injection  # noqa: E402,F4
 def has_money_or_percent(text):
     t = normalize_text(text)
     return bool(re.search(r"\d+[,.]?\d*\s?(%|процент|млрд|млн|трлн|б\.п\.)", t))
+
+
+# Противоположные сигналы новости и позиции банка (агент — противоречия, сервис 3 — согласие с банком).
+# «Ставку сохранили, риторика жёстче» (hold + up) противоречием не считаем ни в новости, ни против банка.
+SIGNAL_OPPOSITE = [("rate_up", "rate_down"), ("rate_hold", "rate_down"), ("rub_strong", "rub_weak"),
+                   ("price_up", "price_down"), ("demand_up", "demand_down")]

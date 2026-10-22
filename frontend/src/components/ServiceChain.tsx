@@ -10,7 +10,9 @@ const KIND: Record<Statement["kind"], { label: string; cls: string }> = {
   assumption: { label: "Допущение", cls: "bg-amber-50 text-amber-800" },
   recommendation: { label: "Рекомендация", cls: "bg-violet-50 text-violet-800" },
   uncertainty: { label: "Неопределённость", cls: "bg-ink-100 text-ink-600" },
+  bank: { label: "Позиция банка", cls: "bg-rose-50 text-rose-800" },
 };
+const RELATION: Record<string, string> = { agree: "совпадает с новостью", conflict: "расходится с новостью", context: "дополняет" };
 const LEVEL: Record<Interpretation["uncertainty"]["level"], { label: string; cls: string }> = {
   low: { label: "низкая", cls: "bg-emerald-50 text-emerald-800" },
   medium: { label: "средняя", cls: "bg-amber-50 text-amber-800" },
@@ -31,6 +33,11 @@ function RefChip({ id, m }: { id: string; m: MatchResult | null | undefined }) {
   if (id.startsWith("p:")) {
     const f = m?.profile_facts.find((x) => x.id === id);
     return <Link to="/profile" className={`${cls} hover:text-ink-900`} title={f ? `${f.label}: ${f.value}` : id}>{f?.label || id}</Link>;
+  }
+  if (id.startsWith("bank:")) {
+    const b = m?.bank?.find((x) => x.source === id);
+    return b ? <a href={b.url} target="_blank" rel="noreferrer" className={`${cls} hover:text-ink-900`}>{b.title}, стр. {b.page}</a>
+      : <span className={cls}>аналитика банка</span>;
   }
   if (id.startsWith("link:")) return <span className={cls}>связь {Number(id.slice(5)) + 1}</span>;
   if (id.startsWith("assumption:")) return <span className={cls}>допущение {Number(id.slice(11)) + 1}</span>;
@@ -104,6 +111,17 @@ export default function ServiceChain({ i, m }: { i: Interpretation; m?: MatchRes
                 </ol>
               </div>
             )}
+            <div>
+              <div className="font-medium text-ink-900">Позиция Альфа-Банка по этой новости</div>
+              {m.bank && m.bank.some((b) => b.quote) ? (
+                <ul className="mt-1 space-y-1">
+                  {m.bank.filter((b) => b.quote).map((b) => (
+                    <li key={b.source}>«{b.quote}» — <a href={b.url} target="_blank" rel="noreferrer" className="hover:underline">
+                      {b.title}{b.date ? `, ${b.date}` : ""}, стр. {b.page}</a> <span className="text-ink-500">({RELATION[b.relation]})</span></li>
+                  ))}
+                </ul>
+              ) : <p className="mt-1 text-ink-500">В аналитике банка нет фрагментов с позицией по этой новости.</p>}
+            </div>
             {m.profile_facts.length > 0 && (
               <div>
                 <div className="font-medium text-ink-900">Факты профиля, на которые опирается оценка</div>

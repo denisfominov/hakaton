@@ -51,5 +51,5 @@
   ],
   "title": "ToolSpec",
   "type": "object",
-  "x-contracts-version": "2.2"
+  "x-contracts-version": "2.3"
 }
