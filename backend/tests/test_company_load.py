@@ -1,6 +1,7 @@
 import pandas as pd
+import pytest
 
-from app.company.load import COMPANIES_FILE, LINKS_FILE, load
+from app.company.load import COMPANIES_FILE, LINKS_FILE, data_dir, load
 
 HEAD = "SYNTHETIC_U;MAINOKVED_CODE;CL_TYPE;CL_PRODUCT_LOA_MARK;NEGATIVEMARK;REVENUE_COMPANY;EMPTY;GROUP_ID"
 
@@ -35,6 +36,14 @@ def test_cleaning(tmp_path):
         {"SYNTHETIC_F": "F_1", "CITY_NAME": "Omsk", "RC_NAME": "SIBERIA", "SYNTHETIC_U": "U_1"}]
 
 
-def test_default_folder_loads():
+def test_env_folder(tmp_path, monkeypatch):
+    _write(tmp_path, ["U_9;10.11;CLIENT;0.0;0.0;5.0;;g9"], [])
+    monkeypatch.setenv("COMPANY_DATA_DIR", str(tmp_path))
+    assert data_dir() == tmp_path and list(load().companies.index) == ["U_9"]
+
+
+def test_case_folder_loads():
+    if data_dir() is None:
+        pytest.skip("case CSVs are not in the repo root")
     data = load()
     assert len(data.companies) > 0 and data.companies.index.is_unique

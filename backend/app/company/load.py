@@ -1,13 +1,13 @@
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-from .. import config
-
 COMPANIES_FILE = "df_Uid_data_hack.csv"
 LINKS_FILE = "df_Fid_Uid_link_hack.csv"
 REVENUE_STUB = 1000.0
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @dataclass
@@ -19,9 +19,8 @@ class CaseData:
 
 
 def data_dir():
-    candidates = [Path(config.CLIENT_DATA_DIR)] if config.CLIENT_DATA_DIR else []
-    candidates += [config.ROOT_DIR, config.DATA_DIR / "clients" / "sample"]
-    return next((d for d in candidates if (d / COMPANIES_FILE).exists()), None)
+    folder = Path(os.getenv("COMPANY_DATA_DIR") or REPO_ROOT)
+    return folder if (folder / COMPANIES_FILE).exists() else None
 
 
 def _read(path):
@@ -37,7 +36,7 @@ def _okved(code):
 def load(folder=None):
     folder = Path(folder) if folder else data_dir()
     if folder is None:
-        raise FileNotFoundError(f"{COMPANIES_FILE} not found: set CLIENT_DATA_DIR")
+        raise FileNotFoundError(f"{COMPANIES_FILE} not found: put it in the repo root or set COMPANY_DATA_DIR")
     report = []
 
     companies = _read(folder / COMPANIES_FILE)
