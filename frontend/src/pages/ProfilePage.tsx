@@ -14,7 +14,7 @@ type ProfileData = Omit<Profile, "id" | "is_demo" | "updated_at">;
 const EMPTY: ProfileData = {
   name: "", aliases: [], kind: "", source_note: "", description: "", industry: "", subindustries: [], regions: [],
   products: [], clients: [], suppliers: [], competitors: [], goals: [], priorities: [], risks: [],
-  investment_plans: [], keywords: [], ticker: "", inn: "", website: "", autofilled: false, autofill_info: {},
+  investment_plans: [], keywords: [], inn: "", website: "", autofilled: false, autofill_info: {},
 };
 
 type FieldDef = { key: ProfileListField; label: string; hint?: string; placeholder?: string };
@@ -266,11 +266,6 @@ export default function ProfilePage() {
                 <label className="label" htmlFor="p-inn">ИНН</label>
                 <input id="p-inn" className="input" value={form.inn || ""} inputMode="numeric"
                   onChange={(e) => set("inn", e.target.value.replace(/[^\d]/g, "").slice(0, 12))} />
-              </div>
-              <div>
-                <label className="label" htmlFor="p-ticker">Тикер на Мосбирже</label>
-                <input id="p-ticker" className="input" value={form.ticker || ""} placeholder="Если компания публичная"
-                  onChange={(e) => set("ticker", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))} />
               </div>
             </div>
             <div>

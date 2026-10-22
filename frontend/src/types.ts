@@ -20,8 +20,6 @@ export interface Profile {
   risks: string[];
   investment_plans: string[];
   keywords: string[];
-  // тикер на Мосбирже: новости публичной компании размечаются по реакции акций
-  ticker?: string;
   inn?: string;
   website?: string;
   // заполнен сервисом и ещё не проверен пользователем
@@ -62,86 +60,12 @@ export interface ProfileSuggestion {
   from_description: Record<string, string[]>;
 }
 
-export interface MarketReaction {
-  ticker: string;
-  ar: number;
-  z: number;
-  t0: string;
-  t_end: string;
-  relevant: boolean | null;
-  impact_type: string | null;
-  horizon: number;
-}
-
 export interface CompanyLookup {
   suggestion: ProfileSuggestion;
   registry: null | { source: string; inn: string; ogrn: string; name: string; region: string; registered: string | null };
   site: null | { source: string; url: string; title: string; description: string };
   errors: string[];
   sources_log: SourceLogItem[];
-}
-
-export interface Feedback {
-  relevant: boolean | null;
-  impact_type: "risk" | "opportunity" | "neutral" | null;
-  priority: "higher" | "ok" | "lower" | null;
-  updated_at?: string;
-}
-
-export interface ModelFeature {
-  name: string;
-  label: string;
-  weight: number;
-}
-
-export interface CvMetrics {
-  precision?: number;
-  recall?: number;
-  f1?: number;
-  accuracy: number;
-  roc_auc?: number;
-  pr_auc?: number;
-  brier?: number;
-  macro_f1?: number;
-}
-
-export interface ModelCv {
-  folds: number;
-  model_accuracy: number;
-  rules_accuracy: number;
-  scheme?: string;
-  metric?: "pr_auc" | "macro_f1";
-  n?: number;
-  positive_share?: number;
-  C?: number;
-  model?: CvMetrics;
-  rules?: CvMetrics;
-}
-
-export interface ModelStatus {
-  enabled: boolean;
-  trained: boolean;
-  active: boolean;
-  impact_trained: boolean;
-  weight: number;
-  max_weight: number;
-  min_labels: number;
-  full_weight_at: number;
-  labels: { total: number; relevance: number; relevant: number; not_relevant: number; impact: number; priority: number };
-  by_profile: { profile_id: string; name: string; count: number }[];
-  relevance: null | {
-    n: number; positive: number; negative: number; n_user?: number; n_market?: number; cv: ModelCv | null; trained_at: string;
-    top: { positive: ModelFeature[]; negative: ModelFeature[] };
-  };
-  impact: null | { n: number; classes: Record<string, number>; cv: ModelCv | null; trained_at: string };
-  auto_max_weight: number;
-  market: {
-    labels: number; significant: number; quiet: number; ambiguous: number; by_origin: Record<string, number>;
-    tickers: string[]; prices_until: string | null; horizon: number; significant_z: number; quiet_z: number;
-    weight: number; quiet_weight: number; quiet_max_rule_relevance: number;
-    examples: { event_id: string; title: string; company: string; ticker: string; ar: number; z: number;
-      impact_type: string | null; t0: string; origin: string }[];
-  };
 }
 
 export interface Verification {
@@ -307,25 +231,10 @@ export interface CaseContribution {
   value: number;
 }
 
-export interface CaseMl {
-  draft: boolean;
-  trained_at: string | null;
-  relevance: { probability: number; model: string; contributions: CaseContribution[] };
-  impact?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
-  urgency?: { label: string; probability: number; model: string; contributions: CaseContribution[] };
-  category?: { label: string; probability: number; model: string };
-  company_features: string[];
-}
-
 export interface EventDetail extends EventCard {
   body: string;
-  case_ml?: CaseMl | null;
-  rules_relevance: number;
   verification_detail: VerificationDetail;
   thread_detail: ThreadDetail | null;
-  feedback: Feedback | null;
-  market: MarketReaction | null;
-  ml: { p_relevant?: number; weight?: number; impact_hint?: { type: string; p: number } };
   score: Score;
   insight: Insight;
   rules_insight: Insight;
@@ -417,7 +326,6 @@ export interface Status {
   curated_period: { from: string; to: string } | null;
   events: { curated: number; demo: number; live: number; total: number };
   llm: { enabled: boolean; model: string | null; note: string | null } & LlmUiState;
-  model: { active: boolean; trained: boolean; enabled: boolean; weight: number; labels: number; min_labels: number };
   deleted_presets: { id: string; name: string }[];
   alfa: { configured: boolean; status: string };
   sources: { name: string; url: string; enabled: boolean; country: string; reputation: number; tier: string }[];
@@ -441,7 +349,6 @@ export interface PortfolioRow {
   profile_id: string;
   name: string;
   industry: string;
-  ticker: string;
   attention_index: number;
   relevant: number;
   critical_risks: number;
@@ -490,14 +397,14 @@ export interface Scenario {
 }
 
 export interface AgentIssue {
-  type: "signals" | "numbers" | "bank" | "feedback";
+  type: "signals" | "numbers" | "bank";
   text: string;
   sources: string[];
 }
 
 export interface AgentSource {
   id: string;
-  type: "news" | "bank" | "client" | "rules" | "market" | "model";
+  type: "news" | "bank" | "client" | "rules";
   title: string;
   detail?: string;
   url?: string | null;
@@ -543,7 +450,7 @@ export interface AgentStep {
 export interface AgentResult {
   summary: string;
   ai_conclusion?: { text: string; kind: ClaimKind; model: string | null; prompt: string | null; engine: string; sources: string[] } | null;
-  features?: { label: string; contribution: number | null; value: number | null; source: "case_model" | "rules" }[];
+  features?: { label: string; contribution: number | null; value: number | null; source: "rules" }[];
   contradictions?: Contradiction[];
   plan?: { goal: string; by: string; sources: string[]; steps: { tool: string; why: string }[] } | null;
   role?: { key: string; label: string; focus: string; note: string } | null;
@@ -560,7 +467,7 @@ export interface AgentResult {
     actions: AgentAction[];
     follow_up: { questions: string[]; indicators: string[]; scenarios: Scenario[] };
     bank_view: { found: boolean; items: Claim[]; note: string | null; agreement: "agree" | "conflict" | "none"; topics: string[] };
-    basis: { sources: AgentSource[]; client_features: string[]; market: { ticker: string; ar: number; horizon: number } | null };
+    basis: { sources: AgentSource[]; client_features: string[] };
     question: { text: string; items: Claim[]; note: string | null } | null;
   };
   checks: {

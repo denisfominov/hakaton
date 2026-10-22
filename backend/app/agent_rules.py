@@ -144,9 +144,8 @@ def news_claim(r):
     return ev["title"]
 
 
-def consistency(r, bank_hits, pred=None):
-    """Противоречия в данных. Каждое — с текстом и источниками; агент снижает уверенность и показывает их.
-    pred — предсказание своих ML-моделей (ml_models.predict): сильное расхождение с правилами тоже отмечается."""
+def consistency(r, bank_hits):
+    """Противоречия в данных. Каждое — с текстом и источниками; агент снижает уверенность и показывает их."""
     issues = []
     ev_signals = set((r["event"]["nlp"] or {}).get("signals") or {})
     for a, b in EVENT_OPPOSITE:
@@ -187,16 +186,6 @@ def consistency(r, bank_hits, pred=None):
                                 "news": {"text": news_claim(r), "source": news_src, "url": r["event"].get("url")},
                                 "bank": {"text": bank_rag.quote(h, "") or _sent(h["text"]), "source": f"bank:{h['id']}",
                                          "date": h.get("date"), "url": bank_rag.link(h)}}})
-    if pred:
-        p, rel = pred["relevance"]["probability"], r["score"]["relevance"]
-        if (p >= 0.8 and rel < 20) or (p <= 0.2 and rel >= 50):
-            issues.append({"type": "model", "text": f"Своя модель ({p:.0%} значимости) и правила ({rel}/100) расходятся: "
-                           "правила видят связь по словам профиля, модель — по данным банка о клиенте. Проверьте признаки "
-                           "компании в блоке «На чём основан вывод».", "sources": ["model:case", "rules:analysis"]})
-    fb = r.get("feedback") or {}
-    if fb.get("relevant") == 0 and r["score"]["priority"] >= 50:
-        issues.append({"type": "feedback", "text": "Вы отметили событие как не относящееся к компании, а правила считают "
-                       "его значимым — оценка учитывается моделью; проверьте профиль компании.", "sources": ["rules:analysis"]})
     agreement = "conflict" if conflict else ("agree" if agree else "none")
     return issues, agreement
 

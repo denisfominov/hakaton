@@ -71,9 +71,6 @@ DEMO_CLIENTS = os.getenv("DEMO_CLIENTS", "")
 DEV_ENTRY_SECRET = "dev-only-entry-secret-change-me"  # только для разработки; на хостинге — ENTRY_SECRET из окружения
 ENTRY_SECRET = os.getenv("ENTRY_SECRET") or DEV_ENTRY_SECRET
 
-# свои ML-модели (scripts/train_models.py); не в git — производные от данных кейса
-CASE_MODELS_PATH = Path(os.getenv("CASE_MODELS_PATH") or DATA_DIR / "models" / "case_models.pkl")
-
 # локальная модель эмбеддингов multilingual-e5-small (не LLM): auto — если веса на месте, иначе TF-IDF; off — TF-IDF
 EMBEDDINGS_MODE = (os.getenv("EMBEDDINGS") or "auto").lower()
 EMBEDDINGS_DIR = Path(os.getenv("EMBEDDINGS_DIR") or DATA_DIR / "embeddings" / "multilingual-e5-small")

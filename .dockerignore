@@ -29,7 +29,7 @@ backend/data/bank/*
 лекции по Машинному обучению/
 данные из слайда 17/
 backend/data/sft/
-# веса своих моделей и ручная разметка — производные от данных кейса: подключаются томом (docker-compose.yml)
+# веса удалённой своей ML-модели (могут остаться на диске) и ручная разметка — производные от данных кейса
 backend/data/models/
 backend/data/gold/*.csv
 !backend/data/gold/gold_template.csv

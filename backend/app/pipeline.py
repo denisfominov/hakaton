@@ -12,8 +12,7 @@ import time
 
 import numpy as np
 
-from . import (analysis, company_features, config, dedup, embeddings, jobs, matching, ml_models, model, ner, nlp, outlets,
-               scoring, sources, store, threads)
+from . import analysis, config, dedup, embeddings, jobs, matching, ner, nlp, outlets, scoring, sources, store, threads
 from .db import dumps, loads, now_iso
 
 log = logging.getLogger("alpha.pipeline")
@@ -335,21 +334,16 @@ def analyze_all(conn, profile, force=False):
         if not force and mem and mem["key"] == key:
             return mem["results"]  # пока ждали замок, посчитал соседний запрос
         started = time.time()
-        results = analyze_events(store.events_for(conn), profile, model.context(conn, pid))
+        results = analyze_events(store.events_for(conn), profile)
         _save_snapshot(pid, key, results, time.time() - started)
         _cache[pid] = {"key": key, "computed_at": now_iso(), "results": results}
     return results
 
 
-def analyze_events(events, profile, ml=None):
-    """Для каждого кластера считаем матчинг, каналы, баллы и аналитику по правилам.
-
-    ml — своя модель и оценки пользователя (model.context). Без него — чистые правила (так работают тесты).
-    """
+def analyze_events(events, profile):
+    """Для каждого кластера считаем матчинг, каналы, баллы и аналитику по правилам."""
     pidx = matching.profile_index(profile)
     sem = semantic_scores(events, profile)
-    # свои ML-модели по данным кейса — только для профилей клиентов кейса и если модели обучены
-    case_f = company_features.features(profile["client_id"]) if profile.get("client_id") and ml_models.available() else None
 
     clusters = {}
     for ev in events:
@@ -363,35 +357,19 @@ def analyze_events(events, profile, ml=None):
         m = matching.find_matches(ev, profile, pidx)
         channels = analysis.detect_channels(ev, profile, pidx, m)
         n_sources = len({x["source"] for x in members})
-        rules_score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
-                                          semantic_method=embeddings.method())
-        feats = model.features(ev, m, channels, rules_score, pidx)
-        extra, adjust, fb, info = model.adjust_score(ml, feats, [x["id"] for x in members], rules_score)
-        case_pred = ml_models.predict(ev, case_f) if case_f else None
-        if case_pred:
-            extra = (extra or []) + [ml_models.relevance_factor(case_pred)]
-        score = rules_score
-        if extra or adjust:
-            score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources, semantic_method=embeddings.method(),
-                                        extra_relevance=extra, priority_adjust=adjust)
+        score = scoring.score_event(ev, m, channels, sem.get(ev["id"], 0.0), n_sources,
+                                    semantic_method=embeddings.method())
         insight = analysis.build_insight(ev, profile, m, channels, score, n_sources)
         verif = outlets.verify(members, ev["nlp"].get("suspicious", False))
-        feats["rule_impact_type"] = insight["impact_type"]
-        model.adjust_insight(ml, insight, feats, fb, info)
         results.append({
             "event": ev,
             "cluster": members,
             "matches": m,
             "channels": channels,
             "score": score,
-            "rules_relevance": rules_score["relevance"],
-            "features": feats,
-            "feedback": model.public_feedback(fb),
-            "ml": info,
             "insight": insight,
             "verification": verif,
             "fact_status": fact_status(ev, members, verif),
-            "case_ml": case_pred,
         })
 
     results.sort(key=lambda r: -r["score"]["priority"])

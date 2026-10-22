@@ -24,7 +24,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 import numpy as np
 
-from . import agent_rules, analysis, bank_rag, clients, company_features, embeddings, ml_models, ner, nlp, store
+from . import agent_rules, analysis, bank_rag, clients, company_features, embeddings, ner, nlp, store
 
 ALL_DATA = {"public", "bank_internal", "client_confidential"}
 
@@ -91,11 +91,6 @@ class ImpactOut(_Out):
 class Hit(_Out):
     id: str
     title: str
-
-
-class ModelsOut(_Out):
-    relevance: dict
-    draft: bool
 
 
 @dataclass
@@ -178,19 +173,6 @@ def tool_impact(ctx):
                detail=f"релевантность {r['score']['relevance']}, приоритет {r['score']['priority']}")
     out = {"channels": r["channels"], "score": r["score"], "matches": r["matches"], "insight": r["insight"]}
     return out, f"каналов влияния: {len(r['channels'])}, релевантность {r['score']['relevance']}"
-
-
-def tool_case_models(ctx):
-    """Свои ML-модели (не LLM): вероятность значимости, тип влияния, срочность, категория — с вкладом признаков."""
-    uid = ctx.profile.get("client_id")
-    f = ctx.data.get("company_features") or (company_features.features(uid) if uid else None)
-    pred = ctx.r.get("case_ml") or (ml_models.predict(ctx.ev, f) if f else None)
-    if not pred:
-        return None, "модели не обучены или у профиля нет данных клиента"
-    ctx.source("model:case", type="model", title="Своя модель по данным клиента" + (" (черновая)" if pred["draft"] else ""),
-               detail=f"{pred['relevance']['model']}, вероятность значимости {pred['relevance']['probability']:.2f}")
-    imp = (pred.get("impact") or {}).get("label", "—")
-    return pred, f"значимость {pred['relevance']['probability']:.2f}, влияние: {imp}"
 
 
 def tool_search_bank(ctx, query="", k=4):
@@ -287,16 +269,6 @@ def tool_news_rag(ctx, query="", limit=5):
     return hits, f"фрагментов других новостей: {len(hits)}"
 
 
-def tool_market(ctx):
-    from . import market
-
-    m = market.event_reaction(ctx.conn, [c["id"] for c in ctx.r["cluster"]], ctx.profile["id"])
-    if m:
-        ctx.source("market:reaction", type="market", title=f"Реакция акций {m['ticker']}",
-                   detail=f"{m['ar']}% к индексу за {m['horizon']} дня")
-    return m, (f"{m['ticker']}: {m['ar']}% к IMOEX (z={m['z']})" if m else "компания непубличная или окно не прошло")
-
-
 HITS = TypeAdapter(list[Hit])
 TOOLS = {t.name: t for t in [
     Tool("get_event", "факты события, источники, участники, сроки и достоверность", tool_event, NoArgs, EventOut,
@@ -310,8 +282,6 @@ TOOLS = {t.name: t for t in [
          when="клиент из данных банка: связь через поставщиков, покупателей, регионы"),
     Tool("analyze_impact", "каналы влияния события на компанию и баллы (правила)", tool_impact, NoArgs, ImpactOut,
          "bank_internal", when="всегда: связь с компанией"),
-    Tool("score_with_models", "свои ML-модели (не LLM): значимость, тип влияния, срочность, вклад признаков компании",
-         tool_case_models, NoArgs, ModelsOut, "client_confidential", when="клиент из данных банка и модели обучены"),
     Tool("search_bank_analytics", "позиция Альфа-Банка по самому событию: фрагменты аналитики (9 материалов приложения 2), "
          "близкие к новости; запрос задаёт только порядок", tool_search_bank,
          SearchArgs, HITS, "bank_internal", when="позиция банка по теме события"),
@@ -319,8 +289,6 @@ TOOLS = {t.name: t for t in [
          HITS, "public", when="сюжет или одно издание"),
     Tool("search_news_rag", "поиск по текстам новостей (RAG): фрагменты других публикаций по смыслу запроса",
          tool_news_rag, NewsArgs, HITS, "public", when="нужны подтверждения, контекст или ответ на вопрос"),
-    Tool("get_market_reaction", "реакция акций публичной компании на новость", tool_market, NoArgs,
-         TypeAdapter(Optional[dict]), "public", when="публичная компания"),
 ]}
 
 

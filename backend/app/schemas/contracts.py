@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .api import AgentResultOut, ProfileIn
 
-CONTRACTS_VERSION = "1.2"  # 1.1: добавлен BankHit (B1); 1.2: контракты четырёх сервисов (C20.1)
+CONTRACTS_VERSION = "2.0"  # 1.1: BankHit (B1); 1.2: контракты четырёх сервисов (C20.1); 2.0: без своей ML-модели (C20.2)
 
 Level = Literal["low", "medium", "high", "critical"]
 
@@ -109,7 +109,6 @@ class RankedEvent(BaseModel):
     relevance_factors: list[Factor] = []
     matched: dict[str, list[str]] = Field(default_factory=dict, description="что из профиля упоминается в новости")
     fact_status: dict[str, str]
-    ml: Optional[dict[str, Any]] = Field(None, description="поправка своей модели, если есть")
 
 
 def ranked_from_result(profile_id, r):
@@ -125,7 +124,6 @@ def ranked_from_result(profile_id, r):
         channels=[{k: c.get(k) for k in ("key", "type", "area", "severity", "title")} for c in r["channels"]],
         relevance_factors=[{k: f.get(k) for k in ("key", "label", "points", "detail")} for f in s.get("relevance_factors", [])],
         matched={k: [str(x) for x in v] for k, v in matched.items()}, fact_status=r["fact_status"],
-        ml=r.get("ml") or None,
     ).model_dump()
 
 

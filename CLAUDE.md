@@ -137,7 +137,7 @@ cd frontend && npm run build
 
 Environment variables, template — [.env.example](.env.example) (copy to `.env`).
 
-- `LLM_PROVIDER`: `off` — no LLM, rules and own ML models (default); `mock` — gateway-shaped answers without network
+- `LLM_PROVIDER`: `off` — no LLM, rules only (default); `mock` — gateway-shaped answers without network
   or key (dev, tests, demo); `gateway` — organisers' gateway (`LLM_BASE_URL`, `LLM_API_KEY`).
 - Gateway model names are exact: `google/gemma-4-26b-a4b-it`, `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`,
   `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`.
@@ -194,9 +194,9 @@ Details — [docs/COMPLIANCE.md](docs/COMPLIANCE.md), gateway facts — [docs/GA
 
 ```
 backend/app/       API (main.py) and logic: news pipeline, rules, scoring, agent, LLM layer, bank RAG
-backend/scripts/   training and evaluation of own models, bank PDF OCR, gateway smoke test, cache warm-up
+backend/scripts/   bank PDF OCR, gateway smoke test, cache warm-up, demo check, paid queue, labeling
 backend/tests/     pytest
-backend/data/      real/ (default), synthetic/ (tests), clients/sample/, bank/, market/, history/, gold/, demo_cache/
+backend/data/      real/ (default), synthetic/ (tests), clients/sample/, bank/, gold/, demo_cache/
 frontend/src/      pages/, components/, api.ts
 docs/              ARCHITECTURE, CONTRACTS, COMPLIANCE, GATEWAY_QUESTIONS, DATA, DEMO, TASKS, GAP_ANALYSIS, …
 ```

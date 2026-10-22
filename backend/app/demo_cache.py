@@ -6,7 +6,7 @@
 
 Когда LLM не подключена (нет ключа или LLM_PROVIDER=off), агент для пары «профиль + событие» без своего вопроса
 сначала ищет ответ здесь и отдаёт его с пометкой «ответ из кэша, получен ранее моделью X, дата». Для новых новостей
-и своих вопросов — разбор правилами и своими ML-моделями, тоже с пометкой.
+и своих вопросов — разбор правилами, тоже с пометкой.
 """
 import json
 import re
@@ -30,7 +30,8 @@ def path_for(profile_id, event_id, role=""):
 
 
 def live_llm():
-    """Есть ли сейчас настоящая модель: шлюз с ключом или своя модель (local). Мок — тоже «есть» (режим проверки)."""
+    """Есть ли сейчас настоящая модель: шлюз с ключом (старое значение LLM_PROVIDER=local — тоже шлюз). Мок — тоже
+    «есть» (режим проверки)."""
     if not llm_client.enabled():
         return False
     return llm_client.provider() == "mock" or bool(config.LLM_API_KEY) or (config.LLM_PROVIDER or "").lower() == "local"
@@ -71,7 +72,7 @@ def lookup(profile_id, event_id, role=""):
                 "prompts": doc.get("prompts") or [], "obtained_at": doc.get("obtained_at"),
                 "role": doc.get("role") or None, "file": p.name,
                 "note": f"Ответ из кэша: получен ранее моделью {doc.get('model')}, {str(doc.get('obtained_at'))[:10]}. "
-                        "Языковая модель сейчас не подключена — новые события разбираются правилами и своими моделями."}
+                        "Языковая модель сейчас не подключена — новые события разбираются правилами."}
         return {"run_id": "demo-" + p.stem[:40], "ms": 0, "result": agent_rules.with_disclaimer({**r, "from_cache": mark}),
                 "trace": doc.get("trace") or [], "cached": True}
     return None

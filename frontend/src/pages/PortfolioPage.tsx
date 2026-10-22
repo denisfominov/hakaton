@@ -77,7 +77,7 @@ export default function PortfolioPage() {
                         <button className="text-left font-medium text-ink-900 hover:underline" onClick={() => open(r.profile_id, "/")}>
                           {i + 1}. {r.name}
                         </button>
-                        <div className="text-xs text-ink-500">{r.industry || "—"}{r.ticker ? ` · ${r.ticker}` : ""}</div>
+                        <div className="text-xs text-ink-500">{r.industry || "—"}</div>
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
