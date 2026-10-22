@@ -40,6 +40,9 @@ backend/alpha.db
 # данные кейса (обезличенные CSV и PDF): не коммитим, загружаются из папки CLIENT_DATA_DIR
 df_*_hack.csv
 *.pdf
+# текст кейса: Word-файл и его текстовая версия
+*.docx
+CASE.md
 !backend/data/clients/sample/*.csv
 # датасеты для дообучения (заготовка удалена в C20.2; локальные файлы не коммитить)
 sft*.jsonl
