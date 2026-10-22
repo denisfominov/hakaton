@@ -1,5 +1,4 @@
 import hashlib
-import json
 from calendar import timegm
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -7,21 +6,19 @@ from datetime import datetime, timezone
 import feedparser
 import httpx
 
-from .. import config
+from .sources import SOURCES
 
-SOURCES_FILE = config.DATA_DIR / "sources.json"
+TIMEOUT_SECONDS = 8
+RETRIES = 1
+MAX_ITEMS = 30
 USER_AGENT = "AlphaIntelligence/1.0 (+news analytics prototype)"
-
-
-def load_sources(path=SOURCES_FILE):
-    return [s for s in json.loads(path.read_text(encoding="utf-8")) if s.get("enabled", True)]
 
 
 def download(url):
     error = None
-    for _ in range(config.RSS_RETRIES + 1):
+    for _ in range(RETRIES + 1):
         try:
-            resp = httpx.get(url, timeout=config.RSS_TIMEOUT, follow_redirects=True, headers={"User-Agent": USER_AGENT})
+            resp = httpx.get(url, timeout=TIMEOUT_SECONDS, follow_redirects=True, headers={"User-Agent": USER_AGENT})
         except httpx.TransportError as e:
             error = f"network: {e.__class__.__name__}"
             continue
@@ -45,7 +42,7 @@ def parse_feed(source, content, fetched_at):
     if feed.bozo and not feed.entries:
         raise RuntimeError("not a valid RSS feed")
     items = []
-    for entry in feed.entries[: source.get("max_items", 30)]:
+    for entry in feed.entries[: source.get("max_items", MAX_ITEMS)]:
         url = entry.get("link")
         title = entry.get("title", "")
         body = entry["content"][0].get("value", "") if entry.get("content") else ""
@@ -75,7 +72,7 @@ def fetch_source(source, get=download):
 
 
 def fetch_all(sources=None, get=download):
-    sources = load_sources() if sources is None else sources
+    sources = SOURCES if sources is None else sources
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda s: fetch_source(s, get), sources))
     items = [item for found, _ in results for item in found]
