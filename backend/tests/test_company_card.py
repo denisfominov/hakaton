@@ -22,5 +22,5 @@ def test_profile_facts(tmp_path):
     q = company_profile(data, "U_2")
     assert q["facts"]["revenue_rub"] == {"value": None, "source": f"{COMPANIES_FILE}: REVENUE_COMPANY", "status": "no data"}
     assert q["facts"]["customs_countries"]["status"] == "no data"
-    assert q["facts"]["region"]["status"] == "no data"  # field absent from the file
+    assert q["facts"]["region"]["status"] == "no data"
     assert q["products"]["loans"]["value"] is False

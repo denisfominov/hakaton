@@ -24,17 +24,17 @@ def test_cleaning(tmp_path):
     data = load(tmp_path)
     c = data.companies
 
-    assert list(c.index) == ["U_1", "U_2"]          # repeated id dropped entirely
-    assert "EMPTY" not in c.columns                  # field empty in every row dropped
+    assert list(c.index) == ["U_1", "U_2"]
+    assert "EMPTY" not in c.columns
     assert c.loc["U_1", "MAINOKVED_CODE"] == "41.20"
-    assert pd.isna(c.loc["U_2", "REVENUE_COMPANY"])  # placeholder 1000 is no data, not zero
+    assert pd.isna(c.loc["U_2", "REVENUE_COMPANY"])
     assert c.loc["U_1", "REVENUE_COMPANY"] == 2e10
-    assert c.loc["U_1", "CL_PRODUCT_LOA_MARK"] == True and c.loc["U_2", "NEGATIVEMARK"] == True  # noqa: E712
-    assert c["IS_CLIENT"].tolist() == [True, False]  # spaces around values stripped
+    assert bool(c.loc["U_1", "CL_PRODUCT_LOA_MARK"]) and bool(c.loc["U_2", "NEGATIVEMARK"])
+    assert c["IS_CLIENT"].tolist() == [True, False]
     assert data.links.to_dict("records") == [
         {"SYNTHETIC_F": "F_1", "CITY_NAME": "Omsk", "RC_NAME": "SIBERIA", "SYNTHETIC_U": "U_1"}]
 
 
 def test_default_folder_loads():
-    data = load()  # case data if present, otherwise the synthetic sample
+    data = load()
     assert len(data.companies) > 0 and data.companies.index.is_unique

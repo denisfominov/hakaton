@@ -1,10 +1,3 @@
-"""Load and clean the case CSVs: companies and person-company links. Payments are not read.
-
-Cleaning order follows lecture 2 (preprocessing): types, missing values, duplicates. Missing values are not
-filled: the reason a value is absent is unknown, and an invented value would distort the profile.
-
-Check by eye: python -m app.company.load
-"""
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,19 +7,18 @@ from .. import config
 
 COMPANIES_FILE = "df_Uid_data_hack.csv"
 LINKS_FILE = "df_Fid_Uid_link_hack.csv"
-REVENUE_STUB = 1000.0  # organizers' technical placeholder: revenue unknown
+REVENUE_STUB = 1000.0
 
 
 @dataclass
 class CaseData:
-    companies: pd.DataFrame  # index SYNTHETIC_U; columns as in the CSV + IS_CLIENT
-    links: pd.DataFrame      # SYNTHETIC_F, CITY_NAME, RC_NAME, SYNTHETIC_U
+    companies: pd.DataFrame
+    links: pd.DataFrame
     folder: Path
-    report: list = field(default_factory=list)  # (what was done, number of rows or values)
+    report: list = field(default_factory=list)
 
 
 def data_dir():
-    """Folder with the case CSVs: CLIENT_DATA_DIR, repo root, synthetic sample."""
     candidates = [Path(config.CLIENT_DATA_DIR)] if config.CLIENT_DATA_DIR else []
     candidates += [config.ROOT_DIR, config.DATA_DIR / "clients" / "sample"]
     return next((d for d in candidates if (d / COMPANIES_FILE).exists()), None)
@@ -39,7 +31,6 @@ def _read(path):
 
 
 def _okved(code):
-    """"41.2" and "41.20" are the same code written differently; use two digits after the dot."""
     return code.where(~code.str.fullmatch(r"\d{2}\.\d", na=False), code + "0")
 
 
@@ -52,7 +43,6 @@ def load(folder=None):
     companies = _read(folder / COMPANIES_FILE)
     report.append(("rows in companies file", len(companies)))
 
-    # one SYNTHETIC_U on several rows: the rows cannot be told apart, keep none of them
     dup = companies["SYNTHETIC_U"].duplicated(keep=False)
     companies = companies[~dup]
     report.append(("rows dropped: repeated SYNTHETIC_U", int(dup.sum())))

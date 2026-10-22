@@ -1,13 +1,8 @@
-"""Profile of one company: every value comes from one field of the companies file, or is marked as missing.
-
-Check by eye: python -m app.company.profile [SYNTHETIC_U]
-"""
 import numpy as np
 import pandas as pd
 
 from .load import COMPANIES_FILE, load
 
-# fact name -> field of the companies file
 FIELDS = {
     "client_type": "CL_TYPE",
     "ownership": "OKFS_NAME",
@@ -26,7 +21,6 @@ FIELDS = {
     "group_id": "GROUP_ID",
 }
 
-# bank product -> mark field
 PRODUCTS = {
     "settlement_account": "CL_PRODUCT_RKO_MARK",
     "guarantees": "CL_PRODUCT_GAR_MARK",
