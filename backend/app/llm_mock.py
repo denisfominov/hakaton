@@ -102,6 +102,24 @@ def _news_match(user):
                             else "Прямой связи новости с фактами профиля не найдено (мок-режим).")}
 
 
+def _interpretation(user):
+    """Объяснение для руководителя (сервис 4) — только из строк входа: заголовок, связи, допущения, балл."""
+    title = re.search(r"^TITLE \[(news:[^\]]+)\]: (.+)$", user, re.MULTILINE)
+    links = re.findall(r"^LINK \[(link:\d+)\] факт (p:[\w.]+); цитата: «(.+?)»; (.+)$", user, re.MULTILINE)
+    assumptions = re.findall(r"^ASSUMPTION \[(assumption:\d+)\] (.+?) \(почему", user, re.MULTILINE)
+    news = title.group(1) if title else "score"
+    why = [{"text": f"{expl} Цитата: «{quote}».", "kind": "link", "refs": [lid, fid, news]}
+           for lid, fid, quote, expl in links[:3]]
+    why += [{"text": f"Допущение: {text}", "kind": "assumption", "refs": [aid]} for aid, text in assumptions[:2]]
+    return {"headline": title.group(2) if title else "Событие",
+            "what_happened": [{"text": title.group(2), "kind": "fact", "refs": [news]}] if title else [],
+            "why_it_matters": why,
+            "what_to_do": [{"text": "Оценить влияние события на компанию и вернуться к нему при новых публикациях.",
+                            "kind": "recommendation", "refs": ["score"]}],
+            "uncertainty": {"level": "medium", "reasons": ["ответ мок-режима: построен из входа без модели"]},
+            "not_known": []}
+
+
 def respond(model, messages, purpose="", max_tokens=1500):
     """Ответ в формате Chat Completions, как его вернул бы шлюз."""
     for rule in filter(None, (os.getenv("LLM_MOCK_FAIL") or "").split(";")):
@@ -114,7 +132,9 @@ def respond(model, messages, purpose="", max_tokens=1500):
             return {"_status": int(kind) if kind.isdigit() else 500}
     system = next((m["content"] for m in messages if m["role"] == "system" and isinstance(m["content"], str)), "")
     user = next((m["content"] for m in messages if m["role"] == "user" and isinstance(m["content"], str)), "")
-    if purpose == "news_match":
+    if purpose == "interpretation":
+        content = json.dumps(_interpretation(user), ensure_ascii=False)
+    elif purpose == "news_match":
         content = json.dumps(_news_match(user), ensure_ascii=False)
     elif purpose == "agent_plan" or "планировщик" in system:
         content = json.dumps(_agent_plan(system, user), ensure_ascii=False)

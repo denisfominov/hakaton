@@ -251,6 +251,7 @@ def match(facts, scored, conn=None, use_llm=True):
                  if not llm_client.enabled() else "проверка связей моделью не запрашивалась"}
     used = facts_used(facts, scored)
     used += [x["fact_id"] for x in links if x["fact_id"] not in used]
+    f = known(facts)
     return MatchResult.model_validate({
         "profile_id": facts["profile_id"], "event_id": ev["id"], "cluster_ids": [m["id"] for m in members],
         "title": ev["title"],
@@ -262,6 +263,7 @@ def match(facts, scored, conn=None, use_llm=True):
         "links": links, "assumptions": assumptions,
         "explanation": rules_explanation(scored) + (f" {llm_expl}" if llm_expl else ""),
         "facts_used": used,
-        "news": [{"event_id": m["id"], "source": m["source"], "url": m.get("url"), "published_at": m["published_at"]}
-                 for m in members],
+        "profile_facts": [{"id": i, "label": f[i]["label"], "value": _fmt(f[i]["value"])} for i in used if i in f],
+        "news": [{"event_id": m["id"], "source": m["source"], "url": m.get("url"), "published_at": m["published_at"],
+                  "summary": (m.get("summary") or "")[:400] or None} for m in members],
         "llm": trace}).model_dump()

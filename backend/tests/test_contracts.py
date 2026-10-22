@@ -52,7 +52,7 @@ def test_insight_and_tools_follow_contract():
     assert len(specs) >= 8 and all(s.access == "read" for s in specs)
     assert set(api["schemas"]) == {"CompanyProfile", "EventDoc", "RankedEvent", "BankHit", "InsightResult", "ToolSpec",
                                    "CompanyFacts", "NewsGroup", "MatchResult", "Interpretation"}
-    assert api["version"] == "2.0"
+    assert api["version"] == "2.1"
 
 
 def test_contract_rejects_broken_event():
