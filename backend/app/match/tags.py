@@ -80,7 +80,7 @@ if __name__ == "__main__":
         print(f"\n{section}: {with_any} news have at least one; top: "
               + ", ".join(f"{k} {n}" for k, n in counts[section].most_common(8)))
     print("\nExamples:")
-    for item, tags in random.Random(1).sample(tagged, 8):
+    for item, tags in random.Random(1).sample(tagged, min(8, len(tagged))):
         print(f"\n{item['title']}")
         for section in SECTIONS:
             if tags[section]:
