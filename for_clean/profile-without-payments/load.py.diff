@@ -1,0 +1,13 @@
+diff --git a/backend/company/load.py b/backend/company/load.py
+index 57636f4..0754ffb 100644
+--- a/backend/company/load.py
++++ b/backend/company/load.py
+@@ -140,7 +140,7 @@ def derive(companies, links, payments, report, threshold=None):
+     report.append(("links dropped: company not in companies data", int(unknown.sum())))
+     report.append(("links kept", len(links)))
+ 
+-    payments = payments.copy()
++    payments = payments.astype({"PAY_AMT": "float64", "PAY_CNT": "float64"})
+     group = companies["GROUP_ID"]
+     payer_group = payments["PAYER"].map(group)
+     payments["INTRA_GROUP"] = (payer_group.notna() & (payer_group == payments["BENEFICIARY"].map(group))).astype(bool)
