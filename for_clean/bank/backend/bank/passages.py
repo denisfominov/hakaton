@@ -1,6 +1,8 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+
+from backend.match.tags import tag_text, to_factors
 
 from .documents import load_documents
 
@@ -20,6 +22,7 @@ class Passage:
     page: int
     text: str
     note: str
+    factors: dict[str, list[str]] = field(default_factory=dict)
 
 
 def is_service_page(text):
@@ -68,6 +71,7 @@ def build_passages(documents):
                     page=number,
                     text=text,
                     note=document.note,
+                    factors=to_factors(tag_text(text)),
                 ))
     return passages
 
@@ -78,15 +82,22 @@ def load_passages(folder=None):
 
 
 if __name__ == "__main__":
-    from collections import defaultdict
+    from collections import Counter, defaultdict
 
     passages = load_passages()
     by_document = defaultdict(list)
     for p in passages:
-        by_document[p.document_id].append(len(p.text))
-    for document_id, lengths in by_document.items():
-        print(f"{document_id:<20} passages {len(lengths):>3}  chars min {min(lengths):>4} "
-              f"avg {sum(lengths) // len(lengths):>4} max {max(lengths):>5}")
-    print(f"\n{len(passages)} passages in total\n")
-    for p in passages[:2] + passages[-1:]:
-        print(f"[{p.id}] page {p.page} of {p.title[:50]}\n  {p.text[:400]}\n")
+        by_document[p.document_id].append(p)
+    for document_id, items in by_document.items():
+        lengths = [len(p.text) for p in items]
+        tagged = sum(1 for p in items if p.factors)
+        top = Counter(f for p in items for f in p.factors).most_common(3)
+        print(f"{document_id:<20} passages {len(items):>3}  avg chars {sum(lengths) // len(lengths):>4}  "
+              f"with factors {tagged:>3}  top: {', '.join(f'{k} {n}' for k, n in top)}")
+    overall = Counter(f for p in passages for f in p.factors)
+    print(f"\n{len(passages)} passages, {sum(1 for p in passages if p.factors)} with factors")
+    print("top factors: " + ", ".join(f"{k} {n}" for k, n in overall.most_common(12)) + "\n")
+    for p in [p for p in passages if p.factors][:3]:
+        print(f"[{p.id}] {p.title[:50]}")
+        for name, hits in p.factors.items():
+            print(f"  {name} <- {', '.join(hits)}")
