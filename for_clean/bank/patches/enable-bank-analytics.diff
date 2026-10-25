@@ -1,0 +1,23 @@
+diff --git a/.env.example b/.env.example
+index a6bc821..94c916b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -7,4 +7,4 @@ LLM_MODEL_REASONING=z-ai/glm-5.3-flash
+ LLM_MODEL_GENERAL=qwen/qwen3.6-35b-a3b
+ 
+ PROMPT_VARIANTS={}
+-BANK_ANALYTICS=none
++BANK_ANALYTICS=backend.bank.search:AlfaBankAnalytics
+diff --git a/backend/config.py b/backend/config.py
+index 643f6e6..e25ed5f 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -30,7 +30,7 @@ class Settings(BaseSettings):
+ 
+     prompt_variants: dict[str, str] = {}
+ 
+-    bank_analytics: str = "none"
++    bank_analytics: str = "backend.bank.search:AlfaBankAnalytics"
+ 
+ 
+ @lru_cache
