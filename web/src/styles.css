@@ -1,0 +1,51 @@
+:root {
+  --alfa-red: #ef3124;
+  --ink: #0b1f35;
+  --muted: #6b7785;
+  --surface: #ffffff;
+  --background: #f3f4f5;
+  --ok: #13a463;
+  --radius: 16px;
+  font-family: "SF Pro Text", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+}
+
+.status {
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.status-ok {
+  color: var(--ok);
+}
+
+.status-error {
+  color: var(--alfa-red);
+}
+
+.hint {
+  color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 14px;
+}
