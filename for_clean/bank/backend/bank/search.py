@@ -12,11 +12,11 @@ from .passages import load_passages
 log = logging.getLogger("bank")
 
 FACTOR_WEIGHT = 0.3
-TITLE_WEIGHT = 0.2
+TITLE_WEIGHT = 0.8
 MIN_WORD = 3
 OUTDATED_DAYS = 365
 OUTDATED_FACTOR = 0.7
-MIN_SCORE = 0.08
+MIN_SCORE = 0.35
 PER_DOCUMENT = 2
 
 
@@ -27,8 +27,11 @@ def words(text):
 class AlfaBankAnalytics:
     name = "alfa_bank"
 
-    def __init__(self, folder=None):
+    def __init__(self, folder=None, factor_weight=FACTOR_WEIGHT, title_weight=TITLE_WEIGHT, min_score=MIN_SCORE):
         self.folder = folder
+        self.factor_weight = factor_weight
+        self.title_weight = title_weight
+        self.min_score = min_score
         self._ready = False
 
     def _build(self):
@@ -53,7 +56,7 @@ class AlfaBankAnalytics:
         scores = []
         for i, passage in enumerate(self.passages):
             overlap = len(wanted & passage.factors.keys()) / len(wanted) if wanted else 0.0
-            score = text[i] + TITLE_WEIGHT * title[i] + FACTOR_WEIGHT * overlap
+            score = text[i] + self.title_weight * title[i] + self.factor_weight * overlap
             if self.outdated[i]:
                 score *= OUTDATED_FACTOR
             scores.append(score)
@@ -73,7 +76,7 @@ class AlfaBankAnalytics:
         scores = self._score(query or "", factors or [])
         found, per_document = [], {}
         for i in sorted(range(len(scores)), key=lambda i: -scores[i]):
-            if scores[i] < MIN_SCORE or len(found) == limit:
+            if scores[i] < self.min_score or len(found) == limit:
                 break
             passage = self.passages[i]
             if per_document.get(passage.document_id, 0) == PER_DOCUMENT:

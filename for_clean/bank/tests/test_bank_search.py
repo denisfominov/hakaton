@@ -38,8 +38,9 @@ def test_outdated_document_is_marked_and_ranked_lower(tmp_path):
 def test_unrelated_query_returns_nothing_and_limits_hold(tmp_path):
     source = AlfaBankAnalytics(bank_folder(tmp_path))
     assert source.search("\u0444\u0443\u0442\u0431\u043e\u043b\u044c\u043d\u044b\u0439 \u043a\u043b\u0443\u0431 \u0432\u044b\u0438\u0433\u0440\u0430\u043b \u0447\u0435\u043c\u043f\u0438\u043e\u043d\u0430\u0442", []) == []
-    found = source.search("\u0446\u0435\u043d\u044b \u0440\u043e\u0441\u0442", ["key_rate", "commodities:gold", "commodities:metals"], limit=5)
-    assert len(found) <= 5
+    unfiltered = AlfaBankAnalytics(bank_folder(tmp_path), min_score=0.0)
+    found = unfiltered.search("\u0446\u0435\u043d\u044b \u0440\u043e\u0441\u0442", ["key_rate", "commodities:gold", "commodities:metals"], limit=5)
+    assert 0 < len(found) <= 5
     assert max(sum(1 for p in found if p.document == d) for d in {p.document for p in found}) <= 2
 
 
