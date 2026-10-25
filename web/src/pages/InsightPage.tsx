@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { getCard, getTrace, type ClaimView, type InsightCard, type SourceView, type Trace } from "../api";
+import { getCard, getTrace, sendFeedback, type InsightCard, type Trace } from "../api";
+import { AskPanel } from "../components/AskPanel";
+import { Claim, ExternalLink, Provenance } from "../components/Claims";
+import { FeedbackBar } from "../components/FeedbackBar";
 import { loadSelection } from "../selection";
 import { texts } from "../texts";
 
@@ -10,46 +13,6 @@ const PROVENANCES = ["fact", "bank", "model", "hypothesis"];
 
 type Load = { kind: "loading" } | { kind: "ok"; card: InsightCard } | { kind: "error"; message: string };
 type TraceLoad = { kind: "hidden" } | { kind: "loading" } | { kind: "ok"; trace: Trace } | { kind: "missing" };
-
-function Provenance({ value, confidence }: { value: string; confidence?: number | null }) {
-  return (
-    <span className={`tag prov-${value}`} title={t.provenanceHint[value]}>
-      {t.provenance[value] ?? value}
-      {value === "hypothesis" && confidence != null && ` · ${Math.round(confidence * 100)}%`}
-    </span>
-  );
-}
-
-function bankSource(ref: string) {
-  const [documentId, page] = ref.split(":");
-  const title = texts.bankDocuments[documentId] ?? documentId;
-  return page?.startsWith("p") ? `${title}, ${t.page(page.slice(1))}` : title;
-}
-
-function Source({ source }: { source: SourceView }) {
-  const kind = t.sourceKinds[source.kind] ?? source.kind;
-  const label = source.kind === "alfa_analytics" ? bankSource(source.ref)
-    : source.title ?? (source.kind === "news" || source.kind === "event_analysis" ? "" : source.ref);
-  return (
-    <li title={source.quote ?? undefined}>
-      <span className="muted">{kind}{label ? ": " : ""}</span>
-      {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{label || source.url}</a> : label}
-      {source.kind === "alfa_analytics" && source.quote && <q className="quote">{source.quote}</q>}
-    </li>
-  );
-}
-
-function Claim({ claim }: { claim: ClaimView }) {
-  return (
-    <li className="card-claim">
-      <div>
-        <Provenance value={claim.provenance} confidence={claim.confidence} />
-        <span>{claim.text}</span>
-      </div>
-      {claim.sources.length > 0 && <ul className="sources">{claim.sources.map((s, i) => <Source key={i} source={s} />)}</ul>}
-    </li>
-  );
-}
 
 function stepName(name: string) {
   const retry = name.match(/^verify_after_rewrite_(\d+)$/);
@@ -101,6 +64,10 @@ export function InsightPage({ insightId, onBack }: { insightId: string; onBack: 
     };
   }, [insightId, role]);
 
+  const openSource = (url: string) => {
+    sendFeedback(insightId, "open_source", role, url).catch(() => undefined);
+  };
+
   const toggleTrace = () => {
     if (trace.kind !== "hidden") return setTrace({ kind: "hidden" });
     setTrace({ kind: "loading" });
@@ -134,12 +101,13 @@ export function InsightPage({ insightId, onBack }: { insightId: string; onBack: 
                     {card.news.map((n, i) => (
                       <li key={i}>
                         <span className="muted">{n.source}: </span>
-                        {n.url ? <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a> : n.title}
+                        {n.url ? <ExternalLink url={n.url} label={n.title} onOpen={openSource} /> : n.title}
                       </li>
                     ))}
                   </ul>
                 </>
               )}
+              <FeedbackBar insightId={card.id} role={role} counts={card.feedback} />
             </section>
 
             <section className="widget legend">
@@ -153,10 +121,12 @@ export function InsightPage({ insightId, onBack }: { insightId: string; onBack: 
               <section key={section} className={`widget card-section section-${section}`}>
                 <h3>{t.sections[section] ?? section}</h3>
                 {(card.sections[section] ?? []).length > 0
-                  ? <ul className="card-claims">{card.sections[section].map((c, i) => <Claim key={i} claim={c} />)}</ul>
+                  ? <ul className="card-claims">{card.sections[section].map((c, i) => <Claim key={i} claim={c} onOpen={openSource} />)}</ul>
                   : <p className="muted">{section === "bank_view" ? t.noBankView : t.emptySection}</p>}
               </section>
             ))}
+
+            <AskPanel insightId={card.id} role={role} onOpen={openSource} />
 
             <section className="widget">
               <div className="feed-head">

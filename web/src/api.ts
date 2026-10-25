@@ -128,6 +128,7 @@ export type InsightCard = {
   role_focus: string[];
   sections_order: string[];
   trace_id: string | null;
+  feedback: Record<string, number>;
 };
 
 export type TraceStep = { kind: string; name: string; ms: number | null; error: string | null };
@@ -190,3 +191,30 @@ export const getCard = (insightId: string, role: string) =>
   getJson<InsightCard>(`/insights/${encodeURIComponent(insightId)}/card?role=${role}`);
 
 export const getTrace = (insightId: string) => getJson<Trace>(`/insights/${encodeURIComponent(insightId)}/trace`);
+
+export type InsightAnswer = {
+  id: string;
+  question: string;
+  answer: string;
+  answerable: boolean;
+  claims: ClaimView[];
+  follow_up: string[];
+};
+
+export type FeedbackKind = "useful" | "not_useful" | "hide" | "unhide" | "open_source";
+
+const json = (body: unknown): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const getQuestions = (insightId: string) =>
+  getJson<InsightAnswer[]>(`/insights/${encodeURIComponent(insightId)}/questions`);
+
+export const askQuestion = (insightId: string, question: string, role: string) =>
+  request<InsightAnswer>(`/insights/${encodeURIComponent(insightId)}/ask`, json({ question, role }));
+
+export const sendFeedback = (insightId: string, kind: FeedbackKind, role: string, sourceUrl?: string) =>
+  request<{ id: string; counts: Record<string, number> }>(`/insights/${encodeURIComponent(insightId)}/feedback`,
+    json({ kind, role, source_url: sourceUrl ?? null }));
