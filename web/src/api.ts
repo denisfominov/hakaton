@@ -99,13 +99,54 @@ export type CompanyFilter = {
   offset: number;
 };
 
-export async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`/api${path}`);
+export type SourceView = { kind: string; ref: string; title: string | null; url: string | null; quote: string | null };
+
+export type ClaimView = { text: string; provenance: Provenance; confidence: number | null; sources: SourceView[] };
+
+export type NewsLink = { source: string; title: string; url: string | null; published_at: string | null };
+
+export type Impact = "low" | "medium" | "high";
+
+export type InsightCard = {
+  id: string;
+  company_uid: string;
+  news_id: string;
+  created_at: string;
+  relevance: number;
+  impact: Impact;
+  impact_reason: string | null;
+  title: string;
+  headline: string | null;
+  published_at: string | null;
+  news: NewsLink[];
+  event_summary: string | null;
+  sections: Record<string, ClaimView[]>;
+  provenance_counts: Record<string, number>;
+  has_bank_view: boolean;
+  matched_factors: string[];
+  role: string | null;
+  role_focus: string[];
+};
+
+export type Job = {
+  id: string;
+  company_uid: string;
+  status: "queued" | "running" | "done" | "failed";
+  results: { status: string; insight_id: string | null }[];
+  error: string | null;
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, init);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    const body = await response.json().catch(() => null);
+    const detail = body && typeof body.detail === "string" ? `: ${body.detail}` : "";
+    throw new Error(`${response.status} ${response.statusText}${detail}`);
   }
   return response.json() as Promise<T>;
 }
+
+export const getJson = <T>(path: string) => request<T>(path);
 
 export const getHealth = () => getJson<Health>("/health");
 
@@ -120,3 +161,11 @@ export function getCompanies(filter: CompanyFilter) {
   if (filter.okved.trim()) query.set("okved", filter.okved.trim());
   return getJson<CompanyPage>(`/companies?${query}`);
 }
+
+export const getCards = (companyId: string, role: string) =>
+  getJson<InsightCard[]>(`/companies/${encodeURIComponent(companyId)}/cards?role=${role}&limit=20`);
+
+export const startAnalysis = (companyId: string) =>
+  request<Job>(`/companies/${encodeURIComponent(companyId)}/analyze?limit=3&days=3`, { method: "POST" });
+
+export const getJob = (jobId: string) => getJson<Job>(`/jobs/${jobId}`);

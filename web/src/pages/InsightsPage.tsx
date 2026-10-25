@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CompanyPicker } from "../components/CompanyPicker";
 import { Icon } from "../components/Icon";
+import { InsightFeed } from "../components/InsightFeed";
 import { ProfileView } from "../components/ProfileView";
 import { loadSelection, saveSelection, type Role, type Selection } from "../selection";
 import { texts } from "../texts";
@@ -34,6 +35,7 @@ export function InsightsPage() {
             </div>
             <button className="action" onClick={() => choose(null)}>{texts.selected.change}</button>
           </section>
+          <InsightFeed companyId={selection.companyId} role={selection.role} />
           <ProfileView companyId={selection.companyId} />
         </>
       ) : (

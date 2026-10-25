@@ -753,3 +753,77 @@ td {
   padding: 8px 0;
   color: var(--alfa-red);
 }
+
+.feed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.feed-head p {
+  margin: 4px 0 0;
+}
+
+.action-primary {
+  background: var(--alfa-red);
+  color: white;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.status-line {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.insight-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+
+.insight-card h4 {
+  margin: 8px 0 6px;
+  font-size: 16px;
+}
+
+.insight-headline {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.insight-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.insight-meta .tag {
+  margin-left: 0;
+}
+
+.impact-high {
+  background: #fdeceb;
+  color: var(--alfa-red);
+}
+
+.impact-medium {
+  background: #fff4e0;
+  color: #b56b00;
+}
+
+.tag-bank {
+  background: var(--ink);
+  color: white;
+}
