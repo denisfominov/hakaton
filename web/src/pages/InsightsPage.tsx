@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CompanyPicker } from "../components/CompanyPicker";
 import { Icon } from "../components/Icon";
+import { ProfileView } from "../components/ProfileView";
 import { loadSelection, saveSelection, type Role, type Selection } from "../selection";
 import { texts } from "../texts";
 
@@ -24,14 +25,17 @@ export function InsightsPage() {
       </header>
 
       {selection ? (
-        <section className="widget selected">
-          <div>
-            <span className="muted">{texts.selected.title}</span>
-            <h3>{selection.companyId} · {texts.picker.roles[selection.role]}</h3>
-            <p className="muted">{texts.selected.next}</p>
-          </div>
-          <button className="action" onClick={() => choose(null)}>{texts.selected.change}</button>
-        </section>
+        <>
+          <section className="widget selected">
+            <div>
+              <span className="muted">{texts.selected.title}</span>
+              <h3>{selection.companyId} · {texts.picker.roles[selection.role]}</h3>
+              <p className="muted">{texts.selected.next}</p>
+            </div>
+            <button className="action" onClick={() => choose(null)}>{texts.selected.change}</button>
+          </section>
+          <ProfileView companyId={selection.companyId} />
+        </>
       ) : (
         <CompanyPicker role={role} onRole={setRole} onPick={(companyId) => choose({ companyId, role })} />
       )}

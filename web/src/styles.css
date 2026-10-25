@@ -585,3 +585,171 @@ td {
 .selected .action {
   background: var(--background);
 }
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.profile-head p {
+  margin: 6px 0;
+}
+
+.numbers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.numbers div {
+  display: flex;
+  flex-direction: column;
+}
+
+.numbers b {
+  font-size: 22px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.widget h3.sub {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: var(--background);
+  border-radius: 10px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  background: var(--background);
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.tag-fact {
+  background: #e8f6ef;
+  color: var(--ok);
+}
+
+.tag-hypothesis {
+  background: #fff4e0;
+  color: #b56b00;
+}
+
+.plain {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.features td {
+  font-weight: 400;
+  border-top: 1px solid var(--line);
+  padding: 8px 12px 8px 0;
+}
+
+.factors,
+.claims,
+.shares {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.factor-head {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.factor-name {
+  margin-right: auto;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background);
+  margin: 6px 0;
+  overflow: hidden;
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  background: var(--alfa-red);
+}
+
+.reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.shares li {
+  display: grid;
+  grid-template-columns: 260px 1fr 48px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.claim {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.claim .tag {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.companies-table tr.current {
+  background: #fff1f0;
+}
+
+.action.link {
+  background: none;
+  padding: 8px 0;
+  color: var(--alfa-red);
+}
