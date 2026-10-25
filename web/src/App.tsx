@@ -20,7 +20,7 @@ export default function App() {
 
   return (
     <Shell page={page} onNavigate={navigate}>
-      {page === "home" ? <HomePage onOpenInsights={() => navigate("insights")} /> : <InsightsPage onBack={() => navigate("home")} />}
+      {page === "home" ? <HomePage onOpenInsights={() => navigate("insights")} /> : <InsightsPage />}
     </Shell>
   );
 }
