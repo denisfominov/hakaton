@@ -126,7 +126,23 @@ export type InsightCard = {
   matched_factors: string[];
   role: string | null;
   role_focus: string[];
+  sections_order: string[];
+  trace_id: string | null;
 };
+
+export type TraceStep = { kind: string; name: string; ms: number | null; error: string | null };
+
+export type LlmCall = {
+  role: string;
+  model: string;
+  purpose: string | null;
+  ms: number;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  ok: boolean;
+};
+
+export type Trace = { id: string; status: string; steps: TraceStep[]; llm_calls: LlmCall[] };
 
 export type Job = {
   id: string;
@@ -169,3 +185,8 @@ export const startAnalysis = (companyId: string) =>
   request<Job>(`/companies/${encodeURIComponent(companyId)}/analyze?limit=3&days=3`, { method: "POST" });
 
 export const getJob = (jobId: string) => getJson<Job>(`/jobs/${jobId}`);
+
+export const getCard = (insightId: string, role: string) =>
+  getJson<InsightCard>(`/insights/${encodeURIComponent(insightId)}/card?role=${role}`);
+
+export const getTrace = (insightId: string) => getJson<Trace>(`/insights/${encodeURIComponent(insightId)}/trace`);

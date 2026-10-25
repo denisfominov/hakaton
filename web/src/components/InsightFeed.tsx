@@ -16,7 +16,9 @@ type Run = { kind: "idle" } | { kind: "job"; job: Job } | { kind: "error"; messa
 function CardItem({ card, industry }: { card: InsightCard; industry: (key: string) => string }) {
   const t = texts.feed;
   return (
-    <li className="insight-card">
+    <li className="insight-card" role="link" tabIndex={0}
+      onClick={() => (window.location.hash = `#/insight/${card.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && (window.location.hash = `#/insight/${card.id}`)}>
       <div className="insight-meta">
         <span className={`tag impact-${card.impact}`}>{t.impact[card.impact] ?? card.impact}</span>
         <span className="tag">{t.relevance(`${Math.round(card.relevance * 100)}%`)}</span>

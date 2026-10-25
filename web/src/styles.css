@@ -827,3 +827,105 @@ td {
   background: var(--ink);
   color: white;
 }
+
+.insight-card {
+  cursor: pointer;
+}
+
+.insight-card:hover {
+  border-color: var(--alfa-red);
+}
+
+.card-title {
+  margin: 10px 0;
+  font-size: 22px;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend .tag {
+  margin-left: 0;
+}
+
+.card-claims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-claim > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.card-claim .tag {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.sources {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.sources a {
+  color: var(--ink);
+}
+
+.quote {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.prov-fact {
+  background: #e8f6ef;
+  color: var(--ok);
+}
+
+.prov-bank {
+  background: #fdeceb;
+  color: var(--alfa-red);
+}
+
+.prov-model {
+  background: #e8f1fd;
+  color: #2f80ed;
+}
+
+.prov-hypothesis {
+  background: #fff4e0;
+  color: #b56b00;
+}
+
+.section-bank_view {
+  border: 2px solid #fdeceb;
+}
+
+.trace {
+  margin: 8px 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.trace .tag {
+  margin: 0 8px 0 0;
+}
+
+.trace-error {
+  color: var(--alfa-red);
+}
