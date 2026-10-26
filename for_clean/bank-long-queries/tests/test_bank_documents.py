@@ -1,6 +1,7 @@
 from datetime import date
 
 from backend.bank.documents import load_catalog, load_documents, read_pages
+from backend.bank.passages import load_passages
 
 
 def test_catalog_lists_nine_documents():
@@ -22,3 +23,9 @@ def test_load_documents_reports_missing_files(tmp_path):
     assert [d.id for d in documents] == ["inflation_0902"]
     assert documents[0].published == date(2026, 9, 2) and documents[0].pages == ["Weekly inflation", "Page two"]
     assert len(missing) == 8
+
+
+def test_missing_text_files_are_logged(tmp_path, caplog):
+    (tmp_path / "Inflation_tracker_02.ocr.txt").write_text("Weekly inflation\fPage two", encoding="utf-8")
+    load_passages(tmp_path)
+    assert "8 documents have no <name>.ocr.txt text" in caplog.text and "ALFA-7M26.pdf" in caplog.text

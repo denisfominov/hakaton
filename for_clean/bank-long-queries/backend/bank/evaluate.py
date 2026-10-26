@@ -9,10 +9,10 @@ QUESTIONS_FILE = Path(__file__).resolve().parent / "eval_questions.json"
 GRID = {
     "factor_weight": [0.0, 0.15, 0.3, 0.5],
     "title_weight": [0.0, 0.2, 0.4, 0.6, 0.8],
-    "min_score": [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5],
+    "min_score": [0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.25, 0.3, 0.35, 0.4],
 }
-STEP = 0.05
-REQUIRED_SILENCE = 1.0
+MISS_COST = 2.0
+NOISE_COST = 1.0
 
 
 def load_questions(split):
@@ -37,6 +37,7 @@ def evaluate(source, questions, k=3):
     silent = sum(1 for q in negatives if not source.search(q["query"], q["factors"], limit=5))
     n = max(1, len(positives))
     return {
+        "cost": MISS_COST * len(misses) + NOISE_COST * (len(negatives) - silent),
         "hit@1": round(hits1 / n, 3),
         "hit@3": round(hits3 / n, 3),
         "mrr@5": round(reciprocal / n, 3),
@@ -56,14 +57,13 @@ def grid_search(source, questions):
     for values in product(*GRID.values()):
         params = dict(zip(GRID, values))
         results[values] = (params, evaluate(configure(source, params), questions))
+    thresholds = GRID["min_score"]
     best = None
     for (fw, tw, ms), (params, result) in results.items():
-        if result["silent_off_topic"] < REQUIRED_SILENCE:
-            continue
-        higher = results.get((fw, tw, round(ms + STEP, 2)))
-        margin = higher[1]["hit@3"] if higher else 0.0
-        key = (result["hit@3"], margin, result["mrr@5"])
-        if best is None or key > best[0]:
+        i = thresholds.index(ms)
+        neighbours = [results[(fw, tw, thresholds[j])][1]["cost"] for j in (i - 1, i + 1) if 0 <= j < len(thresholds)]
+        key = (result["cost"], max(neighbours), -result["hit@3"])
+        if best is None or key < best[0]:
             best = (key, params, result)
     return best
 
@@ -80,7 +80,4 @@ if __name__ == "__main__":
         dev = load_questions("dev")
         print("dev, current defaults:", defaults, evaluate(configure(source, defaults), dev))
         best = grid_search(source, dev)
-        if best:
-            print("dev, best on grid:    ", best[1], best[2])
-        else:
-            print("no setting keeps every off-topic question silent")
+        print("dev, best on grid:    ", best[1], best[2])

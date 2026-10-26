@@ -1,10 +1,13 @@
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
 
 from backend.match.tags import tag_text, to_factors
 
-from .documents import load_documents
+from .documents import bank_dir, load_documents
+
+log = logging.getLogger("bank")
 
 TARGET_CHARS = 800
 MIN_CHARS = 150
@@ -77,7 +80,10 @@ def build_passages(documents):
 
 
 def load_passages(folder=None):
-    documents, _ = load_documents(folder)
+    documents, missing = load_documents(folder)
+    if missing:
+        log.warning("bank analytics: %s documents have no <name>.ocr.txt text in %s: %s",
+                    len(missing), folder or bank_dir(), ", ".join(missing))
     return build_passages(documents)
 
 

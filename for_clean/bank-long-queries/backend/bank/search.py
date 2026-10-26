@@ -12,11 +12,11 @@ from .passages import load_passages
 log = logging.getLogger("bank")
 
 FACTOR_WEIGHT = 0.3
-TITLE_WEIGHT = 0.8
+TITLE_WEIGHT = 0.0
 MIN_WORD = 3
 OUTDATED_DAYS = 365
 OUTDATED_FACTOR = 0.7
-MIN_SCORE = 0.35
+MIN_SCORE = 0.16
 PER_DOCUMENT = 2
 
 
