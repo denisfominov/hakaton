@@ -1,0 +1,136 @@
+diff --git a/backend/auth/guard.py b/backend/auth/guard.py
+new file mode 100644
+index 0000000..496bb6c
+--- /dev/null
++++ b/backend/auth/guard.py
+@@ -0,0 +1,37 @@
++import re
++from contextlib import closing
++
++from fastapi.responses import JSONResponse
++from starlette.concurrency import run_in_threadpool
++
++from backend.analysis import storage
++from backend.auth.accounts import read_token
++from backend.config import get_settings
++
++OPEN_PATHS = {"/api/health", "/api/auth/login"}
++COMPANY_PATH = re.compile(r"^/api/companies/([^/]+)")
++INSIGHT_PATH = re.compile(r"^/api/insights/([^/]+)")
++
++
++def insight_company(insight_id):
++    with closing(storage.connect()) as conn:
++        row = storage.get_insight(conn, insight_id)
++    return row["company_uid"] if row else None
++
++
++async def require_login(request, call_next):
++    path = request.url.path
++    if not get_settings().auth_required or not path.startswith("/api/") or path in OPEN_PATHS:
++        return await call_next(request)
++    scheme, _, token = request.headers.get("authorization", "").partition(" ")
++    user = read_token(token) if scheme.lower() == "bearer" else None
++    if user is None:
++        return JSONResponse({"detail": "login required"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
++    uid = None
++    if company := COMPANY_PATH.match(path):
++        uid = company.group(1)
++    elif insight := INSIGHT_PATH.match(path):
++        uid = await run_in_threadpool(insight_company, insight.group(1))
++    if uid is not None and uid not in user.companies:
++        return JSONResponse({"detail": "no access to this company"}, status_code=403)
++    return await call_next(request)
+diff --git a/backend/config.py b/backend/config.py
+index 92fcca1..e8644da 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -33,6 +33,7 @@ class Settings(BaseSettings):
+     bank_analytics: str = "backend.bank.search:AlfaBankAnalytics"
+ 
+     auth_secret: str = ""
++    auth_required: bool = True
+ 
+ @lru_cache
+ def get_settings():
+diff --git a/backend/main.py b/backend/main.py
+index dbee0d6..406ed80 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -7,6 +7,7 @@ from fastapi import FastAPI
+ from backend.analysis.jobs import JobManager
+ from backend.api import auth, insights, presentation
+ from backend.api.routes import router
++from backend.auth.guard import require_login
+ from backend.company import db
+ from backend.company.index import load_or_build, reference
+ from backend.company.profile import ProfileBuilder
+@@ -34,6 +35,7 @@ def _build_index(app):
+ 
+ 
+ app = FastAPI(title="Alfa Insights", version="0.1.0", lifespan=lifespan)
++app.middleware("http")(require_login)
+ app.include_router(router, prefix="/api")
+ app.include_router(auth.router, prefix="/api")
+ app.include_router(insights.router, prefix="/api")
+diff --git a/tests/conftest.py b/tests/conftest.py
+index d82d1d6..c677228 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -6,6 +6,7 @@ import pandas as pd
+ import pytest
+ 
+ os.environ.setdefault("COMPANY_DB_PATH", str(Path(tempfile.mkdtemp()) / "companies.db"))
++os.environ.setdefault("AUTH_REQUIRED", "false")
+ 
+ from backend.company.load import load
+ 
+diff --git a/tests/test_auth_guard.py b/tests/test_auth_guard.py
+new file mode 100644
+index 0000000..f2702a8
+--- /dev/null
++++ b/tests/test_auth_guard.py
+@@ -0,0 +1,43 @@
++import pytest
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++from backend.auth import guard
++from backend.auth.accounts import issue_token
++from backend.config import get_settings
++
++
++@pytest.fixture
++def client(monkeypatch):
++    monkeypatch.setattr(get_settings(), "auth_required", True)
++    monkeypatch.setattr(guard, "insight_company", {"i_own": "U_57706", "i_other": "U_63531"}.get)
++    app = FastAPI()
++    app.middleware("http")(guard.require_login)
++    for path in ("/api/health", "/api/companies", "/api/companies/{uid}/feed", "/api/insights/{insight_id}/card"):
++        app.add_api_route(path, lambda: {"ok": True})
++    return TestClient(app)
++
++
++def bearer(login):
++    return {"Authorization": f"Bearer {issue_token(login)}"}
++
++
++def test_open_paths_and_login_required(client):
++    assert client.get("/api/health").status_code == 200
++    assert client.get("/api/companies").status_code == 401
++    assert client.get("/api/companies", headers={"Authorization": "Bearer forged"}).status_code == 401
++    assert client.get("/api/companies", headers=bearer("demo-ceo")).status_code == 200
++
++
++def test_only_own_companies_and_their_insights(client):
++    headers = bearer("demo-ceo")
++    assert client.get("/api/companies/U_57706/feed", headers=headers).status_code == 200
++    assert client.get("/api/companies/U_63531/feed", headers=headers).status_code == 403
++    assert client.get("/api/insights/i_own/card", headers=headers).status_code == 200
++    assert client.get("/api/insights/i_other/card", headers=headers).status_code == 403
++    assert client.get("/api/insights/i_missing/card", headers=headers).status_code == 200
++
++
++def test_guard_can_be_switched_off(client, monkeypatch):
++    monkeypatch.setattr(get_settings(), "auth_required", False)
++    assert client.get("/api/companies/U_63531/feed").status_code == 200
