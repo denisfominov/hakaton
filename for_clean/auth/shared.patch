@@ -1,0 +1,46 @@
+diff --git a/.env.example b/.env.example
+index 4ac773f..158164b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -7,4 +7,6 @@ LLM_MODEL_REASONING=z-ai/glm-5.3-flash
+ LLM_MODEL_GENERAL=qwen/qwen3.6-35b-a3b
+ 
+ PROMPT_VARIANTS={}
+-BANK_ANALYTICS=backend.bank.search:AlfaBankAnalytics
+\ No newline at end of file
++BANK_ANALYTICS=backend.bank.search:AlfaBankAnalytics
++
++AUTH_SECRET=
+diff --git a/backend/config.py b/backend/config.py
+index 58676f4..92fcca1 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -32,6 +32,8 @@ class Settings(BaseSettings):
+ 
+     bank_analytics: str = "backend.bank.search:AlfaBankAnalytics"
+ 
++    auth_secret: str = ""
++
+ @lru_cache
+ def get_settings():
+     return Settings()
+diff --git a/backend/main.py b/backend/main.py
+index 399adbb..dbee0d6 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, closing
+ from fastapi import FastAPI
+ 
+ from backend.analysis.jobs import JobManager
+-from backend.api import insights, presentation
++from backend.api import auth, insights, presentation
+ from backend.api.routes import router
+ from backend.company import db
+ from backend.company.index import load_or_build, reference
+@@ -35,5 +35,6 @@ def _build_index(app):
+ 
+ app = FastAPI(title="Alfa Insights", version="0.1.0", lifespan=lifespan)
+ app.include_router(router, prefix="/api")
++app.include_router(auth.router, prefix="/api")
+ app.include_router(insights.router, prefix="/api")
+ app.include_router(presentation.router, prefix="/api")

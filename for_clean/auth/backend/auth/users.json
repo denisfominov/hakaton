@@ -1,0 +1,41 @@
+[
+  {
+    "login": "demo-ceo",
+    "name": "Demo CEO",
+    "role": "ceo",
+    "group_id": "group_134402_sb",
+    "companies": [
+      "U_57706",
+      "U_191099",
+      "U_201985"
+    ],
+    "salt": "01e1df92341ebef40784a2e0e6c22505",
+    "password_hash": "6edf5803b0b760dc6c9443474dbaf84022708a7c3aec50dcd894cb791e6d1817"
+  },
+  {
+    "login": "demo-cfo",
+    "name": "Demo CFO",
+    "role": "cfo",
+    "group_id": "group_134761_sb",
+    "companies": [
+      "U_63531",
+      "U_258131",
+      "U_8113"
+    ],
+    "salt": "80fe0a61148cb7f8ffb63346fdeabd96",
+    "password_hash": "d7fda551a3538756cb2afe0e1fa382f0664c83f677ee587e1eac74fee1040fc7"
+  },
+  {
+    "login": "demo-treasurer",
+    "name": "Demo treasurer",
+    "role": "treasurer",
+    "group_id": "group_134457_sb",
+    "companies": [
+      "U_182712",
+      "U_217543",
+      "U_225160"
+    ],
+    "salt": "5a0e32701a0b7de4d20e53b81cfdbb5f",
+    "password_hash": "1356da0413d65fa602ed19fe60c392afc0bd402ac902d3e4c254f0ae8a8f3a12"
+  }
+]
