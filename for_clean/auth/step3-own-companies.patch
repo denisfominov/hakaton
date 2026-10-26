@@ -1,0 +1,191 @@
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 4ef16a3..5b1920e 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -72,7 +72,7 @@ export default function App() {
+   return (
+     <Shell page={route.page} onNavigate={navigate} user={session.user} onLogout={signOut}>
+       {route.page === "home" && <HomePage onOpenInsights={() => navigate("insights")} />}
+-      {route.page === "insights" && !route.insightId && <InsightsPage />}
++      {route.page === "insights" && !route.insightId && <InsightsPage user={session.user} />}
+       {route.insightId && <InsightPage insightId={route.insightId} onBack={() => navigate("insights")} />}
+     </Shell>
+   );
+diff --git a/frontend/src/components/CompanyPicker.tsx b/frontend/src/components/CompanyPicker.tsx
+index f841404..c388764 100644
+--- a/frontend/src/components/CompanyPicker.tsx
++++ b/frontend/src/components/CompanyPicker.tsx
+@@ -1,46 +1,11 @@
+-import { useEffect, useState } from "react";
+-import { getCompanies, getReference, type CompanyFilter, type CompanyPage } from "../api";
+-import { count, rubles } from "../format";
++import type { CompanySummary } from "../api";
++import { rubles } from "../format";
+ import { roles, type Role } from "../selection";
+ import { texts } from "../texts";
+ 
+-const PAGE_SIZE = 20;
+-
+-type Props = { role: Role; onRole: (role: Role) => void; onPick: (companyId: string) => void };
+-
+-type Load = { kind: "loading" } | { kind: "ok"; page: CompanyPage } | { kind: "error"; message: string };
+-
+-export function CompanyPicker({ role, onRole, onPick }: Props) {
+-  const [filter, setFilter] = useState<CompanyFilter>({ large: true, region: "", okved: "", limit: PAGE_SIZE, offset: 0 });
+-  const [okvedInput, setOkvedInput] = useState("");
+-  const [regions, setRegions] = useState<string[]>([]);
+-  const [load, setLoad] = useState<Load>({ kind: "loading" });
+-
+-  useEffect(() => {
+-    getReference()
+-      .then((reference) => setRegions(reference.regions.map((r) => r.name)))
+-      .catch(() => setRegions([]));
+-  }, []);
+-
+-  useEffect(() => {
+-    const timer = setTimeout(() => setFilter((f) => (f.okved === okvedInput ? f : { ...f, okved: okvedInput, offset: 0 })), 400);
+-    return () => clearTimeout(timer);
+-  }, [okvedInput]);
+-
+-  useEffect(() => {
+-    let active = true;
+-    setLoad({ kind: "loading" });
+-    getCompanies(filter)
+-      .then((page) => active && setLoad({ kind: "ok", page }))
+-      .catch((error: Error) => active && setLoad({ kind: "error", message: error.message }));
+-    return () => {
+-      active = false;
+-    };
+-  }, [filter]);
+-
+-  const update = (patch: Partial<CompanyFilter>) => setFilter((f) => ({ ...f, ...patch, offset: 0 }));
+-  const total = load.kind === "ok" ? load.page.total : 0;
++type Props = { companies: CompanySummary[]; role: Role; onRole: (role: Role) => void; onPick: (companyId: string) => void };
+ 
++export function CompanyPicker({ companies, role, onRole, onPick }: Props) {
+   return (
+     <div className="picker">
+       <section className="widget">
+@@ -56,52 +21,24 @@ export function CompanyPicker({ role, onRole, onPick }: Props) {
+ 
+       <section className="widget">
+         <h3>{texts.picker.companyTitle}</h3>
+-        <div className="filters">
+-          <label className="checkbox">
+-            <input type="checkbox" checked={filter.large} onChange={(e) => update({ large: e.target.checked })} />
+-            {texts.picker.largeOnly}
+-          </label>
+-          <select value={filter.region} onChange={(e) => update({ region: e.target.value })}>
+-            <option value="">{texts.picker.allRegions}</option>
+-            {regions.map((name) => <option key={name} value={name}>{name}</option>)}
+-          </select>
+-          <input value={okvedInput} placeholder={texts.picker.okvedPlaceholder} onChange={(e) => setOkvedInput(e.target.value)} />
+-        </div>
+-
+-        {load.kind === "loading" && <p className="muted">{texts.picker.loading}</p>}
+-        {load.kind === "error" && <p className="error-text">{texts.picker.error}: {load.message}</p>}
+-        {load.kind === "ok" && load.page.items.length === 0 && <p className="muted">{texts.picker.empty}</p>}
+-        {load.kind === "ok" && load.page.items.length > 0 && (
+-          <>
+-            <table className="companies-table">
+-              <thead><tr>{texts.picker.columns.map((c) => <th key={c}>{c}</th>)}<th /></tr></thead>
+-              <tbody>
+-                {load.page.items.map((c) => (
+-                  <tr key={c.SYNTHETIC_U} onClick={() => onPick(c.SYNTHETIC_U)}>
+-                    <td><b>{c.SYNTHETIC_U}</b><div className="muted small">{texts.picker.group} {c.GROUP_ID ?? texts.noData}</div></td>
+-                    <td><span className="code">{c.MAINOKVED_CODE ?? "—"}</span> {c.MAINOKVED_NAME ?? texts.noData}</td>
+-                    <td>{c.REGION ?? texts.noData}</td>
+-                    <td className="number">{rubles(c.REVENUE_COMPANY)}</td>
+-                    <td className="number">{rubles(c.GROUP_REVENUE)}</td>
+-                    <td><button className="choose">{texts.picker.choose}</button></td>
+-                  </tr>
+-                ))}
+-              </tbody>
+-            </table>
+-            <div className="pager">
+-              <span className="muted">
+-                {texts.picker.shown(filter.offset + 1, filter.offset + load.page.items.length, count(total))}
+-              </span>
+-              <button className="action" disabled={filter.offset === 0}
+-                onClick={() => setFilter((f) => ({ ...f, offset: Math.max(0, f.offset - PAGE_SIZE) }))}>
+-                {texts.picker.previous}
+-              </button>
+-              <button className="action" disabled={filter.offset + PAGE_SIZE >= total}
+-                onClick={() => setFilter((f) => ({ ...f, offset: f.offset + PAGE_SIZE }))}>
+-                {texts.picker.next}
+-              </button>
+-            </div>
+-          </>
++        <p className="muted">{texts.picker.yourCompanies}</p>
++        {companies.length === 0 && <p className="muted">{texts.picker.empty}</p>}
++        {companies.length > 0 && (
++          <table className="companies-table">
++            <thead><tr>{texts.picker.columns.map((c) => <th key={c}>{c}</th>)}<th /></tr></thead>
++            <tbody>
++              {companies.map((c) => (
++                <tr key={c.SYNTHETIC_U} onClick={() => onPick(c.SYNTHETIC_U)}>
++                  <td><b>{c.SYNTHETIC_U}</b><div className="muted small">{texts.picker.group} {c.GROUP_ID ?? texts.noData}</div></td>
++                  <td><span className="code">{c.MAINOKVED_CODE ?? "—"}</span> {c.MAINOKVED_NAME ?? texts.noData}</td>
++                  <td>{c.REGION ?? texts.noData}</td>
++                  <td className="number">{rubles(c.REVENUE_COMPANY)}</td>
++                  <td className="number">{rubles(c.GROUP_REVENUE)}</td>
++                  <td><button className="choose">{texts.picker.choose}</button></td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
+         )}
+       </section>
+     </div>
+diff --git a/frontend/src/pages/InsightsPage.tsx b/frontend/src/pages/InsightsPage.tsx
+index 5f9ad8f..82a7447 100644
+--- a/frontend/src/pages/InsightsPage.tsx
++++ b/frontend/src/pages/InsightsPage.tsx
+@@ -3,12 +3,21 @@ import { CompanyPicker } from "../components/CompanyPicker";
+ import { Icon } from "../components/Icon";
+ import { InsightFeed } from "../components/InsightFeed";
+ import { ProfileView } from "../components/ProfileView";
+-import { loadSelection, saveSelection, type Role, type Selection } from "../selection";
++import { loadSelection, roles, saveSelection, type Role, type Selection } from "../selection";
++import type { Account } from "../session";
+ import { texts } from "../texts";
+ 
+-export function InsightsPage() {
+-  const [selection, setSelection] = useState<Selection | null>(loadSelection);
+-  const [role, setRole] = useState<Role>(selection?.role ?? "cfo");
++type Props = { user: Account };
++
++function ownSelection(user: Account) {
++  const selection = loadSelection();
++  return selection && user.companies.some((c) => c.SYNTHETIC_U === selection.companyId) ? selection : null;
++}
++
++export function InsightsPage({ user }: Props) {
++  const [selection, setSelection] = useState<Selection | null>(() => ownSelection(user));
++  const accountRole = roles.find((r) => r === user.role) ?? "cfo";
++  const [role, setRole] = useState<Role>(selection?.role ?? accountRole);
+ 
+   const choose = (next: Selection | null) => {
+     saveSelection(next);
+@@ -39,7 +48,8 @@ export function InsightsPage() {
+           <ProfileView companyId={selection.companyId} />
+         </>
+       ) : (
+-        <CompanyPicker role={role} onRole={setRole} onPick={(companyId) => choose({ companyId, role })} />
++        <CompanyPicker companies={user.companies} role={role} onRole={setRole}
++          onPick={(companyId) => choose({ companyId, role })} />
+       )}
+     </div>
+   );
+diff --git a/frontend/src/texts.ts b/frontend/src/texts.ts
+index d548771..c25b386 100644
+--- a/frontend/src/texts.ts
++++ b/frontend/src/texts.ts
+@@ -104,6 +104,7 @@ export const texts = {
+       accountant: "Главный бухгалтер",
+     },
+     companyTitle: "Компания",
++    yourCompanies: "Компании вашей группы, к которым у вас есть доступ",
+     largeOnly: "Только крупный бизнес (выручка группы > 15 млрд ₽)",
+     allRegions: "Все регионы",
+     okvedPlaceholder: "Код ОКВЭД, например 46 или 41.20",
