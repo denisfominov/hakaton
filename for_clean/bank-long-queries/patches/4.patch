@@ -1,0 +1,44 @@
+diff --git a/backend/bank/search.py b/backend/bank/search.py
+index b612aaa..6676154 100644
+--- a/backend/bank/search.py
++++ b/backend/bank/search.py
+@@ -12,11 +12,11 @@ from .passages import load_passages
+ log = logging.getLogger("bank")
+ 
+ FACTOR_WEIGHT = 0.3
+-TITLE_WEIGHT = 0.8
++TITLE_WEIGHT = 0.0
+ MIN_WORD = 3
+ OUTDATED_DAYS = 365
+ OUTDATED_FACTOR = 0.7
+-MIN_SCORE = 0.35
++MIN_SCORE = 0.16
+ PER_DOCUMENT = 2
+ 
+ 
+diff --git a/tests/test_bank_evaluate.py b/tests/test_bank_evaluate.py
+index fb333c2..efe038f 100644
+--- a/tests/test_bank_evaluate.py
++++ b/tests/test_bank_evaluate.py
+@@ -1,6 +1,10 @@
+ from types import SimpleNamespace
+ 
++import pytest
++
++from backend.bank.documents import load_documents
+ from backend.bank.evaluate import evaluate, load_questions
++from backend.bank.search import AlfaBankAnalytics
+ 
+ 
+ class FakeSource:
+@@ -31,3 +35,10 @@ def test_question_set_is_split_and_labelled():
+     assert len(dev) == 49 and len(test) == 23
+     assert not {q["id"] for q in dev} & {q["id"] for q in test}
+     assert all(all(len(g) == 2 for g in q["gold"]) for q in dev + test)
++
++
++def test_defaults_find_bank_view_for_agent_questions():
++    if load_documents()[1]:
++        pytest.skip("bank texts are not in data/bank")
++    agent = [q for q in load_questions("dev") if q["id"].startswith("a") and q["gold"]]
++    assert evaluate(AlfaBankAnalytics(), agent)["hit@3"] >= 0.8

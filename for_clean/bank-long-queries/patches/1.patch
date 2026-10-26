@@ -1,0 +1,53 @@
+diff --git a/backend/bank/passages.py b/backend/bank/passages.py
+index 639784f..77f4967 100644
+--- a/backend/bank/passages.py
++++ b/backend/bank/passages.py
+@@ -1,10 +1,13 @@
++import logging
+ import re
+ from dataclasses import dataclass, field
+ from datetime import date
+ 
+ from backend.match.tags import tag_text, to_factors
+ 
+-from .documents import load_documents
++from .documents import bank_dir, load_documents
++
++log = logging.getLogger("bank")
+ 
+ TARGET_CHARS = 800
+ MIN_CHARS = 150
+@@ -77,7 +80,10 @@ def build_passages(documents):
+ 
+ 
+ def load_passages(folder=None):
+-    documents, _ = load_documents(folder)
++    documents, missing = load_documents(folder)
++    if missing:
++        log.warning("bank analytics: %s documents have no <name>.ocr.txt text in %s: %s",
++                    len(missing), folder or bank_dir(), ", ".join(missing))
+     return build_passages(documents)
+ 
+ 
+diff --git a/tests/test_bank_documents.py b/tests/test_bank_documents.py
+index d086e99..e917f7e 100644
+--- a/tests/test_bank_documents.py
++++ b/tests/test_bank_documents.py
+@@ -1,6 +1,7 @@
+ from datetime import date
+ 
+ from backend.bank.documents import load_catalog, load_documents, read_pages
++from backend.bank.passages import load_passages
+ 
+ 
+ def test_catalog_lists_nine_documents():
+@@ -22,3 +23,9 @@ def test_load_documents_reports_missing_files(tmp_path):
+     assert [d.id for d in documents] == ["inflation_0902"]
+     assert documents[0].published == date(2026, 9, 2) and documents[0].pages == ["Weekly inflation", "Page two"]
+     assert len(missing) == 8
++
++
++def test_missing_text_files_are_logged(tmp_path, caplog):
++    (tmp_path / "Inflation_tracker_02.ocr.txt").write_text("Weekly inflation\fPage two", encoding="utf-8")
++    load_passages(tmp_path)
++    assert "8 documents have no <name>.ocr.txt text" in caplog.text and "ALFA-7M26.pdf" in caplog.text
